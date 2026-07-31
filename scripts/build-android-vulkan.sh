@@ -45,11 +45,13 @@ if [ ! -d "vulkan-headers/include/vulkan" ]; then
 	mv Vulkan-Headers-1.2.182 vulkan-headers
 fi
 
-# Build for armv7a with hard-float (API 24 for Vulkan support)
-# Note: API 24 (Android 7.0) is the minimum for official Vulkan support
+# Build for armv7a with hard-float.
+# NDK r10e only ships platform headers up to API 21, so we compile against
+# API 21 + the downloaded Khronos Vulkan headers.  libvulkan.so is dlopen()'d
+# at runtime, so the binary still requires API 24+ (Android 7.0) to run.
 echo ">>> Configuring build (armv7a, Vulkan backend)..."
 ./waf configure -T debug \
-	--android=armeabi-v7a-hard,4.9,24 \
+	--android=armeabi-v7a-hard,4.9,21 \
 	--use-vulkan \
 	--disable-warns
 

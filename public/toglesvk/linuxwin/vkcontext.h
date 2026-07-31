@@ -363,6 +363,7 @@ public:
 	VkQueue GetQueue() { return m_queue; }
 	VkCommandBuffer GetActiveCommandBuffer() { return m_activeCommandBuffer; }
 	VkRenderPass GetRenderPass() { return m_renderPass; }
+	uint64 GetOwnerThreadId() const { return m_ownerThreadId; }
 
 	// Pipeline cache (for graphics pipelines)
 	VkPipelineCache GetPipelineCache() { return m_pipelineCache; }

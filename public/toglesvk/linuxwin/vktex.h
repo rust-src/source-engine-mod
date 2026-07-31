@@ -155,6 +155,8 @@ private:
 	VkDeviceMemory m_stagingMemory;
 	void *m_stagingMappedPtr;
 	VkDeviceSize m_stagingSize;
+
+	void *EnsureStagingBuffer( VkDeviceSize size );
 };
 
 #endif // DX_TO_VK_ABSTRACTION

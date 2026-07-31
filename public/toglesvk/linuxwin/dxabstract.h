@@ -359,9 +359,8 @@ struct TOGL_CLASS ID3DXMatrixStack //: public IUnknown
 
 typedef ID3DXMatrixStack* LPD3DXMATRIXSTACK;
 
-// RenderTargetState_t is defined in vkcontext.h (included via rendermechanism.h)
-
-typedef CUtlMap< RenderTargetState_t, CVKFramebuffer *> CVKFramebufferMap;
+// RenderTargetState_t and CVKFramebufferMap are defined in vkcontext.h
+// (included via rendermechanism.h).  Do not redeclare CVKFramebufferMap here.
 
 class simple_bitmap;
 
@@ -526,7 +525,7 @@ struct TOGL_CLASS IDirect3DDevice9 : public IUnknown
 
 	void TOGLMETHODCALLTYPE AcquireThreadOwnership( );
 	void TOGLMETHODCALLTYPE ReleaseThreadOwnership( );
-	inline uintp TOGLMETHODCALLTYPE GetCurrentOwnerThreadId() const { return m_ctx->m_ownerThreadId; }
+	inline uintp TOGLMETHODCALLTYPE GetCurrentOwnerThreadId() const { return (uintp)m_ctx->GetOwnerThreadId(); }
 
 	FORCEINLINE void TOGLMETHODCALLTYPE SetMaxUsedVertexShaderConstantsHint( uint nMaxReg );
 	void TOGLMETHODCALLTYPE SetMaxUsedVertexShaderConstantsHintNonInline( uint nMaxReg );
