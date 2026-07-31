@@ -7,9 +7,13 @@ original OpenGL ES backend (`togles`) and the new Vulkan backend (`toglesvk`).
 
 ### Required Tools
 
-- **Android NDK r10e** (for ARMv7 builds with GCC 4.9)
+- **Android NDK r10e** (provides sysroot for all Android targets, including arm64)
   - Download: https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip
-  - For ARM64 builds, NDK r19/r20 with Clang is recommended
+  - Note: r10e does *not* ship a bundled aarch64 compiler; for arm64-v8a you
+    must supply a standalone Clang (see below) and use the `host` toolchain.
+- **LLVM/Clang 11.1.0** (required for arm64-v8a `host` toolchain builds)
+  - Download: https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+  - armv7-a builds use the GCC 4.9 toolchain bundled in NDK r10e instead.
 - **Python 2.7+** (for waf build system)
 - **Linux x86_64 host** (cross-compilation target)
 - **Git** (for submodule management)
@@ -38,13 +42,17 @@ This fetches:
 
 ### NDK Requirements by Architecture
 
-| Architecture | NDK Version | Toolchain | Notes |
-|-------------|-------------|-----------|-------|
-| `armeabi-v7a-hard` (32-bit ARM) | r10e | GCC 4.9 | Hard-float ABI, NEON |
-| `aarch64` (64-bit ARM) | r19 or r20 | Clang | GCC removed from NDK r18+ |
+| Architecture | NDK Version | Toolchain | Compiler | Notes |
+|-------------|-------------|-----------|----------|-------|
+| `armeabi-v7a-hard` (32-bit ARM) | r10e | `4.9` | GCC 4.9 (bundled) | Hard-float ABI, NEON |
+| `aarch64` (64-bit ARM) | r10e | `host` | Clang 11.1.0 (standalone) | r10e provides sysroot only |
 
-> **Important**: arm64-v8a (aarch64) is **not supported** by NDK r10e.
-> You must use NDK r19 or r20, which use Clang instead of GCC.
+> **Note**: arm64-v8a (aarch64) is built using the **`host` toolchain** mode of
+> `xcompile.py`: r10e supplies the sysroot (`platforms/android-21/arch-arm64`)
+> and a standalone LLVM/Clang 11.1.0 performs the actual cross-compilation via
+> `clang --target=aarch64-linux-android21`. NDK r19/r20 with the bundled `clang`
+> toolchain is an alternative, but the canonical scripts in this repo use r10e +
+> standalone Clang for consistency with the armv7-a flow.
 
 ## Quick Start
 
@@ -71,43 +79,35 @@ This fetches:
 #### armv7-a (32-bit ARM, NDK r10e)
 
 ```bash
-# Set NDK path
 export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
 
 # GLES backend
-./waf configure -T debug \
-    --android=armeabi-v7a-hard,4.9,21 \
-    --togles \
-    --disable-warns
+./waf configure -T debug --android=armeabi-v7a-hard,4.9,21 --togles --disable-warns
+./waf build
 
 # Vulkan backend
-./waf configure -T debug \
-    --android=armeabi-v7a-hard,4.9,24 \
-    --use-vulkan \
-    --disable-warns
+./waf configure -T debug --android=armeabi-v7a-hard,4.9,24 --use-vulkan --disable-warns
+./waf build
 ```
 
-#### arm64-v8a (64-bit ARM, NDK r20)
+#### arm64-v8a (64-bit ARM, NDK r10e + standalone Clang)
 
 ```bash
-# Set NDK path
-export ANDROID_NDK_HOME=$PWD/android-ndk-r20/
+# Set NDK path and put standalone Clang on PATH
+export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
 
-# GLES backend
-./waf configure -T debug \
-    --android=aarch64,clang,21 \
-    --togles \
-    --disable-warns
+# GLES backend  (API 21) — build + install to ../android_build/aarch64
+python3 ./waf configure -T release --prefix=../android_build \
+    --android=aarch64,host,21 --target=../android_build/aarch64 \
+    --disable-warns --togles
+python3 ./waf install --strip
 
-# Vulkan backend
-./waf configure -T debug \
-    --android=aarch64,clang,24 \
-    --use-vulkan \
-    --disable-warns
-```
-
-# Build
-./waf build
+# Vulkan backend (API 24 — required for libvulkan.so at runtime)
+python3 ./waf configure -T release --prefix=../android_build \
+    --android=aarch64,host,24 --target=../android_build/aarch64-vulkan \
+    --disable-warns --use-vulkan
+python3 ./waf install --strip
 ```
 
 ## Build Configuration Details
@@ -119,18 +119,22 @@ Format: `--android=<arch>,<toolchain>,<api>`
 | Component | Values | Description |
 |-----------|--------|-------------|
 | `arch` | `armeabi-v7a-hard`, `armeabi-v7a`, `aarch64`, `x86`, `x86_64` | Target architecture |
-| `toolchain` | `4.9` (GCC), `clang` | Compiler toolchain |
+| `toolchain` | `4.9` (GCC), `clang`, `host` | Compiler toolchain |
 | `api` | `21`, `24`, `26`, `28`, `29`, `30`... | Android API level |
+
+> `host` means: use a standalone Clang found on `PATH` and drive it with
+> `--target=<triple><api>`. This is how arm64-v8a is built against NDK r10e,
+> which has no bundled aarch64 compiler.
 
 **Valid combinations:**
 
-| `arch` | `toolchain` | NDK | Notes |
-|--------|-------------|-----|-------|
-| `armeabi-v7a-hard` | `4.9` | r10e | 32-bit ARM, hard-float, NEON |
-| `aarch64` | `clang` | r19/r20 | 64-bit ARM, Clang only (no GCC in r18+) |
+| `arch` | `toolchain` | NDK | Compiler | Notes |
+|--------|-------------|-----|----------|-------|
+| `armeabi-v7a-hard` | `4.9` | r10e | GCC 4.9 (bundled) | 32-bit ARM, hard-float, NEON |
+| `aarch64` | `host` | r10e | Clang 11.1.0 (standalone) | 64-bit ARM, r10e supplies sysroot |
+| `aarch64` | `clang` | r19/r20 | Clang (bundled) | Alternative 64-bit ARM flow |
 
 > arm64-v8a requires API >= 21 (enforced automatically by xcompile.py).
-> arm64-v8a is **not** supported by NDK r10e.
 
 ### Architecture-Specific Flags
 
@@ -140,9 +144,10 @@ For `armeabi-v7a-hard` (32-bit):
 -D_NDK_MATH_NO_SOFTFP=1 -mfloat-abi=hard
 ```
 
-For `aarch64` (64-bit):
+For `aarch64` (64-bit, `host` toolchain):
 - No special CPU flags needed (ARMv8-A baseline includes NEON/VFP)
-- Uses Clang with `-static-libstdc++` (NDK r19+)
+- Driven by `clang --target=aarch64-linux-android<api>` from standalone LLVM
+- r10e sysroot: `platforms/android-<api>/arch-arm64`
 - STL path: `gnu-libstdc++/4.9/libs/arm64-v8a/`
 
 ### Output Location
@@ -150,7 +155,14 @@ For `aarch64` (64-bit):
 | Architecture | Output Path |
 |-------------|-------------|
 | armv7-a (32-bit) | `build/android/armeabi-v7a/lib/` |
-| arm64-v8a (64-bit) | `build/android/arm64-v8a/lib/` |
+| arm64-v8a (64-bit, GLES) | `../android_build/aarch64/` |
+| arm64-v8a (64-bit, Vulkan) | `../android_build/aarch64-vulkan/` |
+
+> The arm64 scripts use `--prefix=../android_build --target=...` with
+> `waf install --strip`, so the stripped `.so` files are installed into the
+> directory given by `--target` rather than the default `build/` tree. The
+> armv7-a scripts use the default `./waf build` flow, whose output stays under
+> `build/android/`.
 
 Key output files:
 - `libhl2_launcher.so` — main engine shared library
@@ -175,14 +187,15 @@ Create a new Android Studio project with:
 mkdir -p app/src/main/jniLibs/armeabi-v7a/
 cp build/android/armeabi-v7a/lib/*.so app/src/main/jniLibs/armeabi-v7a/
 
-# For arm64-v8a (64-bit)
+# For arm64-v8a (64-bit) — output of build-android-arm64.sh / -vulkan.sh
 mkdir -p app/src/main/jniLibs/arm64-v8a/
-cp build/android/arm64-v8a/lib/*.so app/src/main/jniLibs/arm64-v8a/
+cp ../android_build/aarch64/*.so app/src/main/jniLibs/arm64-v8a/
+# (or ../android_build/aarch64-vulkan/*.so for the Vulkan build)
 
 # For both (multi-arch APK, recommended for distribution)
 mkdir -p app/src/main/jniLibs/armeabi-v7a/ app/src/main/jniLibs/arm64-v8a/
 cp build/android/armeabi-v7a/lib/*.so app/src/main/jniLibs/armeabi-v7a/
-cp build/android/arm64-v8a/lib/*.so app/src/main/jniLibs/arm64-v8a/
+cp ../android_build/aarch64/*.so app/src/main/jniLibs/arm64-v8a/
 ```
 
 ### Step 3: Create Activity
@@ -217,12 +230,12 @@ Copy your game's `hl2/` directory (or mod directory) into `assets/` or
 
 ## Supported Android Architectures
 
-| Architecture | NDK | Status | Notes |
-|-------------|-----|--------|-------|
-| `armeabi-v7a-hard` | r10e | Primary target | 32-bit ARM, hard-float, NEON |
-| `aarch64` | r19/r20 | Supported | 64-bit ARM (arm64-v8a), Clang only |
-| `x86` | r19+ | Community | For emulators |
-| `x86_64` | r19+ | Community | For emulators |
+| Architecture | NDK | Toolchain | Status | Notes |
+|-------------|-----|-----------|--------|-------|
+| `armeabi-v7a-hard` | r10e | `4.9` (GCC) | Primary target | 32-bit ARM, hard-float, NEON |
+| `aarch64` | r10e | `host` (Clang 11.1.0) | Supported | 64-bit ARM (arm64-v8a) |
+| `x86` | r19+ | `clang` | Community | For emulators |
+| `x86_64` | r19+ | `clang` | Community | For emulators |
 
 > **arm64-v8a (aarch64) is recommended for modern Android devices.**
 > Most phones shipped since 2018 use 64-bit ARM. arm64 provides:
@@ -261,35 +274,40 @@ The device doesn't have Vulkan support. Either:
 
 ### "NDK not found" / "Unknown NDK revision"
 
-Ensure `ANDROID_NDK_HOME` points to the extracted NDK:
+Ensure `ANDROID_NDK_HOME` points to the extracted NDK. Both armv7-a and arm64
+builds in this repo use **NDK r10e**:
 ```bash
-# For armv7-a (32-bit)
 export ANDROID_NDK_HOME=/absolute/path/to/android-ndk-r10e
-
-# For arm64-v8a (64-bit) — must be r19 or r20
-export ANDROID_NDK_HOME=/absolute/path/to/android-ndk-r20
 ```
 
-### "Unknown NDK revision: X" when building arm64
+`xcompile.py` only accepts NDK revisions `10`, `19`, `20`
+(`ANDROID_NDK_SUPPORTED`). Any other revision will fatal with
+"Unknown NDK revision".
 
-NDK r10e does not support aarch64. You must use NDK r19 or r20:
+### arm64 build fails with "command not found: clang"
+
+The `host` toolchain expects a standalone Clang on `PATH`. Download and extract
+LLVM 11.1.0, then prepend its `bin/` to `PATH`:
 ```bash
-# Download NDK r20
-wget https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip
-unzip android-ndk-r20-linux-x86_64.zip
-export ANDROID_NDK_HOME=$PWD/android-ndk-r20
+wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
 ```
+`xcompile.py` then invokes `clang --target=aarch64-linux-android<api>` and uses
+the r10e sysroot at `platforms/android-<api>/arch-arm64`.
 
-### "aarch64 requires clang toolchain"
+### "aarch64" with wrong toolchain
 
-For arm64-v8a, the toolchain must be `clang` (not `4.9`):
+For arm64-v8a against NDK r10e, the toolchain must be `host` (not `4.9`):
 ```bash
-# Correct
---android=aarch64,clang,21
+# Correct (r10e + standalone Clang)
+--android=aarch64,host,21
 
-# Wrong (GCC not available for aarch64 in r19+)
+# Wrong (r10e has no bundled aarch64 GCC)
 --android=aarch64,4.9,21
 ```
+If you are instead using NDK r19/r20, the bundled `clang` toolchain works too:
+`--android=aarch64,clang,21`.
 
 ### Build fails on submodule initialization
 

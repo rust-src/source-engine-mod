@@ -137,10 +137,11 @@ scripts/build-android-armv7a.sh
 scripts/build-android-vulkan.sh
 
 # --- arm64-v8a (64-bit ARM / AArch64) ---
-# GLES backend (requires Android 5.0+ / API 21, NDK r19+)
+# Uses NDK r10e sysroot + standalone LLVM/Clang 11.1.0 (host toolchain)
+# GLES backend (requires Android 5.0+ / API 21)
 scripts/build-android-arm64.sh
 
-# Vulkan backend (requires Android 7.0+ / API 24, NDK r19+)
+# Vulkan backend (requires Android 7.0+ / API 24)
 scripts/build-android-arm64-vulkan.sh
 ```
 
@@ -158,21 +159,25 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r10e
 ./waf configure -T debug --android=armeabi-v7a-hard,4.9,24 --use-vulkan --disable-warns
 ./waf build
 
-# --- arm64-v8a (64-bit, NDK r20, Clang) ---
-export ANDROID_NDK_HOME=/path/to/android-ndk-r20
+# --- arm64-v8a (64-bit, NDK r10e + standalone Clang 11.1.0) ---
+export ANDROID_NDK_HOME=/path/to/android-ndk-r10e
+export PATH=/path/to/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
 
-# GLES
-./waf configure -T debug --android=aarch64,clang,21 --togles --disable-warns
-./waf build
+# GLES (API 21)
+python3 ./waf configure -T release --prefix=../android_build \
+    --android=aarch64,host,21 --target=../android_build/aarch64 --disable-warns --togles
+python3 ./waf install --strip
 
-# Vulkan
-./waf configure -T debug --android=aarch64,clang,24 --use-vulkan --disable-warns
-./waf build
+# Vulkan (API 24)
+python3 ./waf configure -T release --prefix=../android_build \
+    --android=aarch64,host,24 --target=../android_build/aarch64-vulkan --disable-warns --use-vulkan
+python3 ./waf install --strip
 ```
 
 Output locations:
 - armv7-a: `build/android/armeabi-v7a/lib/`
-- arm64-v8a: `build/android/arm64-v8a/lib/`
+- arm64-v8a (GLES): `../android_build/aarch64/`
+- arm64-v8a (Vulkan): `../android_build/aarch64-vulkan/`
 
 Copy `.so` files to your Android project's `jniLibs/<arch>/` directory.
 
