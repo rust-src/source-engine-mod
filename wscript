@@ -424,18 +424,20 @@ def check_deps(conf):
 			if conf.options.OPUS:
 				conf.check_cfg(package='opus', uselib_store='OPUS', args=['--cflags', '--libs'])
 	else:
-		conf.check(lib='SDL2', uselib_store='SDL2')
-		conf.check(lib='freetype2', uselib_store='FT2')
-		conf.check(lib='jpeg', uselib_store='JPEG', define_name='HAVE_JPEG')
-		conf.check(lib='png', uselib_store='PNG', define_name='HAVE_PNG')
-		conf.check(lib='curl', uselib_store='CURL', define_name='HAVE_CURL')
-		conf.check(lib='z', uselib_store='ZLIB', define_name='HAVE_ZLIB')
+		# Android: 交叉编译器无法链接/运行测试程序, 直接声明库可用
+		# 这些库由 NDK 或 lib/android/<arch>/ 预编译版本提供
+		conf.env.LIB_SDL2 = ['SDL2']
+		conf.env.LIB_FT2 = ['freetype2']
+		conf.env.LIB_JPEG = ['jpeg']
+		conf.env.LIB_PNG = ['png']
+		conf.env.LIB_CURL = ['curl']
+		conf.env.LIB_ZLIB = ['z']
+		conf.env.LIB_ANDROID_SUPPORT = ['android_support']
+		conf.env.LIB_OPUS = ['opus']
 		if conf.env.DEST_CPU != 'aarch64':
-			conf.check(lib='unwind', uselib_store='UNWIND')
-			conf.check(lib='crypto', uselib_store='CRYPTO')
-			conf.check(lib='ssl', uselib_store='SSL')
-		conf.check(lib='android_support', uselib_store='ANDROID_SUPPORT')
-		conf.check(lib='opus', uselib_store='OPUS')
+			conf.env.LIB_UNWIND = ['unwind']
+			conf.env.LIB_CRYPTO = ['crypto']
+			conf.env.LIB_SSL = ['ssl']
 
 	if conf.env.DEST_OS == 'win32':
 		conf.check(lib='libz', uselib_store='ZLIB', define_name='USE_ZLIB')
