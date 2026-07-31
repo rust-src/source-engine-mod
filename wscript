@@ -261,6 +261,9 @@ def define_platform(conf):
 			'NO_HOOK_MALLOC',
 			'_DLL_EXT=.dylib'
 		])
+		# ivp source uses alloca without including the header on macOS
+		conf.env.append_unique('CFLAGS', ['-include', 'alloca.h'])
+		conf.env.append_unique('CXXFLAGS', ['-include', 'alloca.h'])
 
 	elif conf.env.DEST_OS in ['freebsd', 'openbsd', 'netbsd', 'dragonflybsd']: # Tested only in freebsd
 		conf.env.append_unique('DEFINES', [
@@ -649,6 +652,11 @@ def configure(conf):
 
 def build(bld):
 	os.environ["CCACHE_DIR"] = os.path.abspath('.ccache/'+bld.env.COMPILER_CC+'/'+bld.env.DEST_OS+'/'+bld.env.DEST_CPU)
+
+	# DXVK is not used on Android or OpenGL ES (TOGLES) builds
+	if bld.env.DEST_OS == 'android' or bld.env.TOGLES:
+		if 'materialsystem/shaderapidxxvk' in projects['game']:
+			projects['game'].remove('materialsystem/shaderapidxxvk')
 
 	if bld.env.DEST_OS in ['win32', 'android']:
 		sdl_name = 'SDL2.dll' if bld.env.DEST_OS == 'win32' else 'libSDL2.so'

@@ -52,6 +52,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build windows-i386
       run: |
         git submodule init && git submodule update
@@ -63,6 +68,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build windows-amd64
       run: |
         git submodule init && git submodule update
@@ -74,6 +84,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
@@ -90,6 +105,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build dedicated windows-amd64
       run: |
         git submodule init && git submodule update
@@ -124,6 +144,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build macos-amd64
       run: |
         scripts/build-macos-amd64.sh
@@ -133,6 +158,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d

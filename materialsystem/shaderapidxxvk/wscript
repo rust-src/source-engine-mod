@@ -20,10 +20,34 @@ def configure(conf):
 		'_snprintf=use_Q_snprintf_instead',
 	])
 
-	if conf.env.DEST_OS != 'win32':
+	# Allow CI/environment to point to a Vulkan SDK location
+	vulkan_sdk = os.environ.get('VULKAN_SDK')
+	if vulkan_sdk:
+		if conf.env.DEST_OS == 'win32':
+			conf.env.append_unique('INCLUDES', os.path.join(vulkan_sdk, 'Include'))
+			# Pick the correct MSVC lib subdirectory
+			if conf.env.DEST_CPU == 'x86':
+				conf.env.append_unique('LIBPATH', os.path.join(vulkan_sdk, 'Lib', 'x86'))
+			else:
+				conf.env.append_unique('LIBPATH', os.path.join(vulkan_sdk, 'Lib', 'x64'))
+		else:
+			conf.env.append_unique('INCLUDES', os.path.join(vulkan_sdk, 'include'))
+			conf.env.append_unique('LIBPATH', os.path.join(vulkan_sdk, 'lib'))
+
+	if conf.env.DEST_OS == 'linux':
 		conf.env.append_unique('DEFINES', [
 			'POSIX',
 			'_LINUX',
+		])
+	elif conf.env.DEST_OS == 'darwin':
+		conf.env.append_unique('DEFINES', [
+			'POSIX',
+			'OSX',
+			'_OSX',
+		])
+	elif conf.env.DEST_OS != 'win32':
+		conf.env.append_unique('DEFINES', [
+			'POSIX',
 		])
 
 def build(bld):
