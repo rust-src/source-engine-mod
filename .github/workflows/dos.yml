@@ -11,10 +11,10 @@ on:
 
 jobs:
   build-srceng-server-win-32-hl2dm:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Build-sv
       run: |
         
@@ -25,7 +25,7 @@ jobs:
         
         cat build/config.log >./win/info.txt
         
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: hl2dm-win64
         path: ./win
@@ -33,10 +33,10 @@ jobs:
 
 
   build-srceng-win-hl2dm:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Build
       run: |
         #
@@ -45,7 +45,7 @@ jobs:
         
         ./waf.bat install -j4
         cat build/config.log > ./win/info.txt
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: hl2dm-win32
         path: ./win

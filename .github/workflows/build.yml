@@ -7,16 +7,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build linux-i386
       run: |
         scripts/build-ubuntu-i386.sh
 
   build-linux-amd64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh
@@ -25,33 +25,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build android-armv7a
       run: |
           scripts/build-android-armv7a.sh
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-android-armv7a
-        path: /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/*.*
+        path: ./android_build/lib/armeabi-v7a/*.*
 
   build-android-aarch64:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build android-aarch64
       run: |
         scripts/build-android-arm64.sh
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-android-aarch64
-        path: /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/*.*
+        path: ./android_build/lib/arm64-v8a/*.*
 
   build-windows-i386:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build windows-i386
       run: |
         git submodule init && git submodule update
@@ -59,10 +59,10 @@ jobs:
         ./waf.bat build
 
   build-windows-amd64:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build windows-amd64
       run: |
         git submodule init && git submodule update
@@ -70,26 +70,26 @@ jobs:
         ./waf.bat build
 
   build-dedicated-windows-i386:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
         ./waf.bat configure -T release -d --prefix=./win --build-game=hl2mp -4
         ./waf.bat install
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: win-source-engine-d-hl2mp
         path: ./win
         if-no-files-found: error
 
   build-dedicated-windows-amd64:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build dedicated windows-amd64
       run: |
         git submodule init && git submodule update
@@ -97,24 +97,24 @@ jobs:
         ./waf.bat build
 
   build-dedicated-linux-i386:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: linux-source-engine-64-d
         path: ./linux
         if-no-files-found: error
 
   build-dedicated-linux-amd64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build dedicated linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh -d
@@ -123,7 +123,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build macos-amd64
       run: |
         scripts/build-macos-amd64.sh
@@ -132,7 +132,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d
