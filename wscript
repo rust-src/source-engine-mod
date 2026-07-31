@@ -390,7 +390,7 @@ def check_deps(conf):
 	if conf.env.DEST_OS != 'android':
 		if conf.env.DEST_OS != 'win32':
 			if conf.options.SDL:
-				conf.check_cfg(package='sdl2', uselib_store='SDL2', args=['--cflags', '--libs'], mandatory=False)
+				conf.check_cfg(package='sdl2', uselib_store='SDL2', args=['--cflags', '--libs'])
 			if conf.options.DEDICATED:
 				conf.check_cfg(package='libedit', uselib_store='EDIT', args=['--cflags', '--libs'])
 			else:
