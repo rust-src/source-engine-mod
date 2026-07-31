@@ -438,6 +438,12 @@ def check_deps(conf):
 		# conf.multicheck(*a, run_all_tests = True, mandatory = True)
 
 def configure(conf):
+	# Allow overriding auto-detected target CPU from CI/environment.
+	# This is required for Windows ARM64 runners where Python may report amd64.
+	forced_cpu = os.environ.get('WAF_DEST_CPU')
+	if forced_cpu:
+		conf.env.DEST_CPU = forced_cpu
+
 	conf.load('fwgslib reconfigure compiler_optimizations')
 
 	# Force XP compability, all build targets should add

@@ -55,6 +55,8 @@ jobs:
 
   build-srceng-win-arm64:
     runs-on: windows-11-arm
+    env:
+      WAF_DEST_CPU: aarch64
 
     steps:
     - uses: actions/checkout@v4
