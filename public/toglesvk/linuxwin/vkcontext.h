@@ -32,13 +32,18 @@
 #include "tier0/dbg.h"
 #include "tier0/threadtools.h"
 #include "tier0/vprof.h"
+#include "tier1/utlvector.h"
+#include "tier1/strtools.h"
 #include "toglesvk/linuxwin/vkbase.h"
 
 class CVKBuffer;
 class CVKTex;
+class CVKContext;
 class CVKFramebuffer;
 class CVKProgram;
 class CVKQuery;
+
+#include "toglesvk/linuxwin/vkprogram.h"	// for VKProgramType enum definition
 
 // Display parameters for creating a Vulkan context
 class CVKDisplayParams
@@ -297,7 +302,7 @@ public:
 	void DestroyBuffer( CVKBuffer *buffer );
 
 	// Shader management
-	CVKProgram *CreateProgram( enum VKProgramType type, const void *data, size_t size );
+	CVKProgram *CreateProgram( VKProgramType type, const void *data, size_t size );
 	void DestroyProgram( CVKProgram *program );
 
 	// Query management

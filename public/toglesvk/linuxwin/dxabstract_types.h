@@ -183,7 +183,10 @@ typedef void* VD3DHANDLE;
 
 //-----------------------------------------------------------------------------
 
-typedef enum _D3DFORMAT D3DFORMAT;
+// D3DFORMAT is an enum (defined in bitmap/imageformat.h when DX_TO_VK_ABSTRACTION
+// is set). C++ forbids forward references to enums, so the full definition must
+// be visible everywhere D3DFORMAT is used as a struct field type.
+#include "bitmap/imageformat.h"
 
 #define D3DSI_OPCODE_MASK 0x0000FFFF
 #define D3DSP_TEXTURETYPE_MASK 0x78000000
