@@ -1,0 +1,74 @@
+//-----------------------------------------------------------------------------
+//	SHADERAPIDXXVK.VPC
+//
+//	Project Script
+//-----------------------------------------------------------------------------
+
+$Macro SRCDIR		"..\.."
+$Macro OUTBINDIR	"$SRCDIR\..\game\bin"
+$Macro OUTBINNAME	"shaderapidxxvk"
+
+$include "$SRCDIR\vpc_scripts\source_dll_base.vpc"
+
+
+// Common Configuration
+$Configuration
+{
+	$Compiler
+	{
+		$AdditionalIncludeDirectories	"$BASE;..\"
+		$AdditionalIncludeDirectories	"$BASE;..\..\thirdparty\dxvk\include"
+		$AdditionalIncludeDirectories	"$BASE;..\..\thirdparty\Vulkan-Headers\include"
+		$PreprocessorDefinitions		"$BASE;SHADERAPIDX_VK;SHADER_DLL_EXPORT;DXVK_INTEGRATED;PROTECTED_THINGS_ENABLE;strncpy=use_Q_strncpy_instead;_snprintf=use_Q_snprintf_instead"
+		$PreprocessorDefinitions		"$BASE;POSIX;_LINUX" [$POSIX]
+	}
+    
+	$Linker
+	{
+		$SystemLibraries                    "vulkan" [$LINUXALL]
+		$SystemFrameworks					"Carbon;OpenGL;Quartz;Cocoa;IOKit" [$OSXALL]
+		$AdditionalDependencies				"$BASE vulkan-1.lib" [$WIN32]
+	}
+}
+
+$Project "shaderapidxxvk"
+{
+	$Folder	"Source Files"
+	{
+		$File	"$SRCDIR\public\filesystem_helpers.cpp"
+		$File	"colorformatdxvk.cpp"
+		$File	"dxvk_adapter.cpp"
+		$File	"hardwareconfigdxvk.cpp"
+		$File	"shaderapidxvk.cpp"
+		$File	"shaderdevicemgrdxvk.cpp"
+		$File	"TransitionTableDxVk.cpp"
+		$File	"$SRCDIR\public\tier0\memoverride.cpp"
+	}
+
+	$Folder	"Public Header Files"
+	{
+		$File	"$SRCDIR\public\shaderapi\IShaderDevice.h"
+		$File	"$SRCDIR\public\shaderapi\ishaderutil.h"
+		$File	"$SRCDIR\public\shaderapi\ishaderapi.h"
+		$File	"$SRCDIR\public\shaderapi\ishaderdynamic.h"
+		$File	"$SRCDIR\public\shaderapi\ishadershadow.h"
+		$File	"$SRCDIR\public\materialsystem\idebugtextureinfo.h"
+		$File	"$SRCDIR\public\materialsystem\ivballoctracker.h"
+		$File	"$SRCDIR\public\materialsystem\shader_vcs_version.h"
+	}
+
+	$Folder	"Header Files"
+	{
+		$File	"dxvk_adapter.h"
+	}
+	
+	$Folder "Link Libraries"
+	{
+        $Lib	bitmap
+        $Lib	mathlib
+        $Lib	tier0
+        $Lib	tier1
+        $Lib	tier2
+        $Lib	vstdlib
+    }
+}

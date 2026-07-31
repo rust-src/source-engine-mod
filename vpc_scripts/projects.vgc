@@ -875,6 +875,11 @@ $Project "shaderapidx9"
 	"materialsystem\shaderapidx9\shaderapidx9.vpc" [$WINDOWS||$X360||$POSIX]
 }
 
+$Project "shaderapidxxvk"
+{
+	"materialsystem\shaderapidxxvk\shaderapidxxvk.vpc" [$WINDOWS||$POSIX]
+}
+
 $Project "togl"
 {
 	"togl/togl.vpc" [$GL]
