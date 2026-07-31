@@ -36,6 +36,15 @@ fi
 export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
 export NDK_HOME=$PWD/android-ndk-r10e/
 
+# NDK r10e 没有 Vulkan 头文件 (Vulkan headers 从 NDK r14 才加入)
+# 下载 Khronos 官方 Vulkan 头文件
+if [ ! -d "vulkan-headers/include/vulkan" ]; then
+	echo ">>> Downloading Vulkan headers..."
+	wget -q https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.2.182.tar.gz -O vulkan-headers.tar.gz
+	tar -xzf vulkan-headers.tar.gz
+	mv Vulkan-Headers-1.2.182 vulkan-headers
+fi
+
 # Build for armv7a with hard-float (API 24 for Vulkan support)
 # Note: API 24 (Android 7.0) is the minimum for official Vulkan support
 echo ">>> Configuring build (armv7a, Vulkan backend)..."

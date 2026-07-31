@@ -40,6 +40,12 @@ def build(bld):
 		'../public/tier1'
 	] + bld.env.INCLUDES_SDL2
 
+	# NDK r10e (used for Android builds) predates Vulkan and has no Vulkan
+	# headers. Build scripts download Khronos Vulkan-Headers to
+	# <repo>/vulkan-headers/include/ before building.
+	if bld.env.DEST_OS == 'android':
+		includes += ['../vulkan-headers/include']
+
 	defines = []
 
 	libs = ['tier0', 'tier1', 'tier2', 'vstdlib', 'mathlib']

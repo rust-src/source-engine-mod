@@ -37,3 +37,9 @@ waf3*/
 .vscode/
 .depproj/
 source-engine.sln
+# Build-time downloads (NDK, Vulkan headers, LLVM)
+android-ndk-r*/
+vulkan-headers/
+clang+llvm-*/
+*.tar.gz
+*.tar.xz
