@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build-linux-i386:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -13,7 +13,7 @@ jobs:
         scripts/build-ubuntu-i386.sh
 
   build-linux-amd64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -22,7 +22,7 @@ jobs:
         scripts/build-ubuntu-amd64.sh
 
   build-android-armv7a:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -31,7 +31,7 @@ jobs:
         scripts/build-android-armv7a.sh
 
   build-android-vulkan-armv7a:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -42,7 +42,7 @@ jobs:
         scripts/build-android-vulkan.sh
 
   build-android-arm64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -53,7 +53,7 @@ jobs:
         scripts/build-android-arm64.sh
 
   build-android-arm64-vulkan:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -108,7 +108,7 @@ jobs:
         ./waf.bat build
 
   build-dedicated-linux-i386:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5
@@ -117,7 +117,7 @@ jobs:
         scripts/build-ubuntu-i386.sh -d
 
   build-dedicated-linux-amd64:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v5

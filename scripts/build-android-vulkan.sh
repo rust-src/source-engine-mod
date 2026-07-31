@@ -21,6 +21,11 @@ echo "=== Source Engine Android Vulkan Build ==="
 echo ">>> Initializing submodules..."
 git submodule init && git submodule update
 
+# NDK r10e 的 GCC 4.9 工具链是 32 位 ELF，ubuntu-24.04 需要装 32 位运行时库
+sudo dpkg --add-architecture i386
+sudo apt-get update
+sudo apt-get install -y lib32z1 lib32stdc++6
+
 # Download NDK if not present
 if [ ! -d "android-ndk-r10e" ]; then
 	echo ">>> Downloading Android NDK r10e..."
