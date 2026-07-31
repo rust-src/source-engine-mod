@@ -187,7 +187,17 @@ def define_platform(conf):
 	arch64 = conf.run_test(CPP_64BIT_CHECK, 'Testing 64bit support')
 
 	if not (arch32 ^ arch64):
-		conf.fatal('Your compiler sucks')
+		# Cross-compilers (Android, etc.) can't run test programs on the host.
+		# Detect target arch from the Android toolchain config instead.
+		if conf.options.ANDROID_OPTS and hasattr(conf, 'android'):
+			if conf.android.is_arm64() or conf.android.is_amd64():
+				arch64 = True
+				arch32 = False
+			else:
+				arch32 = True
+				arch64 = False
+		else:
+			conf.fatal('Your compiler sucks')
 
 	if conf.options.DEDICATED:
 		conf.options.SDL = False
