@@ -19,7 +19,7 @@
 
 #include "tier1/utllinkedlist.h"
 #include "tier1/convar.h"
-#ifdef TOGLES
+#if defined(TOGLES) || defined(ANDROID)
 #include <EGL/egl.h>
 #endif
 

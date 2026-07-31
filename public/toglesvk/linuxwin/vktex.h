@@ -125,7 +125,8 @@ public:
 	void SetLayout( VkImageLayout layout ) { m_layout = layout; }
 
 private:
-	CVKContext *m_ctx;
+	CVKContext *m_ctx;	// accessed by IDirect3DBaseTexture9 and other D3D wrappers
+	friend struct IDirect3DBaseTexture9;
 	VkImage m_image;
 	VkDeviceMemory m_memory;
 	VkImageView m_view;          // shader resource view

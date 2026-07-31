@@ -253,7 +253,7 @@ IDirect3DBaseTexture9::~IDirect3DBaseTexture9()
 
 		if (m_tex)
 		{
-			m_device->ReleasedCVKTex( m_tex );
+			m_device->ReleasedCGLMTex( m_tex );
 			m_tex->m_ctx->DestroyTex( m_tex );
 			m_tex = NULL;
 		}
@@ -2921,7 +2921,7 @@ void IDirect3DDevice9::ReleasedTexture( IDirect3DBaseTexture9 *baseTex )
 		}
 	}
 }
-void IDirect3DDevice9::ReleasedCVKTex( CVKTex *pTex )				{ ScrubFBOMap( pTex ); }
+void IDirect3DDevice9::ReleasedCGLMTex( CVKTex *pTex )				{ ScrubFBOMap( pTex ); }
 void IDirect3DDevice9::ReleasedSurface( IDirect3DSurface9 *surface )
 {
 	if ( !surface )

@@ -35,6 +35,20 @@
 #include "tier0/platform.h"
 #include "tier0/mem.h"
 
+// GLAliasTable is a GL-era type used by shaderapidx9 for the global function
+// table (gGL) and ToGLConnectLibraries().  The Vulkan backend doesn't use a GL
+// function table, so we provide a dummy typedef so the stubs compile.
+typedef void *GLAliasTable;
+
+// V_max/V_min are used in the ported dxabstract.cpp but not defined in the
+// engine headers.  Provide simple macros.
+#ifndef V_max
+#define V_max(a, b) ((a) > (b) ? (a) : (b))
+#endif
+#ifndef V_min
+#define V_min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 #include "toglesvk/linuxwin/vkbase.h"
 #include "toglesvk/linuxwin/vkentrypoints.h"
 #include "toglesvk/linuxwin/vkcontext.h"

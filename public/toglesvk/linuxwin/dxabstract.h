@@ -584,7 +584,9 @@ private:
 	IDirect3DBaseTexture9		*m_textures[GLM_SAMPLER_COUNT];				// set by SetTexture... NULL if stage inactive
 	
 	// GLM flavor stuff
+public:
 	CVKContext					*m_ctx;
+private:
 	CVKFramebufferMap					*m_pFBOs;
 	bool						m_bFBODirty;
 
