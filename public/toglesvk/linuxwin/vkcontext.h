@@ -189,6 +189,46 @@ struct RenderTargetState_t
 		memset( this, 0, sizeof(*this) );
 	}
 
+	void clear() { V_memset( this, 0, sizeof( *this ) ); }
+
+	inline bool RefersTo( CVKTex * pSurf ) const
+	{
+		for ( uint i = 0; i < MAX_RENDER_TARGETS; i++ )
+			if ( m_pRenderTargets[i] == pSurf )
+				return true;
+
+		if ( m_pDepthStencil == pSurf )
+			return true;
+
+		return false;
+	}
+
+	static inline bool LessFunc( const RenderTargetState_t &lhs, const RenderTargetState_t &rhs )
+	{
+		COMPILE_TIME_ASSERT( sizeof( lhs.m_pRenderTargets[0] ) == sizeof( uintp ) );
+		uint64 lhs0 = reinterpret_cast<const uint64 *>(lhs.m_pRenderTargets)[0];
+		uint64 rhs0 = reinterpret_cast<const uint64 *>(rhs.m_pRenderTargets)[0];
+		if ( lhs0 < rhs0 )
+			return true;
+		else if ( lhs0 == rhs0 )
+		{
+			uint64 lhs1 = reinterpret_cast<const uint64 *>(lhs.m_pRenderTargets)[1];
+			uint64 rhs1 = reinterpret_cast<const uint64 *>(rhs.m_pRenderTargets)[1];
+			if ( lhs1 < rhs1 )
+				return true;
+			else if ( lhs1 == rhs1 )
+			{
+				return lhs.m_pDepthStencil < rhs.m_pDepthStencil;
+			}
+		}
+		return false;
+	}
+
+	inline bool operator < ( const RenderTargetState_t &rhs ) const
+	{
+		return LessFunc( *this, rhs );
+	}
+
 	bool operator==( const RenderTargetState_t &other ) const
 	{
 		return memcmp( this, &other, sizeof(*this) ) == 0;

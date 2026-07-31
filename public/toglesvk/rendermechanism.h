@@ -33,6 +33,7 @@
 
 #include "tier0/basetypes.h"
 #include "tier0/platform.h"
+#include "tier0/mem.h"
 
 #include "toglesvk/linuxwin/vkbase.h"
 #include "toglesvk/linuxwin/vkentrypoints.h"

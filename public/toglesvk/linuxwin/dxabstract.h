@@ -39,6 +39,9 @@
 #include "tier0/platform.h"
 #include "tier0/dbg.h"
 #include "tier1/utlmap.h"
+#include "tier1/utlvector.h"
+#include "tier1/utlbuffer.h"
+#include "tier1/convar.h"
 
 // turn this on to get refcount logging from IUnknown
 #define	IUNKNOWN_ALLOC_SPEW 0
@@ -356,51 +359,7 @@ struct TOGL_CLASS ID3DXMatrixStack //: public IUnknown
 
 typedef ID3DXMatrixStack* LPD3DXMATRIXSTACK;
 
-struct RenderTargetState_t
-{
-	void clear() { V_memset( this, 0, sizeof( *this ) ); }
-
-	CVKTex *m_pRenderTargets[4];
-	CVKTex *m_pDepthStencil;
-
-	inline bool RefersTo( CVKTex * pSurf ) const
-	{
-		for ( uint i = 0; i < 4; i++ )
-			if ( m_pRenderTargets[i] == pSurf )
-				return true;
-
-		if ( m_pDepthStencil == pSurf )
-			return true;
-
-		return false;
-	}
-
-	static inline bool LessFunc( const RenderTargetState_t &lhs, const RenderTargetState_t &rhs ) 
-	{
-		COMPILE_TIME_ASSERT( sizeof( lhs.m_pRenderTargets[0] ) == sizeof( uintp ) );
-		uint64 lhs0 = reinterpret_cast<const uint64 *>(lhs.m_pRenderTargets)[0];
-		uint64 rhs0 = reinterpret_cast<const uint64 *>(rhs.m_pRenderTargets)[0];
-		if ( lhs0 < rhs0 )
-			return true;
-		else if ( lhs0 == rhs0 )
-		{
-			uint64 lhs1 = reinterpret_cast<const uint64 *>(lhs.m_pRenderTargets)[1];
-			uint64 rhs1 = reinterpret_cast<const uint64 *>(rhs.m_pRenderTargets)[1];
-			if ( lhs1 < rhs1 )
-				return true;
-			else if ( lhs1 == rhs1 )
-			{
-				return lhs.m_pDepthStencil < rhs.m_pDepthStencil;
-			}
-		}
-		return false;
-	}
-
-	inline bool operator < ( const RenderTargetState_t &rhs ) const
-	{
-		return LessFunc( *this, rhs );
-	}
-};
+// RenderTargetState_t is defined in vkcontext.h (included via rendermechanism.h)
 
 typedef CUtlMap< RenderTargetState_t, CVKFramebuffer *> CVKFramebufferMap;
 
