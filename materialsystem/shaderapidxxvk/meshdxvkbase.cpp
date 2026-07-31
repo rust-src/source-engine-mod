@@ -415,7 +415,7 @@ extern "C" void DxvkInitIndexDesc( IndexDesc_t* pDesc, void* pBackingMemory, int
 	memset( pDesc, 0, sizeof(IndexDesc_t) );
 	if ( !pBackingMemory ) return;
 
-	pDesc->m_pIndices = pBackingMemory;
+	pDesc->m_pIndices = (unsigned short*)pBackingMemory;
 	pDesc->m_nIndexSize = nIndexSize ? nIndexSize : sizeof(unsigned short);
 }
 

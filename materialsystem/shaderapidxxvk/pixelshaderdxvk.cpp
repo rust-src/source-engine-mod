@@ -301,7 +301,7 @@ PixelShaderHandle_t CPixelShaderDxVk::CreateFromCompiledFile(
 void CPixelShaderDxVk::DestroyShader( PixelShaderHandle_t hShader )
 {
 	if ( !ValidateHandle( hShader ) ) return;
-	int nId = (int)hShader;
+	int nId = (int)(intptr_t)hShader;
 	DxvkPixelShaderMeta_t& meta = s_DxvkPixelShaders[ nId ];
 	meta.nRefCount = ( meta.nRefCount > 0 ) ? meta.nRefCount - 1 : 0;
 	if ( meta.nRefCount == 0 && !meta.bIsStatic )
@@ -317,7 +317,7 @@ void CPixelShaderDxVk::BindShader( PixelShaderHandle_t hShader )
 const DxvkPixelShaderMeta_t* CPixelShaderDxVk::GetShaderMeta( PixelShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return &s_DxvkPixelShaders[ (int)hShader ];
+	return &s_DxvkPixelShaders[ (int)(intptr_t)hShader ];
 }
 
 bool CPixelShaderDxVk::SetConstantFloat( int nSlot, int nRegIndex,
@@ -431,7 +431,7 @@ void CPixelShaderDxVk::SetFlashlightState( bool bEnabled, const float* pMatrix4x
 void CPixelShaderDxVk::AddRef( PixelShaderHandle_t hShader )
 {
 	if ( ValidateHandle( hShader ) )
-		s_DxvkPixelShaders[ (int)hShader ].nRefCount++;
+		s_DxvkPixelShaders[ (int)(intptr_t)hShader ].nRefCount++;
 }
 
 void CPixelShaderDxVk::Release( PixelShaderHandle_t hShader )
@@ -442,25 +442,25 @@ void CPixelShaderDxVk::Release( PixelShaderHandle_t hShader )
 void* CPixelShaderDxVk::GetShaderModule( PixelShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkPixelShaders[ (int)hShader ].pVkShaderModule;
+	return s_DxvkPixelShaders[ (int)(intptr_t)hShader ].pVkShaderModule;
 }
 
 void* CPixelShaderDxVk::GetPipelineLayout( PixelShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkPixelShaders[ (int)hShader ].pPipelineLayoutRef;
+	return s_DxvkPixelShaders[ (int)(intptr_t)hShader ].pPipelineLayoutRef;
 }
 
 uint32_t CPixelShaderDxVk::GetSpirvWordCount( PixelShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return 0;
-	return s_DxvkPixelShaders[ (int)hShader ].nSpirvWordCount;
+	return s_DxvkPixelShaders[ (int)(intptr_t)hShader ].nSpirvWordCount;
 }
 
 const uint32_t* CPixelShaderDxVk::GetSpirvCode( PixelShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkPixelShaders[ (int)hShader ].pSpirvCode;
+	return s_DxvkPixelShaders[ (int)(intptr_t)hShader ].pSpirvCode;
 }
 
 void CPixelShaderDxVk::PurgeUnusedShaders()
@@ -539,7 +539,7 @@ void CPixelShaderDxVk::InitDefaultPixelState()
 
 bool CPixelShaderDxVk::ValidateHandle( PixelShaderHandle_t hShader ) const
 {
-	int nId = (int)hShader;
+	int nId = (int)(intptr_t)hShader;
 	if ( nId <= 0 || nId >= kDxVkMaxPixelShaders ) return false;
 	return s_DxvkPixelShaders[ nId ].bValid;
 }

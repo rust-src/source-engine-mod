@@ -266,7 +266,7 @@ VertexShaderHandle_t CVertexShaderDxVk::CreateFromCompiledFile(
 void CVertexShaderDxVk::DestroyShader( VertexShaderHandle_t hShader )
 {
 	if ( !ValidateHandle( hShader ) ) return;
-	int nId = (int)hShader;
+	int nId = (int)(intptr_t)hShader;
 	DxvkVertexShaderMeta_t& meta = s_DxvkVertexShaders[ nId ];
 	meta.nRefCount = ( meta.nRefCount > 0 ) ? meta.nRefCount - 1 : 0;
 	if ( meta.nRefCount == 0 && !meta.bIsStatic )
@@ -282,7 +282,7 @@ void CVertexShaderDxVk::BindShader( VertexShaderHandle_t hShader )
 const DxvkVertexShaderMeta_t* CVertexShaderDxVk::GetShaderMeta( VertexShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return &s_DxvkVertexShaders[ (int)hShader ];
+	return &s_DxvkVertexShaders[ (int)(intptr_t)hShader ];
 }
 
 bool CVertexShaderDxVk::SetConstantFloat( int nSlot, int nRegIndex,
@@ -396,7 +396,7 @@ void CVertexShaderDxVk::SetLight( int nLightIndex, const float* pLightPos,
 void CVertexShaderDxVk::AddRef( VertexShaderHandle_t hShader )
 {
 	if ( ValidateHandle( hShader ) )
-		s_DxvkVertexShaders[ (int)hShader ].nRefCount++;
+		s_DxvkVertexShaders[ (int)(intptr_t)hShader ].nRefCount++;
 }
 
 void CVertexShaderDxVk::Release( VertexShaderHandle_t hShader )
@@ -407,25 +407,25 @@ void CVertexShaderDxVk::Release( VertexShaderHandle_t hShader )
 void* CVertexShaderDxVk::GetShaderModule( VertexShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkVertexShaders[ (int)hShader ].pVkShaderModule;
+	return s_DxvkVertexShaders[ (int)(intptr_t)hShader ].pVkShaderModule;
 }
 
 void* CVertexShaderDxVk::GetPipelineLayout( VertexShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkVertexShaders[ (int)hShader ].pPipelineLayoutRef;
+	return s_DxvkVertexShaders[ (int)(intptr_t)hShader ].pPipelineLayoutRef;
 }
 
 uint32_t CVertexShaderDxVk::GetSpirvWordCount( VertexShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return 0;
-	return s_DxvkVertexShaders[ (int)hShader ].nSpirvWordCount;
+	return s_DxvkVertexShaders[ (int)(intptr_t)hShader ].nSpirvWordCount;
 }
 
 const uint32_t* CVertexShaderDxVk::GetSpirvCode( VertexShaderHandle_t hShader ) const
 {
 	if ( !ValidateHandle( hShader ) ) return nullptr;
-	return s_DxvkVertexShaders[ (int)hShader ].pSpirvCode;
+	return s_DxvkVertexShaders[ (int)(intptr_t)hShader ].pSpirvCode;
 }
 
 void CVertexShaderDxVk::PurgeUnusedShaders()
@@ -482,7 +482,7 @@ void CVertexShaderDxVk::InitDefaultCBuffers()
 
 bool CVertexShaderDxVk::ValidateHandle( VertexShaderHandle_t hShader ) const
 {
-	int nId = (int)hShader;
+	int nId = (int)(intptr_t)hShader;
 	if ( nId <= 0 || nId >= kDxVkMaxVertexShaders ) return false;
 	return s_DxvkVertexShaders[ nId ].bValid;
 }

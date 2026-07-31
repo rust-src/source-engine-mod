@@ -468,6 +468,11 @@ def configure(conf):
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
 	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
+
+	# Re-apply forced target CPU after compiler detection, which may overwrite it.
+	if forced_cpu:
+		conf.env.DEST_CPU = forced_cpu
+
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
 	elif conf.env.DEST_OS == 'darwin':

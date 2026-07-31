@@ -158,7 +158,7 @@ uint32_t CDxvkSwapchain::AcquireNextImage( uint64_t timeout, uint32_t semaphore,
 bool CDxvkSwapchain::Present( uint32_t nWaitSemaphoreCount, const uint32_t* pWaitSemaphores,
 							  uint32_t nImageIndex, VkResult* pPresentResult )
 {
-	if ( pPresentResult ) *pPresentResult = 0;
+	if ( pPresentResult ) *pPresentResult = VK_SUCCESS;
 	return true;
 }
 
