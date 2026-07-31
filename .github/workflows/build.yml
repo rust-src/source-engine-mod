@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build linux-i386
       run: |
         scripts/build-ubuntu-i386.sh
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build android-armv7a
       run: |
         scripts/build-android-armv7a.sh
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
     - name: Build android-vulkan-armv7a
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
     - name: Build android-arm64
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
       with:
         submodules: recursive
     - name: Build android-arm64-vulkan
@@ -67,7 +67,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build windows-i386
       run: |
         git submodule init && git submodule update
@@ -78,7 +78,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build windows-amd64
       run: |
         git submodule init && git submodule update
@@ -89,7 +89,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated windows-i386
       run: |
         git submodule init && git submodule update
@@ -100,7 +100,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated windows-amd64
       run: |
         git submodule init && git submodule update
@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated linux-i386
       run: |
         scripts/build-ubuntu-i386.sh -d
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated linux-amd64
       run: |
         scripts/build-ubuntu-amd64.sh -d
@@ -129,7 +129,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build macos-amd64
       run: |
         scripts/build-macos-amd64.sh
@@ -138,7 +138,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Build dedicated macos-amd64
       run: |
         scripts/build-macos-amd64.sh -d
