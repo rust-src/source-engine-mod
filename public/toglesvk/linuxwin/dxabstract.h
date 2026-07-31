@@ -318,11 +318,11 @@ struct TOGL_CLASS IDirect3DVertexShader9 : public IDirect3DResource9	//was IUnkn
 };
 
 #ifdef _MSC_VER
-	typedef class TOGL_CLASS CUtlMemory<D3DMATRIX> CD3DMATRIXAllocator;
-	typedef class TOGL_CLASS CUtlVector<D3DMATRIX, CD3DMATRIXAllocator> CD3DMATRIXStack;
+	typedef class TOGL_CLASS CUtlMemory<D3DXMATRIX> CD3DMATRIXAllocator;
+	typedef class TOGL_CLASS CUtlVector<D3DXMATRIX, CD3DMATRIXAllocator> CD3DMATRIXStack;
 #else
-	typedef class CUtlMemory<D3DMATRIX> CD3DMATRIXAllocator;
-	typedef class CUtlVector<D3DMATRIX, CD3DMATRIXAllocator> CD3DMATRIXStack;
+	typedef class CUtlMemory<D3DXMATRIX> CD3DMATRIXAllocator;
+	typedef class CUtlVector<D3DXMATRIX, CD3DMATRIXAllocator> CD3DMATRIXStack;
 #endif
 
 struct TOGL_CLASS ID3DXMatrixStack //: public IUnknown
@@ -563,6 +563,7 @@ private:
 	DWORD						m_nValidMarker;
 public:
 	IDirect3DDevice9Params	m_params;						// mirror of the creation inputs
+	ObjectStats_t				m_ObjectStats;					// accessed from helper functions
 private:
 
 	// D3D flavor stuff
@@ -637,8 +638,8 @@ private:
 		VKDepthMask_t				m_DepthMask;
 		VKDepthFunc_t				m_DepthFunc;
 
-		VKClipPlaneEnable_t			m_ClipPlaneEnable[kVKUserClipPlanes];
-		VKClipPlaneEquation_t		m_ClipPlaneEquation[kVKUserClipPlanes];
+		VKClipPlaneEnable_t			m_ClipPlaneEnable;
+		VKClipPlaneEquation_t		m_ClipPlaneEquation;
 
 		VKColorMaskSingle_t			m_ColorMaskSingle;
 		VKColorMaskMultiple_t		m_ColorMaskMultiple;
@@ -1090,11 +1091,11 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 			// GLM is tracking one unique enable per plane.
 			for( int i=0; i<kVKUserClipPlanes; i++)
 			{
-				gl.m_ClipPlaneEnable[i].enable = (Value & (1<<i)) != 0;
+				gl.m_ClipPlaneEnable.value[i] = (Value & (1<<i)) != 0;
 			}
 
 			for( int x=0; x<kVKUserClipPlanes; x++)
-				m_ctx->WriteClipPlaneEnable( &gl.m_ClipPlaneEnable[x], x );
+				m_ctx->WriteClipPlaneEnable( x, gl.m_ClipPlaneEnable.value[x] );
 			break;
 		}
 		//-------------------------------------------------------------------------------------------- polygon/fill mode

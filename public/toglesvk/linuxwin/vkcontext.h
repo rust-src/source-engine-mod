@@ -426,6 +426,7 @@ private:
 	VKTexSamplingParams m_samplerParams[VK_SAMPLER_COUNT];
 	CVKTex *m_samplerTexs[VK_SAMPLER_COUNT];
 	bool m_samplerDirty[VK_SAMPLER_COUNT];
+	friend struct IDirect3DDevice9;	// D3D wrapper accesses sampler state directly
 
 	// Framebuffer cache
 	CVKFramebufferMap m_fboMap;

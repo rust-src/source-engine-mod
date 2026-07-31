@@ -61,6 +61,10 @@
 	Assert( dev->GetCurrentOwnerThreadId() == ThreadGetCurrentId() ); \
 	Assert( dev->m_nValidMarker == D3D_DEVICE_VALID_MARKER );
 
+#define VK_PUBLIC_ENTRYPOINT_CHECKS_RET_VOID \
+	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() ); \
+	Assert( m_nValidMarker == D3D_DEVICE_VALID_MARKER );
+
 // ------------------------------------------------------------------------------------------------------------------------------ //
 // Global state
 // ------------------------------------------------------------------------------------------------------------------------------ //
@@ -2392,7 +2396,6 @@ HRESULT IDirect3DDevice9::SetRenderState(D3DRENDERSTATETYPE State,DWORD Value)
 		case D3DRS_ANTIALIASEDLINEENABLE:
 		case D3DRS_MINTESSELLATIONLEVEL:
 		case D3DRS_MAXTESSELLATIONLEVEL:
-		case D3DRS_ADAPTIVETESSELLATION:
 		case D3DRS_ENABLEADAPTIVETESSELLATION:
 		case D3DRS_TEXTUREFACTOR:
 		case D3DRS_WRAP0:

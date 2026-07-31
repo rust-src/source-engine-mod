@@ -219,6 +219,12 @@ def define_platform(conf):
 			'DX_TO_GL_ABSTRACTION',  # Reuse GL abstraction code paths in shaderapidx9
 			'BINK_VIDEO'
 		])
+		# NDK r10e (Android) predates Vulkan and has no Vulkan headers.
+		# Build scripts download Khronos Vulkan-Headers to <repo>/vulkan-headers/.
+		# Add it to the global include path so every module that includes
+		# public/toglesvk/rendermechanism.h (e.g. shaderapidx9) can find vulkan.h.
+		if conf.env.DEST_OS == 'android':
+			conf.env.append_unique('INCLUDES', [os.path.abspath('vulkan-headers/include')])
 
 	if conf.options.TOGLES:
 		conf.env.append_unique('DEFINES', ['TOGLES'])
