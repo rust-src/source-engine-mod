@@ -179,7 +179,8 @@ def define_platform(conf):
 	conf.env.DEDICATED = conf.options.DEDICATED
 	conf.env.TESTS = conf.options.TESTS
 	conf.env.TOGLES = conf.options.TOGLES
-	conf.env.GL = conf.options.GL and not conf.options.TESTS and not conf.options.DEDICATED
+	conf.env.VULKAN = conf.options.VULKAN
+	conf.env.GL = conf.options.GL and not conf.options.TESTS and not conf.options.DEDICATED and not conf.options.VULKAN
 	conf.env.OPUS = conf.options.OPUS
 
 	arch32 = conf.run_test(CPP_32BIT_CHECK, 'Testing 32bit support')
@@ -199,6 +200,13 @@ def define_platform(conf):
 		conf.env.append_unique('DEFINES', [
 			'DX_TO_GL_ABSTRACTION',
 			'GL_GLEXT_PROTOTYPES',
+			'BINK_VIDEO'
+		])
+
+	if conf.env.VULKAN:
+		conf.env.append_unique('DEFINES', [
+			'DX_TO_VK_ABSTRACTION',
+			'DX_TO_GL_ABSTRACTION',  # Reuse GL abstraction code paths in shaderapidx9
 			'BINK_VIDEO'
 		])
 
@@ -313,6 +321,9 @@ def options(opt):
 
 	grp.add_option('--togles', action = 'store_true', dest = 'TOGLES', default = False,
 		help = 'build engine with ToGLES [default: %default]')
+
+	grp.add_option('--use-vulkan', action = 'store_true', dest = 'VULKAN', default = False,
+		help = 'build engine with Vulkan DX9-to-Vulkan translation layer [default: %default]')
 
 	# TODO(nillerusr): add wscript for opus building
 	grp.add_option('--enable-opus', action = 'store_true', dest = 'OPUS', default = False,
@@ -460,6 +471,8 @@ def configure(conf):
 
 	if conf.env.TOGLES:
 		projects['game'] += ['togles']
+	elif conf.env.VULKAN:
+		projects['game'] += ['toglesvk']
 	elif conf.env.GL:
 		projects['game'] += ['togl']
 
@@ -645,6 +658,8 @@ def build(bld):
 	else:
 		if bld.env.TOGLES:
 			projects['game'] += ['togles']
+		elif bld.env.VULKAN:
+			projects['game'] += ['toglesvk']
 		elif bld.env.GL:
 			projects['game'] += ['togl']
 

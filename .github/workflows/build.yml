@@ -30,6 +30,17 @@ jobs:
       run: |
         scripts/build-android-armv7a.sh
 
+  build-android-vulkan-armv7a:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Build android-vulkan-armv7a
+      run: |
+        scripts/build-android-vulkan.sh
+
   build-windows-i386:
     runs-on: windows-2019
 
