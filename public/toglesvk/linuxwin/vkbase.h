@@ -137,6 +137,26 @@ enum VKDriverProvider
 #define VK_VENDOR_ID_ARM       0x13B5
 #define VK_VENDOR_ID_IMGTEC    0x1010
 
+// GL type constant compatibility defines
+// These are used by dxabstract_types.h vertex declaration processing
+// Since we don't include GL headers in the Vulkan path, define them here
+#define GL_BYTE              0x1400
+#define GL_UNSIGNED_BYTE     0x1401
+#define GL_SHORT             0x1402
+#define GL_UNSIGNED_SHORT    0x1403
+#define GL_INT               0x1404
+#define GL_FLOAT             0x1406
+#define GL_HALF_FLOAT        0x140B
+#define GL_DOUBLE            0x140A
+#define GL_UNSIGNED_INT      0x1405
+
+// GL boolean constants
+#define GL_FALSE             0
+#define GL_TRUE              1
+
+// GLM compatibility constants (used by inline methods in dxabstract.h)
+#define GLM_SAMPLER_COUNT    VK_SAMPLER_COUNT
+
 #endif // DX_TO_VK_ABSTRACTION
 
 #endif // VKBASE_H

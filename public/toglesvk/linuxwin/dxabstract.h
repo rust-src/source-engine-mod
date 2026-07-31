@@ -669,16 +669,16 @@ private:
 	{
 		// render state buckets
 		VKAlphaTestEnable_t			m_AlphaTestEnable;
-		VKAlphaTestFunc_t			m_AlphaTestFunc;
+		VkCompareOp					m_AlphaTestFunc;
 
-		VKAlphaToCoverageEnable_t	m_AlphaToCoverageEnable;
+		bool						m_AlphaToCoverageEnable;
 
 		VKDepthTestEnable_t			m_DepthTestEnable;
 		VKDepthMask_t				m_DepthMask;
 		VKDepthFunc_t				m_DepthFunc;
 
-		VKClipPlaneEnable_t			m_ClipPlaneEnable[kGLMUserClipPlanes];
-		VKClipPlaneEquation_t		m_ClipPlaneEquation[kGLMUserClipPlanes];
+		VKClipPlaneEnable_t			m_ClipPlaneEnable[kVKUserClipPlanes];
+		VKClipPlaneEquation_t		m_ClipPlaneEquation[kVKUserClipPlanes];
 
 		VKColorMaskSingle_t			m_ColorMaskSingle;
 		VKColorMaskMultiple_t		m_ColorMaskMultiple;
@@ -743,6 +743,9 @@ private:
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetSamplerState( DWORD Sampler, D3DSAMPLERSTATETYPE Type, DWORD Value )
 {
+	// Vulkan backend: always use non-inline path
+	return SetSamplerStateNonInline( Sampler, Type, Value );
+#if 0 // GL inline path - disabled for Vulkan
 #if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetSamplerStateNonInline( Sampler, Type, Value );
 #else
@@ -795,6 +798,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetSamplerState( DWORD 
 	}
 	return S_OK;
 #endif
+#endif // #if 0 - disabled GL inline path for SetSamplerState
 }
 
 FORCEINLINE void TOGLMETHODCALLTYPE IDirect3DDevice9::SetSamplerStates(
@@ -802,116 +806,92 @@ FORCEINLINE void TOGLMETHODCALLTYPE IDirect3DDevice9::SetSamplerStates(
 	DWORD MinFilter, DWORD MagFilter, DWORD MipFilter, DWORD MinLod,
 	float LodBias)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
+	// Vulkan backend: always use non-inline path
 	SetSamplerStatesNonInline( Sampler, AddressU, AddressV, AddressW, MinFilter, MagFilter, MipFilter, MinLod, LodBias );
-#else
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	Assert( Sampler < GLM_SAMPLER_COUNT);
-		
-	m_ctx->SetSamplerDirty( Sampler );
-		
-	m_ctx->SetSamplerStates( Sampler, AddressU, AddressV, AddressW, MinFilter, MagFilter, MipFilter, MinLod, LodBias );
-#endif
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetTexture(DWORD Stage,IDirect3DBaseTexture9* pTexture)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
+	// Vulkan backend: always use non-inline path
 	return SetTextureNonInline( Stage, pTexture );
-#else
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	Assert( Stage < GLM_SAMPLER_COUNT );
-	m_textures[Stage] = pTexture;
-	m_ctx->SetSamplerTex( Stage, pTexture ? pTexture->m_tex : NULL );
-	return S_OK;
-#endif
 }
 
-inline GLenum D3DCompareFuncToGL( DWORD function )
+inline VkCompareOp D3DCompareFuncToVK( DWORD function )
 {
 	switch ( function )
 	{
-		case D3DCMP_NEVER		: return GL_NEVER;				// Always fail the test.
-		case D3DCMP_LESS		: return GL_LESS;				// Accept the new pixel if its value is less than the value of the current pixel.
-		case D3DCMP_EQUAL		: return GL_EQUAL;				// Accept the new pixel if its value equals the value of the current pixel.
-		case D3DCMP_LESSEQUAL	: return GL_LEQUAL;				// Accept the new pixel if its value is less than or equal to the value of the current pixel. **
-		case D3DCMP_GREATER		: return GL_GREATER;			// Accept the new pixel if its value is greater than the value of the current pixel.
-		case D3DCMP_NOTEQUAL	: return GL_NOTEQUAL;			// Accept the new pixel if its value does not equal the value of the current pixel.
-		case D3DCMP_GREATEREQUAL: return GL_GEQUAL;				// Accept the new pixel if its value is greater than or equal to the value of the current pixel.
-		case D3DCMP_ALWAYS		: return GL_ALWAYS;				// Always pass the test.
-		default					: DXABSTRACT_BREAK_ON_ERROR(); return 0xFFFFFFFF;
+		case D3DCMP_NEVER		: return VK_COMPARE_OP_NEVER;
+		case D3DCMP_LESS		: return VK_COMPARE_OP_LESS;
+		case D3DCMP_EQUAL		: return VK_COMPARE_OP_EQUAL;
+		case D3DCMP_LESSEQUAL	: return VK_COMPARE_OP_LESS_OR_EQUAL;
+		case D3DCMP_GREATER		: return VK_COMPARE_OP_GREATER;
+		case D3DCMP_NOTEQUAL	: return VK_COMPARE_OP_NOT_EQUAL;
+		case D3DCMP_GREATEREQUAL: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+		case D3DCMP_ALWAYS		: return VK_COMPARE_OP_ALWAYS;
+		default					: DXABSTRACT_BREAK_ON_ERROR(); return (VkCompareOp)0xFFFFFFFF;
 	}
 }
 
-FORCEINLINE GLenum D3DBlendOperationToGL( DWORD operation )
+FORCEINLINE VkBlendOp D3DBlendOperationToVK( DWORD operation )
 {
 	switch (operation)
 	{
-		case	D3DBLENDOP_ADD			: return GL_FUNC_ADD;				// The result is the destination added to the source. Result = Source + Destination
-		case	D3DBLENDOP_SUBTRACT		: return GL_FUNC_SUBTRACT;			// The result is the destination subtracted from to the source. Result = Source - Destination
-		case	D3DBLENDOP_REVSUBTRACT	: return GL_FUNC_REVERSE_SUBTRACT;	// The result is the source subtracted from the destination. Result = Destination - Source
-		case	D3DBLENDOP_MIN			: return GL_MIN;					// The result is the minimum of the source and destination. Result = MIN(Source, Destination)
-		case	D3DBLENDOP_MAX			: return GL_MAX;					// The result is the maximum of the source and destination. Result = MAX(Source, Destination)
+		case	D3DBLENDOP_ADD			: return VK_BLEND_OP_ADD;
+		case	D3DBLENDOP_SUBTRACT		: return VK_BLEND_OP_SUBTRACT;
+		case	D3DBLENDOP_REVSUBTRACT	: return VK_BLEND_OP_REVERSE_SUBTRACT;
+		case	D3DBLENDOP_MIN			: return VK_BLEND_OP_MIN;
+		case	D3DBLENDOP_MAX			: return VK_BLEND_OP_MAX;
 		default:
 			DXABSTRACT_BREAK_ON_ERROR();
-			return 0xFFFFFFFF;
+			return (VkBlendOp)0xFFFFFFFF;
 		break;
 	}
 }
 
-FORCEINLINE GLenum D3DBlendFactorToGL( DWORD equation )
+FORCEINLINE VkBlendFactor D3DBlendFactorToVK( DWORD equation )
 {
 	switch (equation)
 	{
-		case	D3DBLEND_ZERO			: return GL_ZERO;					// Blend factor is (0, 0, 0, 0).
-		case	D3DBLEND_ONE			: return GL_ONE;					// Blend factor is (1, 1, 1, 1).
-		case	D3DBLEND_SRCCOLOR		: return GL_SRC_COLOR;				// Blend factor is (Rs, Gs, Bs, As).
-		case	D3DBLEND_INVSRCCOLOR	: return GL_ONE_MINUS_SRC_COLOR;	// Blend factor is (1 - Rs, 1 - Gs, 1 - Bs, 1 - As).
-		case	D3DBLEND_SRCALPHA		: return GL_SRC_ALPHA;				// Blend factor is (As, As, As, As).
-		case	D3DBLEND_INVSRCALPHA	: return GL_ONE_MINUS_SRC_ALPHA;	// Blend factor is ( 1 - As, 1 - As, 1 - As, 1 - As).
-		case	D3DBLEND_DESTALPHA		: return GL_DST_ALPHA;				// Blend factor is (Ad Ad Ad Ad).
-		case	D3DBLEND_INVDESTALPHA	: return GL_ONE_MINUS_DST_ALPHA;	// Blend factor is (1 - Ad 1 - Ad 1 - Ad 1 - Ad).
-		case	D3DBLEND_DESTCOLOR		: return GL_DST_COLOR;				// Blend factor is (Rd, Gd, Bd, Ad).
-		case	D3DBLEND_INVDESTCOLOR	: return GL_ONE_MINUS_DST_COLOR;	// Blend factor is (1 - Rd, 1 - Gd, 1 - Bd, 1 - Ad).
-		case	D3DBLEND_SRCALPHASAT	: return GL_SRC_ALPHA_SATURATE;		// Blend factor is (f, f, f, 1); where f = min(As, 1 - Ad).
-
-		/*
-			// these are weird.... break if we hit them
-			case	D3DBLEND_BOTHSRCALPHA	: Assert(0); return GL_ZERO;		// Obsolete. Starting with DirectX 6, you can achieve the same effect by setting the source and destination blend factors to D3DBLEND_SRCALPHA and D3DBLEND_INVSRCALPHA in separate calls.
-			case	D3DBLEND_BOTHINVSRCALPHA: Assert(0); return GL_ZERO;		// Source blend factor is (1 - As, 1 - As, 1 - As, 1 - As), and destination blend factor is (As, As, As, As); the destination blend selection is overridden. This blend mode is supported only for the D3DRS_SRCBLEND render state.
-			case	D3DBLEND_BLENDFACTOR	: Assert(0); return GL_ZERO;		// Constant color blending factor used by the frame-buffer blender. This blend mode is supported only if D3DPBLENDCAPS_BLENDFACTOR is set in the SrcBlendCaps or DestBlendCaps members of D3DCAPS9.
-		
-		dxabstract.h has not heard of these, so let them hit the debugger if they come through
-			case	D3DBLEND_INVBLENDFACTOR:	//Inverted constant color-blending factor used by the frame-buffer blender. This blend mode is supported only if the D3DPBLENDCAPS_BLENDFACTOR bit is set in the SrcBlendCaps or DestBlendCaps members of D3DCAPS9.
-			case	D3DBLEND_SRCCOLOR2:		// Blend factor is (PSOutColor[1]r, PSOutColor[1]g, PSOutColor[1]b, not used).	This flag is available in Direct3D 9Ex only.
-			case	D3DBLEND_INVSRCCOLOR2:	// Blend factor is (1 - PSOutColor[1]r, 1 - PSOutColor[1]g, 1 - PSOutColor[1]b, not used)). This flag is available in Direct3D 9Ex only.
-		*/
+		case	D3DBLEND_ZERO			: return VK_BLEND_FACTOR_ZERO;
+		case	D3DBLEND_ONE			: return VK_BLEND_FACTOR_ONE;
+		case	D3DBLEND_SRCCOLOR		: return VK_BLEND_FACTOR_SRC_COLOR;
+		case	D3DBLEND_INVSRCCOLOR	: return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+		case	D3DBLEND_SRCALPHA		: return VK_BLEND_FACTOR_SRC_ALPHA;
+		case	D3DBLEND_INVSRCALPHA	: return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		case	D3DBLEND_DESTALPHA		: return VK_BLEND_FACTOR_DST_ALPHA;
+		case	D3DBLEND_INVDESTALPHA	: return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+		case	D3DBLEND_DESTCOLOR		: return VK_BLEND_FACTOR_DST_COLOR;
+		case	D3DBLEND_INVDESTCOLOR	: return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+		case	D3DBLEND_SRCALPHASAT	: return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
 		default:
 			DXABSTRACT_BREAK_ON_ERROR();
-			return 0xFFFFFFFF;
+			return (VkBlendFactor)0xFFFFFFFF;
 		break;
 	}
 }
 
 
-FORCEINLINE GLenum D3DStencilOpToGL( DWORD operation )
+FORCEINLINE VkStencilOp D3DStencilOpToVK( DWORD operation )
 {
 	switch( operation )
 	{
-		case D3DSTENCILOP_KEEP		: return GL_KEEP;
-		case D3DSTENCILOP_ZERO		: return GL_ZERO;
-		case D3DSTENCILOP_REPLACE	: return GL_REPLACE;
-		case D3DSTENCILOP_INCRSAT	: return GL_INCR;
-		case D3DSTENCILOP_DECRSAT	: return GL_DECR;
-		case D3DSTENCILOP_INVERT	: return GL_INVERT;
-		case D3DSTENCILOP_INCR		: return GL_INCR_WRAP_EXT;
-		case D3DSTENCILOP_DECR		: return GL_DECR_WRAP_EXT;
-		default						: DXABSTRACT_BREAK_ON_ERROR(); return 0xFFFFFFFF;
+		case D3DSTENCILOP_KEEP		: return VK_STENCIL_OP_KEEP;
+		case D3DSTENCILOP_ZERO		: return VK_STENCIL_OP_ZERO;
+		case D3DSTENCILOP_REPLACE	: return VK_STENCIL_OP_REPLACE;
+		case D3DSTENCILOP_INCRSAT	: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+		case D3DSTENCILOP_DECRSAT	: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+		case D3DSTENCILOP_INVERT	: return VK_STENCIL_OP_INVERT;
+		case D3DSTENCILOP_INCR		: return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+		case D3DSTENCILOP_DECR		: return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+		default						: DXABSTRACT_BREAK_ON_ERROR(); return (VkStencilOp)0xFFFFFFFF;
 	}
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D3DRENDERSTATETYPE State, DWORD Value )
 {
+	// Vulkan backend: always use non-inline path for correctness
+	return SetRenderState( State, Value );
+#if 0 // Original GL inline path below - disabled for Vulkan
 #if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetRenderState( State, Value );
 #else
@@ -935,7 +915,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		case D3DRS_ZFUNC:	
 		{
 			// kGLDepthFunc
-			GLenum func = D3DCompareFuncToGL( Value );
+			VkCompareOp func = D3DCompareFuncToVK( Value );
 			gl.m_DepthFunc.func = func;
 			m_ctx->WriteDepthFunc( &gl.m_DepthFunc );
 			break;
@@ -998,7 +978,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_BLENDOP:				// kGLBlendEquation				// D3D blend-op ==> GL blend equation
 		{
-			GLenum	equation = D3DBlendOperationToGL( Value );
+			VkBlendOp equation = D3DBlendOperationToVK( Value );
 			gl.m_BlendEquation.equation = equation;
 			m_ctx->WriteBlendEquation( &gl.m_BlendEquation );
 			break;
@@ -1006,7 +986,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		case D3DRS_SRCBLEND:				// kGLBlendFactor				// D3D blend-factor ==> GL blend factor
 		case D3DRS_DESTBLEND:			// kGLBlendFactor
 		{
-			GLenum	factor = D3DBlendFactorToGL( Value );
+			VkBlendFactor factor = D3DBlendFactorToVK( Value );
 
 			if (State==D3DRS_SRCBLEND)
 			{
@@ -1040,7 +1020,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_ALPHAFUNC:
 		{
-			GLenum func = D3DCompareFuncToGL( Value );;
+			VkCompareOp func = D3DCompareFuncToVK( Value );;
 			gl.m_AlphaTestFunc.func = func;
 			m_ctx->WriteAlphaTestFunc( &gl.m_AlphaTestFunc );
 			break;
@@ -1054,7 +1034,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_STENCILFAIL:			// VKStencilOp_t		"what do you do if stencil test fails"
 		{
-			GLenum stencilop = D3DStencilOpToGL( Value );
+			VkStencilOp stencilop = D3DStencilOpToVK( Value );
 			gl.m_StencilOp.sfail = stencilop;
 
 			m_ctx->WriteStencilOp( &gl.m_StencilOp,0 );
@@ -1063,7 +1043,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_STENCILZFAIL:			// VKStencilOp_t		"what do you do if stencil test passes *but* depth test fails, if depth test happened"
 		{
-			GLenum stencilop = D3DStencilOpToGL( Value );
+			VkStencilOp stencilop = D3DStencilOpToVK( Value );
 			gl.m_StencilOp.dpfail = stencilop;
 
 			m_ctx->WriteStencilOp( &gl.m_StencilOp,0 );
@@ -1072,7 +1052,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_STENCILPASS:			// VKStencilOp_t		"what do you do if stencil test and depth test both pass"
 		{
-			GLenum stencilop = D3DStencilOpToGL( Value );
+			VkStencilOp stencilop = D3DStencilOpToVK( Value );
 			gl.m_StencilOp.dppass = stencilop;
 
 			m_ctx->WriteStencilOp( &gl.m_StencilOp,0 );
@@ -1081,7 +1061,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		}
 		case D3DRS_STENCILFUNC:			// VKStencilFunc_t
 		{
-			GLenum stencilfunc = D3DCompareFuncToGL( Value );
+			VkCompareOp stencilfunc = D3DCompareFuncToVK( Value );
 			gl.m_StencilFunc.frontfunc = gl.m_StencilFunc.backfunc = stencilfunc;
 
 			m_ctx->WriteStencilFunc( &gl.m_StencilFunc );
@@ -1148,12 +1128,12 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 			// d3d packs all the enables into one word.
 			// we break that out so we don't do N glEnable calls to sync - 
 			// GLM is tracking one unique enable per plane.
-			for( int i=0; i<kGLMUserClipPlanes; i++)
+			for( int i=0; i<kVKUserClipPlanes; i++)
 			{
 				gl.m_ClipPlaneEnable[i].enable = (Value & (1<<i)) != 0;
 			}
 
-			for( int x=0; x<kGLMUserClipPlanes; x++)
+			for( int x=0; x<kVKUserClipPlanes; x++)
 				m_ctx->WriteClipPlaneEnable( &gl.m_ClipPlaneEnable[x], x );
 			break;
 		}
@@ -1176,6 +1156,7 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateInline( D
 		
 	return S_OK;
 #endif
+#endif // #if 0 - disabled GL inline path
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetRenderStateConstInline( D3DRENDERSTATETYPE State, DWORD Value )
@@ -1235,74 +1216,32 @@ FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetStreamSource(UINT St
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetVertexShaderConstantF(UINT StartRegister,CONST float* pConstantData,UINT Vector4fCount)	// groups of 4 floats!
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetVertexShaderConstantFNonInline( StartRegister, pConstantData, Vector4fCount );
-#else
-	TOGL_NULL_DEVICE_CHECK;
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetProgramParametersF( kGLMVertexProgram, StartRegister, (float *)pConstantData, Vector4fCount );
-	return S_OK;
-#endif
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetVertexShaderConstantB(UINT StartRegister,CONST BOOL* pConstantData,UINT  BoolCount)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetVertexShaderConstantBNonInline( StartRegister, pConstantData, BoolCount );
-#else
-	TOGL_NULL_DEVICE_CHECK;
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetProgramParametersB( kGLMVertexProgram, StartRegister, (int *)pConstantData, BoolCount );
-	return S_OK;
-#endif
 }
 
 FORCEINLINE HRESULT IDirect3DDevice9::SetVertexShaderConstantI(UINT StartRegister,CONST int* pConstantData,UINT Vector4iCount)		// groups of 4 ints!
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetVertexShaderConstantINonInline( StartRegister, pConstantData, Vector4iCount );
-#else
-	TOGL_NULL_DEVICE_CHECK;
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetProgramParametersI( kGLMVertexProgram, StartRegister, (int *)pConstantData, Vector4iCount );
-	return S_OK;
-#endif
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetPixelShaderConstantF(UINT StartRegister,CONST float* pConstantData,UINT Vector4fCount)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetPixelShaderConstantFNonInline(StartRegister, pConstantData, Vector4fCount);
-#else
-	TOGL_NULL_DEVICE_CHECK;
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetProgramParametersF( kGLMFragmentProgram, StartRegister, (float *)pConstantData, Vector4fCount );
-	return S_OK;
-#endif
 }
 
 HRESULT IDirect3DDevice9::SetVertexShader(IDirect3DVertexShader9* pShader)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetVertexShaderNonInline(pShader);
-#else
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetVertexProgram( pShader ? pShader->m_vtxProgram : NULL );
-	m_vertexShader = pShader;
-	return S_OK;
-#endif
 }
 
 FORCEINLINE HRESULT TOGLMETHODCALLTYPE IDirect3DDevice9::SetPixelShader(IDirect3DPixelShader9* pShader)
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
 	return SetPixelShaderNonInline(pShader);
-#else
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetFragmentProgram( pShader ? pShader->m_pixProgram : NULL );
-	m_pixelShader = pShader;
-	return S_OK;
-#endif
 }
 
 FORCEINLINE HRESULT IDirect3DDevice9::SetVertexDeclaration(IDirect3DVertexDeclaration9* pDecl)
@@ -1318,12 +1257,7 @@ FORCEINLINE HRESULT IDirect3DDevice9::SetVertexDeclaration(IDirect3DVertexDeclar
 
 FORCEINLINE void IDirect3DDevice9::SetMaxUsedVertexShaderConstantsHint( uint nMaxReg )
 {
-#if GLMDEBUG || VK_BATCH_PERF_ANALYSIS
-	return SetMaxUsedVertexShaderConstantsHintNonInline( nMaxReg );
-#else
-	Assert( GetCurrentOwnerThreadId() == ThreadGetCurrentId() );
-	m_ctx->SetMaxUsedVertexShaderConstantsHint( nMaxReg );
-#endif
+	// Vulkan backend: no-op for now (optimization hint)
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------ //
