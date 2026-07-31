@@ -36,35 +36,75 @@ This fetches:
 > to load `libvulkan.so` at runtime), but will only *run* on API 24+ devices
 > that have Vulkan drivers.
 
+### NDK Requirements by Architecture
+
+| Architecture | NDK Version | Toolchain | Notes |
+|-------------|-------------|-----------|-------|
+| `armeabi-v7a-hard` (32-bit ARM) | r10e | GCC 4.9 | Hard-float ABI, NEON |
+| `aarch64` (64-bit ARM) | r19 or r20 | Clang | GCC removed from NDK r18+ |
+
+> **Important**: arm64-v8a (aarch64) is **not supported** by NDK r10e.
+> You must use NDK r19 or r20, which use Clang instead of GCC.
+
 ## Quick Start
 
 ### Option 1: Use Build Scripts
 
 ```bash
-# GLES backend (original)
+# --- armv7-a (32-bit) ---
+# GLES backend
 ./scripts/build-android-armv7a.sh
 
 # Vulkan backend
 ./scripts/build-android-vulkan.sh
+
+# --- arm64-v8a (64-bit) ---
+# GLES backend
+./scripts/build-android-arm64.sh
+
+# Vulkan backend
+./scripts/build-android-arm64-vulkan.sh
 ```
 
 ### Option 2: Manual Configuration
+
+#### armv7-a (32-bit ARM, NDK r10e)
 
 ```bash
 # Set NDK path
 export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
 
-# Configure for GLES backend
+# GLES backend
 ./waf configure -T debug \
     --android=armeabi-v7a-hard,4.9,21 \
     --togles \
     --disable-warns
 
-# Configure for Vulkan backend
+# Vulkan backend
 ./waf configure -T debug \
     --android=armeabi-v7a-hard,4.9,24 \
     --use-vulkan \
     --disable-warns
+```
+
+#### arm64-v8a (64-bit ARM, NDK r20)
+
+```bash
+# Set NDK path
+export ANDROID_NDK_HOME=$PWD/android-ndk-r20/
+
+# GLES backend
+./waf configure -T debug \
+    --android=aarch64,clang,21 \
+    --togles \
+    --disable-warns
+
+# Vulkan backend
+./waf configure -T debug \
+    --android=aarch64,clang,24 \
+    --use-vulkan \
+    --disable-warns
+```
 
 # Build
 ./waf build
@@ -82,24 +122,35 @@ Format: `--android=<arch>,<toolchain>,<api>`
 | `toolchain` | `4.9` (GCC), `clang` | Compiler toolchain |
 | `api` | `21`, `24`, `26`, `28`, `29`, `30`... | Android API level |
 
-**ARMv7 hard-float** (`armeabi-v7a-hard`) is recommended for best performance.
-It uses hardware floating-point (NEON/VFPv4) and is compatible with most
-modern Android devices.
+**Valid combinations:**
+
+| `arch` | `toolchain` | NDK | Notes |
+|--------|-------------|-----|-------|
+| `armeabi-v7a-hard` | `4.9` | r10e | 32-bit ARM, hard-float, NEON |
+| `aarch64` | `clang` | r19/r20 | 64-bit ARM, Clang only (no GCC in r18+) |
+
+> arm64-v8a requires API >= 21 (enforced automatically by xcompile.py).
+> arm64-v8a is **not** supported by NDK r10e.
 
 ### Architecture-Specific Flags
 
-For `armeabi-v7a-hard`:
+For `armeabi-v7a-hard` (32-bit):
 ```
 -mfpu=neon-vfpv4 -mcpu=cortex-a7 -mtune=cortex-a7
 -D_NDK_MATH_NO_SOFTFP=1 -mfloat-abi=hard
 ```
 
+For `aarch64` (64-bit):
+- No special CPU flags needed (ARMv8-A baseline includes NEON/VFP)
+- Uses Clang with `-static-libstdc++` (NDK r19+)
+- STL path: `gnu-libstdc++/4.9/libs/arm64-v8a/`
+
 ### Output Location
 
-Build output goes to:
-```
-build/android/armeabi-v7a/lib/
-```
+| Architecture | Output Path |
+|-------------|-------------|
+| armv7-a (32-bit) | `build/android/armeabi-v7a/lib/` |
+| arm64-v8a (64-bit) | `build/android/arm64-v8a/lib/` |
 
 Key output files:
 - `libhl2_launcher.so` — main engine shared library
@@ -120,9 +171,18 @@ Create a new Android Studio project with:
 ### Step 2: Copy Native Libraries
 
 ```bash
-# Copy .so files to jniLibs
+# For armv7-a (32-bit)
 mkdir -p app/src/main/jniLibs/armeabi-v7a/
 cp build/android/armeabi-v7a/lib/*.so app/src/main/jniLibs/armeabi-v7a/
+
+# For arm64-v8a (64-bit)
+mkdir -p app/src/main/jniLibs/arm64-v8a/
+cp build/android/arm64-v8a/lib/*.so app/src/main/jniLibs/arm64-v8a/
+
+# For both (multi-arch APK, recommended for distribution)
+mkdir -p app/src/main/jniLibs/armeabi-v7a/ app/src/main/jniLibs/arm64-v8a/
+cp build/android/armeabi-v7a/lib/*.so app/src/main/jniLibs/armeabi-v7a/
+cp build/android/arm64-v8a/lib/*.so app/src/main/jniLibs/arm64-v8a/
 ```
 
 ### Step 3: Create Activity
@@ -159,10 +219,17 @@ Copy your game's `hl2/` directory (or mod directory) into `assets/` or
 
 | Architecture | NDK | Status | Notes |
 |-------------|-----|--------|-------|
-| `armeabi-v7a-hard` | r10e | Primary target | 32-bit ARM, hard-float |
-| `aarch64` | r19+ | Experimental | 64-bit ARM, requires Clang |
+| `armeabi-v7a-hard` | r10e | Primary target | 32-bit ARM, hard-float, NEON |
+| `aarch64` | r19/r20 | Supported | 64-bit ARM (arm64-v8a), Clang only |
 | `x86` | r19+ | Community | For emulators |
 | `x86_64` | r19+ | Community | For emulators |
+
+> **arm64-v8a (aarch64) is recommended for modern Android devices.**
+> Most phones shipped since 2018 use 64-bit ARM. arm64 provides:
+> - Full 64-bit addressing (larger address space for game assets)
+> - Better register file (31 general-purpose registers vs 14 usable in ARMv7)
+> - Improved AES/SHA crypto instructions (ARMv8.0-A)
+> - No 32-bit NDK limitations (Google deprecated 64-bit-unaware apps in 2019)
 
 ## Vulkan Device Compatibility
 
@@ -192,11 +259,36 @@ The device doesn't have Vulkan support. Either:
 - Use the GLES backend (`--togles`) instead
 - Test on a device with Android 7.0+ and a Vulkan-capable GPU
 
-### "NDK not found"
+### "NDK not found" / "Unknown NDK revision"
 
 Ensure `ANDROID_NDK_HOME` points to the extracted NDK:
 ```bash
+# For armv7-a (32-bit)
 export ANDROID_NDK_HOME=/absolute/path/to/android-ndk-r10e
+
+# For arm64-v8a (64-bit) — must be r19 or r20
+export ANDROID_NDK_HOME=/absolute/path/to/android-ndk-r20
+```
+
+### "Unknown NDK revision: X" when building arm64
+
+NDK r10e does not support aarch64. You must use NDK r19 or r20:
+```bash
+# Download NDK r20
+wget https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip
+unzip android-ndk-r20-linux-x86_64.zip
+export ANDROID_NDK_HOME=$PWD/android-ndk-r20
+```
+
+### "aarch64 requires clang toolchain"
+
+For arm64-v8a, the toolchain must be `clang` (not `4.9`):
+```bash
+# Correct
+--android=aarch64,clang,21
+
+# Wrong (GCC not available for aarch64 in r19+)
+--android=aarch64,4.9,21
 ```
 
 ### Build fails on submodule initialization

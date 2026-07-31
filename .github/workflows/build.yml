@@ -41,6 +41,28 @@ jobs:
       run: |
         scripts/build-android-vulkan.sh
 
+  build-android-arm64:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Build android-arm64
+      run: |
+        scripts/build-android-arm64.sh
+
+  build-android-arm64-vulkan:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - name: Build android-arm64-vulkan
+      run: |
+        scripts/build-android-arm64-vulkan.sh
+
   build-windows-i386:
     runs-on: windows-2019
 

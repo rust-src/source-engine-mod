@@ -129,30 +129,52 @@ Android builds produce native `.so` libraries. You need a separate Java/Gradle
 wrapper project to package them into an APK.
 
 ```bash
-# GLES backend (original, requires Android 5.0+ / API 21)
+# --- armv7-a (32-bit ARM) ---
+# GLES backend (requires Android 5.0+ / API 21)
 scripts/build-android-armv7a.sh
 
-# Vulkan backend (requires Android 7.0+ / API 24 for Vulkan support)
+# Vulkan backend (requires Android 7.0+ / API 24)
 scripts/build-android-vulkan.sh
+
+# --- arm64-v8a (64-bit ARM / AArch64) ---
+# GLES backend (requires Android 5.0+ / API 21, NDK r19+)
+scripts/build-android-arm64.sh
+
+# Vulkan backend (requires Android 7.0+ / API 24, NDK r19+)
+scripts/build-android-arm64-vulkan.sh
 ```
 
 Or configure manually:
 
 ```bash
-# Set up NDK
+# --- armv7-a (32-bit, NDK r10e, GCC 4.9) ---
 export ANDROID_NDK_HOME=/path/to/android-ndk-r10e
 
-# GLES backend
+# GLES
 ./waf configure -T debug --android=armeabi-v7a-hard,4.9,21 --togles --disable-warns
 ./waf build
 
-# Vulkan backend
+# Vulkan
 ./waf configure -T debug --android=armeabi-v7a-hard,4.9,24 --use-vulkan --disable-warns
+./waf build
+
+# --- arm64-v8a (64-bit, NDK r20, Clang) ---
+export ANDROID_NDK_HOME=/path/to/android-ndk-r20
+
+# GLES
+./waf configure -T debug --android=aarch64,clang,21 --togles --disable-warns
+./waf build
+
+# Vulkan
+./waf configure -T debug --android=aarch64,clang,24 --use-vulkan --disable-warns
 ./waf build
 ```
 
-Output: `build/android/armeabi-v7a/lib/` — copy `.so` files to your Android
-project's `jniLibs/armeabi-v7a/` directory.
+Output locations:
+- armv7-a: `build/android/armeabi-v7a/lib/`
+- arm64-v8a: `build/android/arm64-v8a/lib/`
+
+Copy `.so` files to your Android project's `jniLibs/<arch>/` directory.
 
 For detailed Android build instructions, see [docs/build-android.md](docs/build-android.md).
 
