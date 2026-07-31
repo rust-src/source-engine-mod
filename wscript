@@ -610,12 +610,19 @@ def configure(conf):
 			conf.define('COMPILER_MSVC64', 1)
 
 	if conf.env.COMPILER_CC != 'msvc':
-		conf.check_cc(cflags=cflags, linkflags=linkflags, msg='Checking for required C flags')
-		conf.check_cxx(cxxflags=cxxflags, linkflags=linkflags, msg='Checking for required C++ flags')
+		# Cross-compilers (Android) can't link/run test programs on the host.
+		# Skip the flag checks for cross-compilation targets.
+		if conf.options.ANDROID_OPTS:
+			conf.env.append_unique('CFLAGS', cflags)
+			conf.env.append_unique('CXXFLAGS', cxxflags)
+			conf.env.append_unique('LINKFLAGS', linkflags)
+		else:
+			conf.check_cc(cflags=cflags, linkflags=linkflags, msg='Checking for required C flags')
+			conf.check_cxx(cxxflags=cxxflags, linkflags=linkflags, msg='Checking for required C++ flags')
 
-		conf.env.append_unique('CFLAGS', cflags)
-		conf.env.append_unique('CXXFLAGS', cxxflags)
-		conf.env.append_unique('LINKFLAGS', linkflags)
+			conf.env.append_unique('CFLAGS', cflags)
+			conf.env.append_unique('CXXFLAGS', cxxflags)
+			conf.env.append_unique('LINKFLAGS', linkflags)
 
 		cxxflags += conf.filter_cxxflags(compiler_optional_flags, cflags)
 		cflags += conf.filter_cflags(compiler_optional_flags + c_compiler_optional_flags, cflags)
