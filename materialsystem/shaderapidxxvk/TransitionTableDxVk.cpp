@@ -57,7 +57,7 @@ public:
 
 	void Reset()
 	{
-		m_nGeneration++;
+		m_nGeneration = 1;
 		for ( int i = 0; i < DXVK_STATE_SLOT_COUNT; ++i )
 		{
 			m_aSlotValue[ i ] = ~0u;

@@ -94,22 +94,8 @@ static int DxvkVertexElementSize( VertexFormat_t fmt, int elem )
 	case 8: case 9: case 10: case 11:
 		{
 			int tc = elem - 4;
-			int bits_per_tc = VERTEX_TEXCOORD_BITS;
-			VertexFormat_t mask = ( (VertexFormat_t)VERTEX_TEXCOORD_MASK_SIZE_MASK ) << ( tc * bits_per_tc + VERTEX_TEXCOORD_COORD1_INDEX );
-			if ( fmt & mask )
-			{
-				int size_bits = ( fmt >> ( tc * bits_per_tc + VERTEX_TEXCOORD_COORD1_INDEX ) )
-								& VERTEX_TEXCOORD_MASK_SIZE_MASK;
-				switch ( size_bits )
-				{
-				case 0: return 0;
-				case 1: return 4;    // 2 half = 4 bytes
-				case 2: return 8;    // 2 floats = 8 bytes
-				case 3: return 12;   // 3 floats = 12 bytes
-				default: return 8;
-				}
-			}
-			return 0;
+			int nNumCoords = (int)( ( fmt >> ( TEX_COORD_SIZE_BIT + 3 * tc ) ) & 0x7 );
+			return nNumCoords * 4;
 		}
 	case 12: return ( fmt & VERTEX_BONE_WEIGHT_MASK ) ? 20 : 0; // 4 floats + 4 ubytes
 	case 13: return ( fmt & VERTEX_TANGENT_S ) ? 12 : 0;
@@ -270,7 +256,6 @@ extern "C" int DxvkPrimitiveIndexCount( MaterialPrimitiveType_t type, int nNumPr
 	case MATERIAL_LINES:           return nNumPrimitives * 2;
 	case MATERIAL_TRIANGLES:       return nNumPrimitives * 3;
 	case MATERIAL_TRIANGLE_STRIP:  return nNumPrimitives + 2;
-	case MATERIAL_TRIANGLE_FAN:    return nNumPrimitives + 2;
 	case MATERIAL_LINE_STRIP:      return nNumPrimitives + 1;
 	case MATERIAL_POLYGON:         return nNumPrimitives;
 	case MATERIAL_QUADS:           return nNumPrimitives * 4;
@@ -287,7 +272,6 @@ extern "C" int DxvkPrimitiveCount( MaterialPrimitiveType_t type, int nNumIndices
 	case MATERIAL_LINES:           return nNumIndices / 2;
 	case MATERIAL_TRIANGLES:       return nNumIndices / 3;
 	case MATERIAL_TRIANGLE_STRIP:  return ( nNumIndices >= 2 ) ? ( nNumIndices - 2 ) : 0;
-	case MATERIAL_TRIANGLE_FAN:    return ( nNumIndices >= 2 ) ? ( nNumIndices - 2 ) : 0;
 	case MATERIAL_LINE_STRIP:      return ( nNumIndices >= 1 ) ? ( nNumIndices - 1 ) : 0;
 	case MATERIAL_QUADS:           return nNumIndices / 4;
 	case MATERIAL_POLYGON:         return nNumIndices;
@@ -303,7 +287,6 @@ extern "C" bool DxvkIsValidPrimitiveType( MaterialPrimitiveType_t type )
 	case MATERIAL_LINES:
 	case MATERIAL_TRIANGLES:
 	case MATERIAL_TRIANGLE_STRIP:
-	case MATERIAL_TRIANGLE_FAN:
 	case MATERIAL_LINE_STRIP:
 	case MATERIAL_POLYGON:
 	case MATERIAL_QUADS:
@@ -450,12 +433,10 @@ extern "C" bool DxvkIsVertexFormatSubset( VertexFormat_t required, VertexFormat_
 
 	for ( int tc = 0; tc < VERTEX_MAX_TEXTURE_COORDINATES; ++tc )
 	{
-		VertexFormat_t reqTC = ( required >> ( tc * VERTEX_TEXCOORD_BITS ) )
-							 & VERTEX_TEXCOORD_MASK_MASK;
-		VertexFormat_t avlTC = ( available >> ( tc * VERTEX_TEXCOORD_BITS ) )
-							 & VERTEX_TEXCOORD_MASK_MASK;
-		if ( reqTC != 0 && ( avlTC & VERTEX_TEXCOORD_MASK_SIZE_MASK ) <
-			 ( reqTC & VERTEX_TEXCOORD_MASK_SIZE_MASK ) )
+		VertexFormat_t mask = VERTEX_TEXCOORD_MASK( tc );
+		VertexFormat_t reqTC = required & mask;
+		VertexFormat_t avlTC = available & mask;
+		if ( reqTC != 0 && avlTC < reqTC )
 			return false;
 	}
 	return true;

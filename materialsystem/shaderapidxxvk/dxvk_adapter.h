@@ -16,7 +16,10 @@
 #include "tier0/platform.h"
 #include "tier0/dbg.h"
 
-// Vulkan forward declarations
+#include <vulkan/vulkan.h>
+
+// Vulkan forward declarations (only used when vulkan.h is unavailable)
+#ifndef VULKAN_H_
 typedef struct VkInstance_T* VkInstance;
 typedef struct VkPhysicalDevice_T* VkPhysicalDevice;
 typedef struct VkDevice_T* VkDevice;
@@ -32,6 +35,7 @@ typedef uint32_t VkFlags;
 typedef uint64_t VkDeviceSize;
 
 #define VK_NULL_HANDLE 0ULL
+#endif // VULKAN_H_
 
 //-----------------------------------------------------------------------------
 // DXVK Adapter - Core Vulkan instance and device management

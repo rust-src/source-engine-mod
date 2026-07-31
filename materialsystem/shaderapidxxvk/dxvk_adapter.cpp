@@ -5,12 +5,17 @@
 //
 //===========================================================================//
 
+#define VK_USE_PLATFORM_XLIB_KHR
+#define VK_USE_PLATFORM_XCB_KHR
+
 #include "dxvk_adapter.h"
 #include "tier0/threadtools.h"
-#include "tier0/commandline.h"
+#include "tier0/icommandline.h"
+#include "tier1/strtools.h"
 
 #include <string.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 
 // Global singleton
 CDxvkAdapter* g_pDxvkAdapter = nullptr;
@@ -282,18 +287,16 @@ bool CDxvkAdapter::CreateInstance()
 	}
 
 	// Application info (optional but good practice)
-	struct { uint32_t sType; const void* pNext; const char* pAppName;
-			 uint32_t applicationVersion; const char* pEngineName;
-			 uint32_t engineVersion; uint32_t apiVersion; } appInfo = {};
-	appInfo.sType = 1; // VK_STRUCTURE_TYPE_APPLICATION_INFO
-	appInfo.pAppName = "Source Engine DXVK";
+	VkApplicationInfo appInfo = {};
+	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	appInfo.pApplicationName = "Source Engine DXVK";
 	appInfo.applicationVersion = (1 << 22);
 	appInfo.pEngineName = "Source";
 	appInfo.engineVersion = 0;
 	appInfo.apiVersion = (1 << 22) | (2 << 12); // 1.2.0
 
 	VkInstanceCreateInfo createInfo = {};
-	createInfo.sType = 1; // VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	createInfo.pApplicationInfo = &appInfo;
 	createInfo.enabledExtensionCount = nExtCount;
 	createInfo.ppEnabledExtensionNames = ppExtensions;
@@ -440,7 +443,7 @@ bool CDxvkAdapter::FindQueueFamilies()
 	uint8_t* pPropsBuf = (uint8_t*)stackalloc( kQueueFamilySize * nQueueFamilyCount );
 	memset( pPropsBuf, 0, kQueueFamilySize * nQueueFamilyCount );
 	s_vk.vkGetPhysicalDeviceQueueFamilyProperties( m_vkPhysicalDevice, &nQueueFamilyCount,
-												   (void*)pPropsBuf );
+											   (VkQueueFamilyProperties*)pPropsBuf );
 
 	const uint32_t GRAPHICS_BIT = 0x1; // VK_QUEUE_GRAPHICS_BIT
 
@@ -511,7 +514,7 @@ bool CDxvkAdapter::CreateLogicalDevice()
 
 	for ( uint32_t i = 0; i < nQueueFamilies; i++ )
 	{
-		queueInfos[ i ].sType = 2; // VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
+		queueInfos[ i ].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 		queueInfos[ i ].queueFamilyIndex = queueFamilies[ i ];
 		queueInfos[ i ].queueCount = 1;
 		queueInfos[ i ].pQueuePriorities = &queuePriority;
@@ -528,7 +531,7 @@ bool CDxvkAdapter::CreateLogicalDevice()
 	s_vk.vkGetPhysicalDeviceFeatures( m_vkPhysicalDevice, (VkPhysicalDeviceFeatures*)featuresBuf );
 
 	VkDeviceCreateInfo deviceInfo = {};
-	deviceInfo.sType = 3; // VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO
+	deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	deviceInfo.queueCreateInfoCount = nQueueFamilies;
 	deviceInfo.pQueueCreateInfos = queueInfos;
 	deviceInfo.enabledExtensionCount = nExtCount;
@@ -588,7 +591,7 @@ bool CDxvkAdapter::GetSurfaceCapabilities( uint32_t& nMinImageCount, uint32_t& n
 	memset( capsBuf, 0, sizeof(capsBuf) );
 
 	uint32_t res = s_vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-		m_vkPhysicalDevice, m_vkSurface, (void*)capsBuf );
+		m_vkPhysicalDevice, m_vkSurface, (VkSurfaceCapabilitiesKHR*)capsBuf );
 
 	if ( res != 0 )
 		return true; // Fallback to defaults
@@ -614,7 +617,7 @@ bool CDxvkAdapter::IsFormatSupported( uint32_t vkFormat, uint32_t vkImageTiling,
 {
 	// VkFormatProperties { VkFormatFeatureFlags linearFeatures; VkFormatFeatureFlags optimalFeatures; VkFormatFeatureFlags bufferFeatures; }
 	uint64_t props[ 3 ] = { 0, 0, 0 };
-	s_vk.vkGetPhysicalDeviceFormatProperties( m_vkPhysicalDevice, (VkFormat)vkFormat, (void*)props );
+	s_vk.vkGetPhysicalDeviceFormatProperties( m_vkPhysicalDevice, (VkFormat)vkFormat, (VkFormatProperties*)props );
 
 	uint64_t features = ( vkImageTiling == 0 ) ? props[0] : props[1]; // LINEAR vs OPTIMAL
 	return ( features & vkFormatFeatureFlags ) == vkFormatFeatureFlags;

@@ -74,7 +74,7 @@ public:
 	uint32_t GetAllocCount() const { return m_nAllocCount; }
 	float GetUtilization() const
 	{
-		return m_nBlockSize ? (float)m_nUsedSize / (float)m_nBlockSize;
+		return m_nBlockSize ? (float)m_nUsedSize / (float)m_nBlockSize : 0.0f;
 	}
 	uint32_t GetMemoryType() const { return m_nMemoryType; }
 	uint32_t GetPropertyFlags() const { return m_nPropertyFlags; }
@@ -330,7 +330,7 @@ bool CDxvkMemoryBlock::Alloc( VkDeviceSize nSize, VkDeviceSize nAlignment,
 void CDxvkMemoryBlock::Free( const DxvkMemorySuballocation_t& alloc )
 {
 	if ( alloc.pDeviceMemory != m_pDeviceMemory ) return;
-	if ( m_nUsedSize = ( m_nUsedSize >= alloc.nSize ) ? m_nUsedSize - alloc.nSize : 0;
+	m_nUsedSize = ( m_nUsedSize >= alloc.nSize ) ? m_nUsedSize - alloc.nSize : 0;
 	m_nAllocCount = ( m_nAllocCount > 0 ) ? m_nAllocCount - 1 : 0;
 
 	FreeRegion* pNew = new FreeRegion();
@@ -597,7 +597,7 @@ uint32_t CDxvkMemoryAllocator::FindMemoryType( uint32_t nTypeBits,
 	AUTO_LOCK( m_mutex );
 	for ( uint32_t i = 0; i < m_nMemoryTypeCount && i < m_heapInfos.Count(); ++i )
 	{
-		if ( ( nTypeBits & ( 1u << i ) )
+		if ( ( nTypeBits & ( 1u << i ) ) != 0 )
 		{
 			if ( ( m_heapInfos[ i ].nPropertyFlags & nRequiredFlags ) == nRequiredFlags )
 				return i;
@@ -614,7 +614,7 @@ CDxvkMemoryBlock* CDxvkMemoryAllocator::FindOrCreateBlock(
 	CDxvkMemoryBlock* pBlock = new CDxvkMemoryBlock();
 	char szName[ 256 ];
 	if ( pDebugName )
-		V_snprintf( szName, sizeof(szName), "MemBlock_%s_%s", pDebugName, m_szDebugName ? m_szDebugName : "" );
+		V_snprintf( szName, sizeof(szName), "MemBlock_%s", pDebugName );
 	else
 		V_snprintf( szName, sizeof(szName), "MemBlock_Type%u", nMemoryType );
 

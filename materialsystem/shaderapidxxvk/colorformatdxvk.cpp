@@ -83,26 +83,6 @@ uint32_t DxvkImageFormatToVkFormat( ImageFormat srcFmt, bool bSRGB = false )
 		fmt = DXVK_VK_FORMAT_R32G32B32A32_SFLOAT; break;
 	case IMAGE_FORMAT_R32F:
 		fmt = DXVK_VK_FORMAT_R32_SFLOAT; break;
-	case IMAGE_FORMAT_RG1616F:
-		fmt = DXVK_VK_FORMAT_R16G16_SFLOAT; break;
-	case IMAGE_FORMAT_RG3232F:
-		fmt = DXVK_VK_FORMAT_R32G32_SFLOAT; break;
-	case IMAGE_FORMAT_G16R16:
-		fmt = DXVK_VK_FORMAT_R16G16_UNORM; break;
-	case IMAGE_FORMAT_RGBA1010102:
-		fmt = DXVK_VK_FORMAT_A8B8G8R8_UNORM_PACK32; break;
-	case IMAGE_FORMAT_D16:
-		fmt = DXVK_VK_FORMAT_D32_SFLOAT; break; // Prefer D32 on Vulkan for compatibility
-	case IMAGE_FORMAT_D32:
-		fmt = DXVK_VK_FORMAT_D32_SFLOAT; break;
-	case IMAGE_FORMAT_D24S8:
-		fmt = DXVK_VK_FORMAT_D24_UNORM_S8_UINT; break;
-	case IMAGE_FORMAT_D32FS8:
-		fmt = DXVK_VK_FORMAT_D32_SFLOAT_S8_UINT; break;
-	case IMAGE_FORMAT_INTZ:
-		fmt = DXVK_VK_FORMAT_D24_UNORM_S8_UINT; break;
-	case IMAGE_FORMAT_RAWZ:
-		fmt = DXVK_VK_FORMAT_D32_SFLOAT; break;
 	default:
 		fmt = DXVK_VK_FORMAT_B8G8R8A8_UNORM; break;
 	}
@@ -136,7 +116,6 @@ void DxvkGetFormatBlockSize( ImageFormat fmt, int& blockW, int& blockH, int& blo
 	{
 	case IMAGE_FORMAT_DXT1:
 	case IMAGE_FORMAT_DXT1_ONEBITALPHA:
-	case IMAGE_FORMAT_DXT1A:
 		blockW = 4; blockH = 4; blockBytes = 8; break;
 	case IMAGE_FORMAT_DXT3:
 	case IMAGE_FORMAT_DXT5:
@@ -146,25 +125,14 @@ void DxvkGetFormatBlockSize( ImageFormat fmt, int& blockW, int& blockH, int& blo
 	case IMAGE_FORMAT_BGRA8888:
 	case IMAGE_FORMAT_ARGB8888:
 	case IMAGE_FORMAT_BGRX8888:
-	case IMAGE_FORMAT_RGBA1010102:
-		blockW = 1; blockH = 1; blockBytes = 4; break;
 	case IMAGE_FORMAT_RGB888:
 	case IMAGE_FORMAT_BGR888:
 		blockW = 1; blockH = 1; blockBytes = 3; break;
 	case IMAGE_FORMAT_RGB565:
 	case IMAGE_FORMAT_BGRA4444:
 	case IMAGE_FORMAT_BGRA5551:
-	case IMAGE_FORMAT_D16:
-	case IMAGE_FORMAT_G16R16:
-	case IMAGE_FORMAT_RG1616F:
-		blockW = 1; blockH = 1; blockBytes = 4; break;
+		blockW = 1; blockH = 1; blockBytes = 2; break;
 	case IMAGE_FORMAT_R32F:
-	case IMAGE_FORMAT_D32:
-	case IMAGE_FORMAT_RG3232F:
-	case IMAGE_FORMAT_D24S8:
-	case IMAGE_FORMAT_D32FS8:
-	case IMAGE_FORMAT_INTZ:
-	case IMAGE_FORMAT_RAWZ:
 		blockW = 1; blockH = 1; blockBytes = 4; break;
 	case IMAGE_FORMAT_RGBA16161616:
 	case IMAGE_FORMAT_RGBA16161616F:
@@ -193,9 +161,6 @@ ImageFormat DxvkGetNearestSupportedFormat( ImageFormat fmt, bool bRenderTarget, 
 		case IMAGE_FORMAT_RGBA16161616F:
 		case IMAGE_FORMAT_RGBA32323232F:
 		case IMAGE_FORMAT_R32F:
-		case IMAGE_FORMAT_RG1616F:
-		case IMAGE_FORMAT_RG3232F:
-		case IMAGE_FORMAT_RGBA1010102:
 		case IMAGE_FORMAT_BGRX8888:
 			return fmt;
 		default:

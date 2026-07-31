@@ -76,8 +76,4 @@ def build(bld):
 		idx      = bld.get_taskgen_count()
 	)
 
-	if not bld.env.DEDICATED:
-		bld.add_subproject([
-			'shaderapidxxvk',
-		])
 

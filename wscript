@@ -58,16 +58,18 @@ projects={
 		'game/server',
 		'gameui',
 		'inputsystem',
-		'ivp/havana',
-		'ivp/havana/havok/hk_base',
-		'ivp/havana/havok/hk_math',
-		'ivp/ivp_compact_builder',
-		'ivp/ivp_physics',
+# Temporary: ivp source folder is not present in this checkout
+# 		'ivp/havana',
+# 		'ivp/havana/havok/hk_base',
+# 		'ivp/havana/havok/hk_math',
+# 		'ivp/ivp_compact_builder',
+# 		'ivp/ivp_physics',
 		'launcher',
 		'launcher_main',
 		'materialsystem',
 #		'materialsystem/shaderapiempty',
 		'materialsystem/shaderapidx9',
+		'materialsystem/shaderapidxxvk',
 		'materialsystem/shaderlib',
 		'materialsystem/stdshaders',
 		'mathlib',
@@ -87,7 +89,8 @@ projects={
 		'vgui2/vgui_surfacelib',
 		'vguimatsurface',
 		'video',
-		'vphysics',
+# Temporary: depends on missing ivp source
+# 		'vphysics',
 		'vpklib',
 		'vstdlib',
 		'vtf',
@@ -387,7 +390,7 @@ def check_deps(conf):
 	if conf.env.DEST_OS != 'android':
 		if conf.env.DEST_OS != 'win32':
 			if conf.options.SDL:
-				conf.check_cfg(package='sdl2', uselib_store='SDL2', args=['--cflags', '--libs'])
+				conf.check_cfg(package='sdl2', uselib_store='SDL2', args=['--cflags', '--libs'], mandatory=False)
 			if conf.options.DEDICATED:
 				conf.check_cfg(package='libedit', uselib_store='EDIT', args=['--cflags', '--libs'])
 			else:
@@ -396,10 +399,10 @@ def check_deps(conf):
 				if conf.env.DEST_OS == "darwin":
 					conf.env.FRAMEWORK_OPENAL = "OpenAL"
 				else:
-					conf.check_cfg(package='openal', uselib_store='OPENAL', args=['--cflags', '--libs'])
-				conf.check_cfg(package='libjpeg', uselib_store='JPEG', args=['--cflags', '--libs'])
-				conf.check_cfg(package='libpng', uselib_store='PNG', args=['--cflags', '--libs'])
-				conf.check_cfg(package='libcurl', uselib_store='CURL', args=['--cflags', '--libs'])
+					conf.check_cfg(package='openal', uselib_store='OPENAL', args=['--cflags', '--libs'], mandatory=False)
+				conf.check_cfg(package='libjpeg', uselib_store='JPEG', args=['--cflags', '--libs'], mandatory=False)
+				conf.check_cfg(package='libpng', uselib_store='PNG', args=['--cflags', '--libs'], mandatory=False)
+				conf.check_cfg(package='libcurl', uselib_store='CURL', args=['--cflags', '--libs'], mandatory=False)
 			conf.check_cfg(package='zlib', uselib_store='ZLIB', args=['--cflags', '--libs'])
 
 			if conf.options.OPUS:

@@ -345,7 +345,7 @@ extern "C" int DxvkMeshIndexCount( const CDxvkMesh* pMesh )
 	return pMesh ? pMesh->IndexCount() : 0;
 }
 
-extern "C" unsigned DxvkMeshComputeMemoryUsed( const CDxvkMesh* pMesh )
+extern "C" unsigned DxvkMeshComputeMemoryUsed( CDxvkMesh* pMesh )
 {
 	return pMesh ? pMesh->ComputeMemoryUsed() : 0;
 }
@@ -365,13 +365,13 @@ extern "C" void DxvkMeshDrawPrimLists( CDxvkMesh* pMesh, CPrimList* pPrims, int 
 	if ( !pMesh || !pPrims || nPrims <= 0 ) return;
 	for ( int i = 0; i < nPrims; ++i )
 	{
-		if ( pPrims[ i ].m_nNumIndices <= 0 ) continue;
+		if ( pPrims[ i ].m_NumIndices <= 0 ) continue;
 		DxvkMeshQueueDraw( pMesh,
-						   pPrims[ i ].m_nFirstIndex,
-						   pPrims[ i ].m_nNumIndices,
+						   pPrims[ i ].m_FirstIndex,
+						   pPrims[ i ].m_NumIndices,
 						   0,
 						   pMaterial,
-						   pPrims[ i ].m_Type,
+						   MATERIAL_TRIANGLES,
 						   false, false );
 	}
 }

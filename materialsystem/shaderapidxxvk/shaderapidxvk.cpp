@@ -84,6 +84,42 @@ public:
 	virtual void GetBackBufferDimensions( int& width, int& height ) const;
 	virtual void GetCurrentColorCorrection( ShaderColorCorrectionInfo_t* pInfo );
 
+	// Matrix / transform state (stubs)
+	virtual double CurrentTime() const { return 0.0; }
+	virtual void MatrixMode( MaterialMatrixMode_t matrixMode ) {}
+	virtual void PushMatrix() {}
+	virtual void PopMatrix() {}
+	virtual void LoadMatrix( float *m ) {}
+	virtual void MultMatrix( float *m ) {}
+	virtual void MultMatrixLocal( float *m ) {}
+	virtual void GetMatrix( MaterialMatrixMode_t matrixMode, float *dst ) {}
+	virtual void LoadIdentity( void ) {}
+	virtual void LoadCameraToWorld( void ) {}
+	virtual void Ortho( double left, double right, double bottom, double top, double zNear, double zFar ) {}
+	virtual void PerspectiveX( double fovx, double aspect, double zNear, double zFar ) {}
+	virtual void PickMatrix( int x, int y, int width, int height ) {}
+	virtual void Rotate( float angle, float x, float y, float z ) {}
+	virtual void Translate( float x, float y, float z ) {}
+	virtual void Scale( float x, float y, float z ) {}
+	virtual void ScaleXY( float x, float y ) {}
+
+	// Immediate-mode color (stubs)
+	virtual void Color3f( float r, float g, float b ) {}
+	virtual void Color3fv( float const* pColor ) {}
+	virtual void Color4f( float r, float g, float b, float a ) {}
+	virtual void Color4fv( float const* pColor ) {}
+	virtual void Color3ub( unsigned char r, unsigned char g, unsigned char b ) {}
+	virtual void Color3ubv( unsigned char const* pColor ) {}
+	virtual void Color4ub( unsigned char r, unsigned char g, unsigned char b, unsigned char a ) {}
+	virtual void Color4ubv( unsigned char const* pColor ) {}
+
+	// Misc dynamic state
+	virtual void GetWorldSpaceCameraPosition( float* pPos ) const { if ( pPos ) { pPos[0] = 0.0f; pPos[1] = 0.0f; pPos[2] = 0.0f; } }
+	virtual void DisableTextureTransform( TextureStage_t textureStage ) {}
+	virtual CMeshBuilder* GetVertexModifyBuilder() { return nullptr; }
+	virtual void LoadBoneMatrix( int boneIndex, const float *m ) {}
+	virtual void PerspectiveOffCenterX( double fovx, double aspect, double zNear, double zFar, double bottom, double top, double left, double right ) {}
+
 	// === IShaderAPI Methods ===
 
 	// Viewport
@@ -152,11 +188,12 @@ public:
 	virtual void DisableAllLocalLights() {}
 
 	// Lighting helpers
-	void SetDefaultState();
-	int GetMaxLights( void ) const { return 4; }
-	const LightDesc_t& GetLight( int lightNum ) const { return m_Lights[ lightNum ]; }
-	void SetVertexShaderStateAmbientLightCube() {}
-	float GetAmbientLightCubeLuminance(void) { return 0.0f; }
+	virtual void SetDefaultState();
+	virtual int GetMaxLights( void ) const { return 4; }
+	virtual const LightDesc_t& GetLight( int lightNum ) const { return m_Lights[ lightNum ]; }
+	virtual void SetVertexShaderStateAmbientLightCube() {}
+	virtual void SetPixelShaderStateAmbientLightCube( int pshReg, bool bForceToBlack = false ) {}
+	virtual float GetAmbientLightCubeLuminance(void) { return 0.0f; }
 	void SetSkinningMatrices();
 
 	// Texture state
@@ -370,6 +407,7 @@ public:
 	virtual ImageFormat GetShadowDepthTextureFormat( void ) { return IMAGE_FORMAT_UNKNOWN; }
 	virtual ImageFormat GetNullTextureFormat( void ) { return IMAGE_FORMAT_UNKNOWN; }
 	virtual bool SupportsFetch4( void ) { return false; }
+	virtual bool SupportsFetch4( void ) const { return false; }
 	virtual void SetShadowDepthBiasFactors( float fShadowSlopeScaleDepthBias, float fShadowDepthBias ) {}
 
 	// Thread ownership
@@ -822,25 +860,26 @@ void CShaderAPIDxVk::FlushBufferedPrimitives()
 extern CDxvkMesh s_StaticMeshDxVk;
 extern CDxvkMesh* s_pStaticMeshDxVk;
 
-static CDxvkMesh s_DynamicMeshDxVk( true );
-static CDxvkMesh s_FlexMeshDxVk( true );
+// TODO: move CDxvkMesh to a shared header and restore real dynamic/flex mesh instances
+// static CDxvkMesh s_DynamicMeshDxVk( true );
+// static CDxvkMesh s_FlexMeshDxVk( true );
 
 IMesh* CShaderAPIDxVk::GetDynamicMesh( IMaterial* pMaterial, int nHWSkinBoneCount, bool bBuffered,
 	IMesh* pVertexOverride, IMesh* pIndexOverride )
 {
-	return &s_DynamicMeshDxVk;
+	return nullptr;
 }
 
 IMesh* CShaderAPIDxVk::GetDynamicMeshEx( IMaterial* pMaterial, VertexFormat_t vertexFormat, int nHWSkinBoneCount,
 	bool bBuffered, IMesh* pVertexOverride, IMesh* pIndexOverride )
 {
 	m_CurrentVertexFormat |= vertexFormat;
-	return &s_DynamicMeshDxVk;
+	return nullptr;
 }
 
 IMesh* CShaderAPIDxVk::GetFlexMesh()
 {
-	return &s_FlexMeshDxVk;
+	return nullptr;
 }
 
 void CShaderAPIDxVk::GetMaxToRender( IMesh *pMesh, bool bMaxUntilFlush, int *pMaxVerts, int *pMaxIndices )
@@ -986,8 +1025,8 @@ void CShaderAPIDxVk::ReadPixels( int x, int y, int width, int height, unsigned c
 void CShaderAPIDxVk::ReadPixels( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *data, ImageFormat dstFormat, int nDstStride )
 {
 	if ( !data || !pSrcRect ) return;
-	int w = pSrcRect->right - pSrcRect->left;
-	int h = pSrcRect->bottom - pSrcRect->top;
+	int w = pSrcRect->width;
+	int h = pSrcRect->height;
 	int stride = ( nDstStride > 0 ) ? nDstStride : w * 4;
 	for ( int y = 0; y < h; ++y )
 		memset( data + y * stride, 0, w * 4 );
@@ -1094,9 +1133,6 @@ ImageFormat CShaderAPIDxVk::GetNearestSupportedFormat( ImageFormat fmt, bool bFi
 	case IMAGE_FORMAT_RGBA16161616F:
 	case IMAGE_FORMAT_RGBA32323232F:
 	case IMAGE_FORMAT_R32F:
-	case IMAGE_FORMAT_RG1616F:
-	case IMAGE_FORMAT_RG3232F:
-	case IMAGE_FORMAT_G16R16:
 		return fmt;
 	default:
 		return IMAGE_FORMAT_BGRA8888;

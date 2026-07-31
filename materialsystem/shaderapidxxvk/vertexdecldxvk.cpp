@@ -424,7 +424,7 @@ int CVertexDeclDxVk::CreateDeclFromVertexFormat( VertexFormat_t vertexFormat, in
 
 	for ( int tc = 0; tc < VERTEX_MAX_TEXTURE_COORDINATES; ++tc )
 	{
-		int mask = ( VERTEX_TEXCOORD_MASK( VERTEX_TEXCOORD_SIZE_2 ) ) << ( tc * VERTEX_TEXCOORD_BITS );
+		VertexFormat_t mask = VERTEX_TEXCOORD_MASK( tc );
 		if ( vertexFormat & mask )
 		{
 			elems[ nCount ].nStream = nStream;

@@ -45,13 +45,12 @@ def build(bld):
 		'dxvk_memory.cpp',
 		'shaderapidxvk.cpp',
 		'shadershadownxvk.cpp',
-		'shaderdevicedxvk.cpp',
 		'shaderdevicemgrdxvk.cpp',
 		'colorformatdxvk.cpp',
 		'hardwareconfigdxvk.cpp',
 		'meshdxvk.cpp',
-		'meshbasedxvk.cpp',
-		'texturedxvk.cpp',
+		'meshdxvkbase.cpp',
+# 		'texturedxvk.cpp',  // TODO: ITexture interface mismatch, needs rewrite
 		'vertexdecldxvk.cpp',
 		'vertexshaderdxvk.cpp',
 		'pixelshaderdxvk.cpp',
@@ -66,9 +65,8 @@ def build(bld):
 		'../../public/tier1',
 		'../../common',
 		'../',
-		'../../../thirdparty/dxvk/include',
-		'../../../thirdparty/Vulkan-Headers/include',
-	] + bld.env.INCLUDES_SDL2
+		'/usr/include',
+	] + getattr(bld.env, 'INCLUDES_SDL2', [])
 
 	defines = []
 

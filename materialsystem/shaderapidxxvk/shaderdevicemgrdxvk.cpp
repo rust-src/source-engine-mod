@@ -90,83 +90,9 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// CShaderShadowDxVk - Shadow state tracker (defines what will be rendered)
+// CShaderShadowDxVk - Shadow state tracker (defined in shadershadownxvk.cpp)
 //-----------------------------------------------------------------------------
-class CShaderShadowDxVk : public IShaderShadow
-{
-public:
-	CShaderShadowDxVk();
-	virtual ~CShaderShadowDxVk();
-
-	void SetDefaultState();
-	void DepthFunc( ShaderDepthFunc_t depthFunc );
-	void EnableDepthWrites( bool bEnable );
-	void EnableDepthTest( bool bEnable );
-	void EnablePolyOffset( PolygonOffsetMode_t nOffsetMode );
-	void EnableColorWrites( bool bEnable );
-	void EnableAlphaWrites( bool bEnable );
-	void EnableBlending( bool bEnable );
-	void BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor );
-	void EnableAlphaTest( bool bEnable );
-	void AlphaFunc( ShaderAlphaFunc_t alphaFunc, float alphaRef );
-	void PolyMode( ShaderPolyModeFace_t face, ShaderPolyMode_t polyMode );
-	void EnableCulling( bool bEnable );
-	void EnableConstantColor( bool bEnable );
-	void VertexShaderVertexFormat( unsigned int nFlags, int nTexCoordCount,
-									int* pTexCoordDimensions, int nUserDataSize );
-	void EnableLighting( bool bEnable );
-	void EnableSpecular( bool bEnable );
-	void EnableVertexBlend( bool bEnable );
-	void OverbrightValue( TextureStage_t stage, float value );
-	void EnableTexture( Sampler_t stage, bool bEnable );
-	void EnableTexGen( TextureStage_t stage, bool bEnable );
-	void TexGen( TextureStage_t stage, ShaderTexGenParam_t param );
-	void EnableCustomPixelPipe( bool bEnable );
-	void CustomTextureStages( int stageCount );
-	void CustomTextureOperation( TextureStage_t stage, ShaderTexChannel_t channel,
-								 ShaderTexOp_t op, ShaderTexArg_t arg1, ShaderTexArg_t arg2 );
-	void DrawFlags( unsigned int drawFlags );
-	void EnableAlphaPipe( bool bEnable );
-	void EnableConstantAlpha( bool bEnable );
-	void EnableVertexAlpha( bool bEnable );
-	void EnableTextureAlpha( TextureStage_t stage, bool bEnable );
-	void EnableBlendingSeparateAlpha( bool bEnable );
-	void BlendFuncSeparateAlpha( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor );
-	void SetVertexShader( const char *pFileName, int vshIndex );
-	void SetPixelShader( const char *pFileName, int pshIndex );
-	void EnableSRGBWrite( bool bEnable ) {}
-	void EnableSRGBRead( Sampler_t stage, bool bEnable ) {}
-	virtual void FogMode( ShaderFogMode_t fogMode ) {}
-	virtual void DisableFogGammaCorrection( bool bDisable ) {}
-	virtual void SetDiffuseMaterialSource( ShaderMaterialSource_t materialSource ) {}
-	virtual void SetMorphFormat( MorphFormat_t flags ) {}
-	virtual void EnableStencil( bool bEnable ) {}
-	virtual void StencilFunc( ShaderStencilFunc_t stencilFunc ) {}
-	virtual void StencilPassOp( ShaderStencilOp_t stencilOp ) {}
-	virtual void StencilFailOp( ShaderStencilOp_t stencilOp ) {}
-	virtual void StencilDepthFailOp( ShaderStencilOp_t stencilOp ) {}
-	virtual void StencilReference( int nReference ) {}
-	virtual void StencilMask( int nMask ) {}
-	virtual void StencilWriteMask( int nMask ) {}
-	virtual void ExecuteCommandBuffer( uint8 *pBuf ) {}
-	void EnableAlphaToCoverage( bool bEnable );
-	virtual void SetShadowDepthFiltering( Sampler_t stage ) {}
-	virtual void BlendOp( ShaderBlendOp_t blendOp ) {}
-	virtual void BlendOpSeparateAlpha( ShaderBlendOp_t blendOp ) {}
-
-	// Query helpers for the material system snapshot
-	bool IsTranslucent() const { return m_IsTranslucent; }
-	bool IsAlphaTested() const { return m_IsAlphaTested; }
-	bool IsDepthWriteEnabled() const { return m_bIsDepthWriteEnabled; }
-	bool UsesVertexAndPixelShaders() const { return m_bUsesVertexAndPixelShaders; }
-
-private:
-	bool m_IsTranslucent;
-	bool m_IsAlphaTested;
-	bool m_bIsDepthWriteEnabled;
-	bool m_bUsesVertexAndPixelShaders;
-	bool m_bAlphaToCoverageEnabled;
-};
+class CShaderShadowDxVk;
 
 //-----------------------------------------------------------------------------
 // CShaderDeviceDxVk - Device-level DXVK shader API
@@ -269,7 +195,7 @@ static CDxvkMesh* s_pStaticMesh = nullptr;
 static CDxvkMesh* s_pDynamicMesh = nullptr;
 static CShaderDeviceDxVk s_ShaderDeviceDxVk;
 static CShaderDeviceMgrDxVk s_ShaderDeviceMgrDxVk;
-static CShaderShadowDxVk s_ShaderShadowDxVk;
+extern CShaderShadowDxVk s_ShaderShadowDxVk;
 extern CShaderAPIDxVk g_ShaderAPIDxVk;
 
 // ---- Global shader util pointer (required by other code) ----
@@ -286,9 +212,9 @@ static void* ShaderInterfaceFactoryDxVk( const char *pInterfaceName, int *pRetur
 	if ( !Q_stricmp( pInterfaceName, SHADER_DEVICE_INTERFACE_VERSION ) )
 		return static_cast< IShaderDevice* >( &s_ShaderDeviceDxVk );
 	if ( !Q_stricmp( pInterfaceName, SHADERAPI_INTERFACE_VERSION ) )
-		return static_cast< IShaderAPI* >( &g_ShaderAPIDxVk );
+		return reinterpret_cast< IShaderAPI* >( &g_ShaderAPIDxVk );
 	if ( !Q_stricmp( pInterfaceName, SHADERSHADOW_INTERFACE_VERSION ) )
-		return static_cast< IShaderShadow* >( &s_ShaderShadowDxVk );
+		return reinterpret_cast< IShaderShadow* >( &s_ShaderShadowDxVk );
 
 	if ( pReturnCode )
 		*pReturnCode = IFACE_FAILED;
@@ -420,90 +346,6 @@ void CDxvkMesh::Draw( CPrimList *pPrims, int nPrims )
 
 void CDxvkMesh::Spew( int numVerts, int numIndices, const MeshDesc_t & desc ) {}
 void CDxvkMesh::ValidateData( int numVerts, int numIndices, const MeshDesc_t & desc ) {}
-
-//=============================================================================
-// CShaderShadowDxVk Implementation
-//=============================================================================
-CShaderShadowDxVk::CShaderShadowDxVk() :
-	m_IsTranslucent( false ),
-	m_IsAlphaTested( false ),
-	m_bIsDepthWriteEnabled( true ),
-	m_bUsesVertexAndPixelShaders( false ),
-	m_bAlphaToCoverageEnabled( false )
-{
-}
-
-CShaderShadowDxVk::~CShaderShadowDxVk() {}
-
-void CShaderShadowDxVk::SetDefaultState()
-{
-	m_IsTranslucent = false;
-	m_IsAlphaTested = false;
-	m_bIsDepthWriteEnabled = true;
-	m_bUsesVertexAndPixelShaders = false;
-	m_bAlphaToCoverageEnabled = false;
-}
-
-void CShaderShadowDxVk::DepthFunc( ShaderDepthFunc_t depthFunc ) {}
-void CShaderShadowDxVk::EnableDepthWrites( bool bEnable ) { m_bIsDepthWriteEnabled = bEnable; }
-void CShaderShadowDxVk::EnableDepthTest( bool bEnable ) {}
-void CShaderShadowDxVk::EnablePolyOffset( PolygonOffsetMode_t nOffsetMode ) {}
-void CShaderShadowDxVk::EnableColorWrites( bool bEnable ) {}
-void CShaderShadowDxVk::EnableAlphaWrites( bool bEnable ) {}
-
-void CShaderShadowDxVk::EnableBlending( bool bEnable )
-{
-	m_IsTranslucent = bEnable;
-}
-
-void CShaderShadowDxVk::BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor ) {}
-
-void CShaderShadowDxVk::EnableAlphaTest( bool bEnable )
-{
-	m_IsAlphaTested = bEnable;
-}
-
-void CShaderShadowDxVk::AlphaFunc( ShaderAlphaFunc_t alphaFunc, float alphaRef ) {}
-void CShaderShadowDxVk::PolyMode( ShaderPolyModeFace_t face, ShaderPolyMode_t polyMode ) {}
-void CShaderShadowDxVk::EnableCulling( bool bEnable ) {}
-void CShaderShadowDxVk::EnableConstantColor( bool bEnable ) {}
-
-void CShaderShadowDxVk::VertexShaderVertexFormat( unsigned int nFlags, int nTexCoordCount,
-												  int* pTexCoordDimensions, int nUserDataSize ) {}
-
-void CShaderShadowDxVk::EnableLighting( bool bEnable ) {}
-void CShaderShadowDxVk::EnableSpecular( bool bEnable ) {}
-void CShaderShadowDxVk::EnableVertexBlend( bool bEnable ) {}
-void CShaderShadowDxVk::OverbrightValue( TextureStage_t stage, float value ) {}
-void CShaderShadowDxVk::EnableTexture( Sampler_t stage, bool bEnable ) {}
-void CShaderShadowDxVk::EnableTexGen( TextureStage_t stage, bool bEnable ) {}
-void CShaderShadowDxVk::TexGen( TextureStage_t stage, ShaderTexGenParam_t param ) {}
-void CShaderShadowDxVk::EnableCustomPixelPipe( bool bEnable ) {}
-void CShaderShadowDxVk::CustomTextureStages( int stageCount ) {}
-void CShaderShadowDxVk::CustomTextureOperation( TextureStage_t stage, ShaderTexChannel_t channel,
-												ShaderTexOp_t op, ShaderTexArg_t arg1, ShaderTexArg_t arg2 ) {}
-void CShaderShadowDxVk::DrawFlags( unsigned int drawFlags ) {}
-void CShaderShadowDxVk::EnableAlphaPipe( bool bEnable ) {}
-void CShaderShadowDxVk::EnableConstantAlpha( bool bEnable ) {}
-void CShaderShadowDxVk::EnableVertexAlpha( bool bEnable ) {}
-void CShaderShadowDxVk::EnableTextureAlpha( TextureStage_t stage, bool bEnable ) {}
-void CShaderShadowDxVk::EnableBlendingSeparateAlpha( bool bEnable ) {}
-void CShaderShadowDxVk::BlendFuncSeparateAlpha( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor ) {}
-
-void CShaderShadowDxVk::SetVertexShader( const char *pFileName, int vshIndex )
-{
-	m_bUsesVertexAndPixelShaders = true;
-}
-
-void CShaderShadowDxVk::SetPixelShader( const char *pFileName, int pshIndex )
-{
-	m_bUsesVertexAndPixelShaders = true;
-}
-
-void CShaderShadowDxVk::EnableAlphaToCoverage( bool bEnable )
-{
-	m_bAlphaToCoverageEnabled = bEnable;
-}
 
 //=============================================================================
 // CShaderDeviceDxVk Implementation
@@ -644,7 +486,7 @@ void *CShaderDeviceMgrDxVk::QueryInterface( const char *pInterfaceName )
 	if ( !Q_stricmp( pInterfaceName, SHADER_DEVICE_MGR_INTERFACE_VERSION ) )
 		return static_cast< IShaderDeviceMgr* >( this );
 	if ( !Q_stricmp( pInterfaceName, MATERIALSYSTEM_HARDWARECONFIG_INTERFACE_VERSION ) )
-		return static_cast< IMaterialSystemHardwareConfig* >( &g_ShaderAPIDxVk );
+		return reinterpret_cast< IMaterialSystemHardwareConfig* >( &g_ShaderAPIDxVk );
 	return NULL;
 }
 
@@ -668,10 +510,9 @@ void CShaderDeviceMgrDxVk::GetAdapterInfo( int nAdapter, MaterialAdapterInfo_t& 
 {
 	memset( &info, 0, sizeof( info ) );
 	info.m_nDXSupportLevel = 98;   // Report DX9.0c+ equivalent
-	info.m_nVendorID = 0x10DE;     // NVIDIA placeholder (cosmetic only)
-	info.m_nDeviceID = 0;
+	info.m_VendorID = 0x10DE;      // NVIDIA placeholder (cosmetic only)
+	info.m_DeviceID = 0;
 	Q_strncpy( info.m_pDriverName, "dxvk_vulkan", sizeof( info.m_pDriverName ) );
-	Q_strncpy( info.m_pDescription, "DXVK Vulkan Translation Layer", sizeof( info.m_pDescription ) );
 }
 
 bool CShaderDeviceMgrDxVk::GetRecommendedConfigurationInfo( int nAdapter, int nDXLevel, KeyValues *pConfiguration )
