@@ -25,6 +25,11 @@
 
 #include <vulkan/vulkan.h>
 
+// X11 defines CurrentTime as a macro, which conflicts with Source engine code
+#ifdef CurrentTime
+#undef CurrentTime
+#endif
+
 // Vulkan forward declarations (only used when vulkan.h is unavailable)
 #ifndef VULKAN_H_
 typedef struct VkInstance_T* VkInstance;
