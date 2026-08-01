@@ -140,7 +140,9 @@
 #define _sse2neon_unlikely(x) (x)
 #else /* other unsupported compilers */
 #if defined(__has_warning)
+#if defined(__GNUC__) || defined(__clang__)
 #warning "Macro name collisions may happen with unsupported compiler."
+#endif
 #endif
 #ifndef FORCE_INLINE
 #define FORCE_INLINE static inline
@@ -269,6 +271,19 @@
  * of integer, from chars to shorts to unsigned long longs.
  */
 typedef int64x1_t __m64;
+
+/* Helper conversions between __m64 (int64x1_t) and scalar int64_t.
+ * MSVC ARM64 does not allow direct C-style casts between these types.
+ */
+FORCE_INLINE int64_t _mm_cvtm64_si64(__m64 a)
+{
+    return vget_lane_s64(vreinterpret_s64_m64(a), 0);
+}
+FORCE_INLINE __m64 _mm_cvtsi64_m64(int64_t a)
+{
+    return vreinterpret_m64_s64(vcreate_s64(a));
+}
+
 typedef float32x4_t __m128; /* 128-bit vector containing 4 floats */
 // On ARM 32-bit architecture, the float64x2_t is not supported.
 // The data type __m128d should be represented in a different way for related
@@ -1826,7 +1841,13 @@ FORCE_INLINE __m128 _mm_div_ss(__m128 a, __m128 b)
 // https://software.intel.com/sites/landingpage/IntrinsicsGuide/#text=_mm_free
 FORCE_INLINE void _mm_free(void *addr)
 {
+#if defined(_MSC_VER)
+    /* MSVC / Windows: _mm_malloc uses _aligned_malloc(), so free() would crash.
+     * Use _aligned_free() which is the matching deallocator. */
+    _aligned_free(addr);
+#else
     free(addr);
+#endif
 }
 
 // Macro: Get the flush zero bits from the MXCSR control and status register.
@@ -2224,7 +2245,12 @@ FORCE_INLINE int _mm_movemask_pi8(__m64 a)
 {
     uint8x8_t input = vreinterpret_u8_m64(a);
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    static const int8_t shift_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    const int8x8_t shift = vld1_s8(shift_arr);
+#else
     static const int8x8_t shift = {0, 1, 2, 3, 4, 5, 6, 7};
+#endif
     uint8x8_t tmp = vshr_n_u8(input, 7);
     return vaddv_u8(vshl_u8(tmp, shift));
 #else
@@ -2246,7 +2272,12 @@ FORCE_INLINE int _mm_movemask_ps(__m128 a)
 {
     uint32x4_t input = vreinterpretq_u32_m128(a);
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    static const int32_t shift_arr[4] = {0, 1, 2, 3};
+    const int32x4_t shift = vld1q_s32(shift_arr);
+#else
     static const int32x4_t shift = {0, 1, 2, 3};
+#endif
     uint32x4_t tmp = vshrq_n_u32(input, 31);
     return vaddvq_u32(vshlq_u32(tmp, shift));
 #else
@@ -2486,16 +2517,16 @@ FORCE_INLINE void _sse2neon_mm_set_flush_zero_mode(unsigned int flag)
 
 #if defined(__aarch64__)
 #if defined(_MSC_VER)
-    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    /* MSVC ARM64: __asm__ not supported; leave as default (no-op). */
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return;
 #else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
 #endif
 #else
 #if defined(_MSC_VER)
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
 #endif
@@ -2504,9 +2535,18 @@ FORCE_INLINE void _sse2neon_mm_set_flush_zero_mode(unsigned int flag)
     r.field.bit24 = (flag & _MM_FLUSH_ZERO_MASK) == _MM_FLUSH_ZERO_ON;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ for msr FPCR not supported; leave as default (no-op). */
+    (void)r;
+#else
     __asm__ __volatile__("msr FPCR, %0" ::"r"(r)); /* write */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
 #else
     __asm__ __volatile__("vmsr FPSCR, %0" ::"r"(r));        /* write */
+#endif
 #endif
 }
 
@@ -2543,16 +2583,16 @@ FORCE_INLINE void _MM_SET_ROUNDING_MODE(int rounding)
 
 #if defined(__aarch64__)
 #if defined(_MSC_VER)
-    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    /* MSVC ARM64: __asm__ not supported; leave as default (no-op). */
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return;
 #else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
 #endif
 #else
 #if defined(_MSC_VER)
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
 #endif
@@ -2577,9 +2617,18 @@ FORCE_INLINE void _MM_SET_ROUNDING_MODE(int rounding)
     }
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ for msr FPCR not supported; leave as default (no-op). */
+    (void)r;
+#else
     __asm__ __volatile__("msr FPCR, %0" ::"r"(r)); /* write */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
 #else
     __asm__ __volatile__("vmsr FPSCR, %0" ::"r"(r));        /* write */
+#endif
 #endif
 }
 
@@ -5189,7 +5238,23 @@ FORCE_INLINE __m128i _mm_packus_epi16(const __m128i a, const __m128i b)
 // a reasonable approximation.
 FORCE_INLINE void _mm_pause()
 {
+#if defined(_MSC_VER)
+    /* MSVC ARM64 / ARM: no GCC-style inline asm. Use the __yield intrinsic
+     * (ARM) or a no-op data barrier for ARM64 as a reasonable pause hint.
+     * The exact semantics of _mm_pause (spin-loop hint) don't map 1:1 on ARM,
+     * but this avoids the undefined-assembler crash. */
+#if defined(_M_ARM64) || defined(_M_ARM64EC) || defined(__aarch64__)
+    __dmb(0xB); /* DMB ISH as a rough equivalent of the pause/yield hint */
+#elif defined(_M_ARM)
+    __yield();
+#else
+    /* Non-ARM MSVC: _mm_pause is available via <xmmintrin.h>, but we cannot
+     * pull that header on ARM builds. Fall back to a simple compiler fence. */
+    _ReadWriteBarrier();
+#endif
+#else
     __asm__ __volatile__("isb\n");
+#endif
 }
 
 // Compute the absolute differences of packed unsigned 8-bit integers in a and
@@ -5231,7 +5296,7 @@ FORCE_INLINE __m128i _mm_set_epi32(int i3, int i2, int i1, int i0)
 // https://msdn.microsoft.com/en-us/library/dk2sdw0h(v=vs.120).aspx
 FORCE_INLINE __m128i _mm_set_epi64(__m64 i1, __m64 i2)
 {
-    return _mm_set_epi64x((int64_t) i1, (int64_t) i2);
+    return _mm_set_epi64x(_mm_cvtm64_si64(i1), _mm_cvtm64_si64(i2));
 }
 
 // Returns the __m128i structure with its two 64-bit integer values
@@ -5326,7 +5391,7 @@ FORCE_INLINE __m128i _mm_set1_epi32(int _i)
 // https://docs.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/whtfzhzk(v=vs.100)
 FORCE_INLINE __m128i _mm_set1_epi64(__m64 _i)
 {
-    return vreinterpretq_m128i_s64(vdupq_n_s64((int64_t) _i));
+    return vreinterpretq_m128i_s64(vdupq_n_s64(_mm_cvtm64_si64(_i)));
 }
 
 // Sets the 2 signed 64-bit integer values to i.
@@ -7814,8 +7879,8 @@ FORCE_INLINE __m128 _mm_dp_ps(__m128 a, __m128 b, const int imm)
         return _mm_set1_ps(vaddvq_f32(_mm_mul_ps(a, b)));
     }
     if (imm == 0x7F) {
-        float32x4_t m = _mm_mul_ps(a, b);
-        m[3] = 0;
+        float32x4_t m = vreinterpretq_f32_m128(_mm_mul_ps(a, b));
+        m = vsetq_lane_f32(0.0f, m, 3);
         return _mm_set1_ps(vaddvq_f32(m));
     }
 #endif
@@ -7828,21 +7893,31 @@ FORCE_INLINE __m128 _mm_dp_ps(__m128 a, __m128 b, const int imm)
      * is used for each operation.
      */
     if (imm & (1 << 4))
-        _sse2neon_kadd_f32(&s, &c, f32a[0] * f32b[0]);
+        _sse2neon_kadd_f32(&s, &c, vgetq_lane_f32(f32a, 0) * vgetq_lane_f32(f32b, 0));
     if (imm & (1 << 5))
-        _sse2neon_kadd_f32(&s, &c, f32a[1] * f32b[1]);
+        _sse2neon_kadd_f32(&s, &c, vgetq_lane_f32(f32a, 1) * vgetq_lane_f32(f32b, 1));
     if (imm & (1 << 6))
-        _sse2neon_kadd_f32(&s, &c, f32a[2] * f32b[2]);
+        _sse2neon_kadd_f32(&s, &c, vgetq_lane_f32(f32a, 2) * vgetq_lane_f32(f32b, 2));
     if (imm & (1 << 7))
-        _sse2neon_kadd_f32(&s, &c, f32a[3] * f32b[3]);
+        _sse2neon_kadd_f32(&s, &c, vgetq_lane_f32(f32a, 3) * vgetq_lane_f32(f32b, 3));
     s += c;
 
+#if defined(_MSC_VER)
+    const float res_arr[4] = {
+        (imm & 0x1) ? s : 0,
+        (imm & 0x2) ? s : 0,
+        (imm & 0x4) ? s : 0,
+        (imm & 0x8) ? s : 0,
+    };
+    float32x4_t res = vld1q_f32(res_arr);
+#else
     float32x4_t res = {
         (imm & 0x1) ? s : 0,
         (imm & 0x2) ? s : 0,
         (imm & 0x4) ? s : 0,
         (imm & 0x8) ? s : 0,
     };
+#endif
     return vreinterpretq_m128_f32(res);
 }
 
@@ -8500,7 +8575,7 @@ FORCE_INLINE __m128i _mm_cmpgt_epi64(__m128i a, __m128i b)
 // https://msdn.microsoft.com/en-us/library/bb531411(v=vs.100)
 FORCE_INLINE uint32_t _mm_crc32_u16(uint32_t crc, uint16_t v)
 {
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && !defined(_MSC_VER)
     __asm__ __volatile__("crc32ch %w[c], %w[c], %w[v]\n\t"
                          : [c] "+r"(crc)
                          : [v] "r"(v));
@@ -8518,7 +8593,7 @@ FORCE_INLINE uint32_t _mm_crc32_u16(uint32_t crc, uint16_t v)
 // https://msdn.microsoft.com/en-us/library/bb531394(v=vs.100)
 FORCE_INLINE uint32_t _mm_crc32_u32(uint32_t crc, uint32_t v)
 {
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && !defined(_MSC_VER)
     __asm__ __volatile__("crc32cw %w[c], %w[c], %w[v]\n\t"
                          : [c] "+r"(crc)
                          : [v] "r"(v));
@@ -8536,7 +8611,7 @@ FORCE_INLINE uint32_t _mm_crc32_u32(uint32_t crc, uint32_t v)
 // https://msdn.microsoft.com/en-us/library/bb514033(v=vs.100)
 FORCE_INLINE uint64_t _mm_crc32_u64(uint64_t crc, uint64_t v)
 {
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && !defined(_MSC_VER)
     __asm__ __volatile__("crc32cx %w[c], %w[c], %x[v]\n\t"
                          : [c] "+r"(crc)
                          : [v] "r"(v));
@@ -8552,7 +8627,7 @@ FORCE_INLINE uint64_t _mm_crc32_u64(uint64_t crc, uint64_t v)
 // https://msdn.microsoft.com/en-us/library/bb514036(v=vs.100)
 FORCE_INLINE uint32_t _mm_crc32_u8(uint32_t crc, uint8_t v)
 {
-#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32) && !defined(_MSC_VER)
     __asm__ __volatile__("crc32cb %w[c], %w[c], %w[v]\n\t"
                          : [c] "+r"(crc)
                          : [v] "r"(v));
@@ -8644,17 +8719,25 @@ FORCE_INLINE __m128i _mm_aesenc_si128(__m128i EncBlock, __m128i RoundKey)
 
     // sub bytes
     v = vqtbl4q_u8(_sse2neon_vld1q_u8_x4(SSE2NEON_sbox), w);
-    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0x40), w - 0x40);
-    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0x80), w - 0x80);
-    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0xc0), w - 0xc0);
+    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0x40), vsubq_u8(w, vdupq_n_u8(0x40)));
+    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0x80), vsubq_u8(w, vdupq_n_u8(0x80)));
+    v = vqtbx4q_u8(v, _sse2neon_vld1q_u8_x4(SSE2NEON_sbox + 0xc0), vsubq_u8(w, vdupq_n_u8(0xc0)));
 
     // mix columns
-    w = (v << 1) ^ (uint8x16_t) (((int8x16_t) v >> 7) & 0x1b);
-    w ^= (uint8x16_t) vrev32q_u16((uint16x8_t) v);
-    w ^= vqtbl1q_u8(v ^ w, vld1q_u8(ror32by8));
-
-    //  add round key
-    return vreinterpretq_m128i_u8(w) ^ RoundKey;
+    {
+        uint8x16_t v_shl1 = vshlq_u8(v, vdupq_n_s8(1));
+        int8x16_t v_shr7_s = vshrq_n_s8((int8x16_t) v, 7);
+        uint8x16_t v_shr7_u = vreinterpretq_u8_s8(v_shr7_s);
+        uint8x16_t masked = vandq_u8(v_shr7_u, vdupq_n_u8(0x1b));
+        w = veorq_u8(v_shl1, masked);
+    }
+    w = veorq_u8(w, vreinterpretq_u8_u16(vrev32q_u16(vreinterpretq_u16_u8(v))));
+    {
+        uint8x16_t v_xor_w = veorq_u8(v, w);
+        w = veorq_u8(w, vqtbl1q_u8(v_xor_w, vld1q_u8(ror32by8)));
+    }
+    // add round key
+    return vreinterpretq_m128i_u8(veorq_u8(w, vreinterpretq_u8_m128i(RoundKey)));
 
 #else /* ARMv7-A NEON implementation */
 #define SSE2NEON_AES_B2W(b0, b1, b2, b3)                 \
@@ -8761,9 +8844,8 @@ FORCE_INLINE __m128i _mm_aeskeygenassist_si128(__m128i key, const int rcon)
 // for more details.
 FORCE_INLINE __m128i _mm_aesenc_si128(__m128i a, __m128i b)
 {
-    return vreinterpretq_m128i_u8(
-        vaesmcq_u8(vaeseq_u8(vreinterpretq_u8_m128i(a), vdupq_n_u8(0))) ^
-        vreinterpretq_u8_m128i(b));
+    uint8x16_t mixed = vaesmcq_u8(vaeseq_u8(vreinterpretq_u8_m128i(a), vdupq_n_u8(0)));
+    return vreinterpretq_m128i_u8(veorq_u8(mixed, vreinterpretq_u8_m128i(b)));
 }
 
 // https://software.intel.com/sites/landingpage/IntrinsicsGuide/#text=_mm_aesenclast_si128
@@ -8779,6 +8861,35 @@ FORCE_INLINE __m128i _mm_aeskeygenassist_si128(__m128i a, const int rcon)
     // AESE does ShiftRows and SubBytes on A
     uint8x16_t u8 = vaeseq_u8(vreinterpretq_u8_m128i(a), vdupq_n_u8(0));
 
+#if defined(_MSC_VER)
+    /* MSVC ARM64: no vector operator[] or brace-init for NEON types.
+     * Build the dest byte array using vgetq_lane_u8 / vld1q_u8. */
+    uint8_t ALIGN_STRUCT(16) dest_bytes[16];
+    // Undo ShiftRows step from AESE and extract X1 and X3
+    dest_bytes[0]  = vgetq_lane_u8(u8, 0x4);
+    dest_bytes[1]  = vgetq_lane_u8(u8, 0x1);
+    dest_bytes[2]  = vgetq_lane_u8(u8, 0xE);
+    dest_bytes[3]  = vgetq_lane_u8(u8, 0xB);  // SubBytes(X1)
+    dest_bytes[4]  = vgetq_lane_u8(u8, 0x1);
+    dest_bytes[5]  = vgetq_lane_u8(u8, 0xE);
+    dest_bytes[6]  = vgetq_lane_u8(u8, 0xB);
+    dest_bytes[7]  = vgetq_lane_u8(u8, 0x4);  // ROT(SubBytes(X1))
+    dest_bytes[8]  = vgetq_lane_u8(u8, 0xC);
+    dest_bytes[9]  = vgetq_lane_u8(u8, 0x9);
+    dest_bytes[10] = vgetq_lane_u8(u8, 0x6);
+    dest_bytes[11] = vgetq_lane_u8(u8, 0x3);  // SubBytes(X3)
+    dest_bytes[12] = vgetq_lane_u8(u8, 0x9);
+    dest_bytes[13] = vgetq_lane_u8(u8, 0x6);
+    dest_bytes[14] = vgetq_lane_u8(u8, 0x3);
+    dest_bytes[15] = vgetq_lane_u8(u8, 0xC);  // ROT(SubBytes(X3))
+    uint8x16_t dest = vld1q_u8(dest_bytes);
+
+    const uint32_t ALIGN_STRUCT(16) r_arr[4] = {0, (uint32_t)rcon, 0, (uint32_t)rcon};
+    uint32x4_t r = vld1q_u32(r_arr);
+    return vreinterpretq_m128i_u8(
+        veorq_u8(vreinterpretq_u8_m128i(vreinterpretq_m128i_u8(dest)),
+                 vreinterpretq_u8_m128i(vreinterpretq_m128i_u32(r))));
+#else
     uint8x16_t dest = {
         // Undo ShiftRows step from AESE and extract X1 and X3
         u8[0x4], u8[0x1], u8[0xE], u8[0xB],  // SubBytes(X1)
@@ -8788,6 +8899,7 @@ FORCE_INLINE __m128i _mm_aeskeygenassist_si128(__m128i a, const int rcon)
     };
     uint32x4_t r = {0, (unsigned) rcon, 0, (unsigned) rcon};
     return vreinterpretq_m128i_u8(dest) ^ vreinterpretq_m128i_u32(r);
+#endif
 }
 #endif
 
@@ -8831,16 +8943,16 @@ FORCE_INLINE unsigned int _sse2neon_mm_get_denormals_zero_mode()
 
 #if defined(__aarch64__)
 #if defined(_MSC_VER)
-    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    /* MSVC ARM64: __asm__ not supported; return safe default (DZ off at startup). */
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return _MM_DENORMALS_ZERO_OFF;
 #else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
 #endif
 #else
 #if defined(_MSC_VER)
     (void)r;
-    return _MM_ROUND_NEAREST;
+    return _MM_DENORMALS_ZERO_OFF;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
 #endif
@@ -8937,9 +9049,18 @@ FORCE_INLINE void _sse2neon_mm_set_denormals_zero_mode(unsigned int flag)
     r.field.bit24 = (flag & _MM_DENORMALS_ZERO_MASK) == _MM_DENORMALS_ZERO_ON;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ for msr FPCR not supported; leave as default (no-op). */
+    (void)r;
+#else
     __asm__ __volatile__("msr FPCR, %0" ::"r"(r)); /* write */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
 #else
     __asm__ __volatile__("vmsr FPSCR, %0" ::"r"(r));        /* write */
+#endif
 #endif
 }
 
