@@ -16,7 +16,9 @@
 #include "tier0/platform.h"
 #include "tier0/dbg.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define VK_USE_PLATFORM_WIN32_KHR
+#else
 #define VK_USE_PLATFORM_XLIB_KHR
 #define VK_USE_PLATFORM_XCB_KHR
 #endif

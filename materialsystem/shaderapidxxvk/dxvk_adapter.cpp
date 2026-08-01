@@ -12,7 +12,9 @@
 
 #include <string.h>
 #include <stdlib.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #endif
 
@@ -215,9 +217,7 @@ bool CDxvkAdapter::InitVulkan( void* hWnd, int nAdapterIdx )
 bool CDxvkAdapter::LoadVulkanFunctions()
 {
 #ifdef _WIN32
-	s_pVulkanLib = (void*)Plat_GetProcAddress( (HMODULE)s_pVulkanLib, L"vulkan-1.dll" );
-	if ( !s_pVulkanLib )
-		s_pVulkanLib = (void*)LoadLibraryA( "vulkan-1.dll" );
+	s_pVulkanLib = (void*)LoadLibraryA( "vulkan-1.dll" );
 #else
 	s_pVulkanLib = dlopen( "libvulkan.so.1", RTLD_NOW | RTLD_LOCAL );
 	if ( !s_pVulkanLib )
