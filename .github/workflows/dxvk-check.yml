@@ -15,20 +15,6 @@ on:
       - ".github/workflows/dxvk-check.yml"
 
 jobs:
-  dxvk-linux:
-    runs-on: ubuntu-22.04
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install deps
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq libvulkan-dev libsdl2-dev libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libbz2-dev libedit-dev zlib1g-dev
-    - name: Build DXVK module only
-      run: |
-        git submodule init && git submodule update
-        python3 waf configure -T release --disable-warns --enable-opus
-        python3 waf build --target=shaderapidxxvk -j$(nproc)
-
   dxvk-windows:
     runs-on: windows-latest
     steps:
