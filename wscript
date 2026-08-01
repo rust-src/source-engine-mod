@@ -447,7 +447,13 @@ def configure(conf):
 	# subsystem=bld.env.MSVC_SUBSYSTEM
 	# TODO: wrapper around bld.stlib, bld.shlib and so on?
 	conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
-	if conf.env.DEST_CPU == 'aarch64':
+	# On WOA (Windows on ARM), the Python process may run under x64 emulation
+	# so DEST_CPU might be 'amd64' even on native ARM64 hardware.
+	# Check VSCMD_ARG_TGT_ARCH (set by vcvarsall) or PROCESSOR_ARCHITECTURE instead.
+	_msvc_target_env = os.environ.get('VSCMD_ARG_TGT_ARCH', '')
+	if _msvc_target_env == 'arm64':
+		conf.env.MSVC_TARGETS = ['arm64']
+	elif conf.env.DEST_CPU == 'aarch64':
 		conf.env.MSVC_TARGETS = ['arm64']
 	else:
 		conf.env.MSVC_TARGETS = ['x64']
