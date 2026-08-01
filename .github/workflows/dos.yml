@@ -102,17 +102,20 @@ jobs:
         if (Test-Path $vcpkgLib) {
           Get-ChildItem "$vcpkgLib\*.lib" | Copy-Item -Destination ./lib/win32/arm64/ -Force
           Get-ChildItem "$vcpkgLib\*.lib" | Copy-Item -Destination ./lib/win32/aarch64/ -Force
-          # Rename for compatibility (different naming conventions)
+          # Rename for compatibility (different naming conventions).
+          # vcpkg zlib exports z.lib on Windows (not zlib.lib). Cover both sources.
           foreach ($dir in @("./lib/win32/arm64", "./lib/win32/aarch64")) {
-            if (Test-Path "$dir/zlib.lib") {
-              Copy-Item "$dir/zlib.lib" "$dir/libz.lib" -Force
-              Copy-Item "$dir/zlib.lib" "$dir/z.lib" -Force
+            $zSrc = if (Test-Path "$dir/zlib.lib") { "$dir/zlib.lib" } elseif (Test-Path "$dir/z.lib") { "$dir/z.lib" } else { $null }
+            if ($zSrc) {
+              if (-not (Test-Path "$dir/libz.lib")) { Copy-Item $zSrc "$dir/libz.lib" -Force }
+              if (-not (Test-Path "$dir/z.lib"))    { Copy-Item $zSrc "$dir/z.lib" -Force }
+              if (-not (Test-Path "$dir/zlib.lib")) { Copy-Item $zSrc "$dir/zlib.lib" -Force }
             }
             if (Test-Path "$dir/jpeg.lib") {
-              Copy-Item "$dir/jpeg.lib" "$dir/libjpeg.lib" -Force
+              if (-not (Test-Path "$dir/libjpeg.lib")) { Copy-Item "$dir/jpeg.lib" "$dir/libjpeg.lib" -Force }
             }
             if (Test-Path "$dir/libpng16.lib") {
-              Copy-Item "$dir/libpng16.lib" "$dir/libpng.lib" -Force
+              if (-not (Test-Path "$dir/libpng.lib")) { Copy-Item "$dir/libpng16.lib" "$dir/libpng.lib" -Force }
             }
           }
         }
