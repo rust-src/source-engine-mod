@@ -456,6 +456,12 @@ def configure(conf):
 
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
+
+	# Monkey-patch MSVC all_msvc_platforms for native ARM64 support (WOA)
+	import waflib.Tools.msvc as _msvc
+	if ('arm64', 'arm64') not in _msvc.all_msvc_platforms:
+		_msvc.all_msvc_platforms.insert(0, ('arm64', 'arm64'))
+
 	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
 
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
