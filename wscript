@@ -452,6 +452,7 @@ def configure(conf):
 	# Check VSCMD_ARG_TGT_ARCH (set by vcvarsall) or PROCESSOR_ARCHITECTURE instead.
 	_msvc_target_env = os.environ.get('VSCMD_ARG_TGT_ARCH', '')
 	if _msvc_target_env == 'arm64':
+		conf.env.DEST_CPU = 'aarch64'
 		conf.env.MSVC_TARGETS = ['arm64']
 	elif conf.env.DEST_CPU == 'aarch64':
 		conf.env.MSVC_TARGETS = ['arm64']

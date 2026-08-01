@@ -94,26 +94,33 @@ jobs:
         }
         # Install ARM64 packages
         & "$vcpkgRoot\vcpkg" install zlib:arm64-windows libpng:arm64-windows libjpeg-turbo:arm64-windows opus:arm64-windows sdl2:arm64-windows --clean-after-build
-        # Copy ARM64 .lib files to project lib directory
+        # Copy ARM64 .lib files to project lib directory (both arm64 and aarch64 for compatibility)
         New-Item -ItemType Directory -Force -Path ./lib/win32/arm64 | Out-Null
+        New-Item -ItemType Directory -Force -Path ./lib/win32/aarch64 | Out-Null
         $vcpkgLib = "$vcpkgRoot\installed\arm64-windows\lib"
         if (Test-Path $vcpkgLib) {
           Get-ChildItem "$vcpkgLib\*.lib" | Copy-Item -Destination ./lib/win32/arm64/ -Force
+          Get-ChildItem "$vcpkgLib\*.lib" | Copy-Item -Destination ./lib/win32/aarch64/ -Force
           # Rename zlib.lib -> libz.lib, jpeg.lib -> libjpeg.lib for compatibility
-          if (Test-Path ./lib/win32/arm64/zlib.lib) {
-            Copy-Item ./lib/win32/arm64/zlib.lib ./lib/win32/arm64/libz.lib -Force
-          }
-          if (Test-Path ./lib/win32/arm64/jpeg.lib) {
-            Copy-Item ./lib/win32/arm64/jpeg.lib ./lib/win32/arm64/libjpeg.lib -Force
+          foreach ($dir in @("./lib/win32/arm64", "./lib/win32/aarch64")) {
+            if (Test-Path "$dir/zlib.lib") {
+              Copy-Item "$dir/zlib.lib" "$dir/libz.lib" -Force
+            }
+            if (Test-Path "$dir/jpeg.lib") {
+              Copy-Item "$dir/jpeg.lib" "$dir/libjpeg.lib" -Force
+            }
           }
         }
         # Copy ARM64 DLLs
         $vcpkgBin = "$vcpkgRoot\installed\arm64-windows\bin"
         if (Test-Path $vcpkgBin) {
           Get-ChildItem "$vcpkgBin\*.dll" | Copy-Item -Destination ./lib/win32/arm64/ -Force
+          Get-ChildItem "$vcpkgBin\*.dll" | Copy-Item -Destination ./lib/win32/aarch64/ -Force
         }
         Write-Host "ARM64 libraries in ./lib/win32/arm64/:"
         Get-ChildItem ./lib/win32/arm64/ -Name
+        Write-Host "ARM64 libraries in ./lib/win32/aarch64/:"
+        Get-ChildItem ./lib/win32/aarch64/ -Name
     - name: Build Windows ARM64
       run: |
         git submodule init;git submodule update
