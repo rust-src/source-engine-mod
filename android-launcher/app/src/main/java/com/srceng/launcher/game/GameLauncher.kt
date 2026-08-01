@@ -35,8 +35,14 @@ object GameLauncher {
      */
     const val SDL_ACTIVITY_CLASS = "org.libsdl.app.SDLActivity"
 
-    /** 必须存在的 native 库（通常打包在 APK libs/<abi>/libSDL2.so / libsource.so 等） */
-    private val REQUIRED_LIBS = listOf("SDL2", "source")
+    /** 必须存在的 native 库（打包在 APK libs/<abi>/ 目录下，来自 CI build-android-aarch64/armv7a 产物） */
+    private val REQUIRED_LIBS = listOf(
+        "SDL2",              // libSDL2.so：SDL 入口/Java 层 JNI
+        "tier0",             // libtier0.so：Source 基础库（内存、线程、platform）
+        "vstdlib",           // libvstdlib.so：Source 标准库
+        "launcher",          // liblauncher.so：引擎启动器（含 main/launcher）
+        "engine"             // libengine.so：Source 引擎核心
+    )
 
     /** launch-args.txt（写入 Context.filesDir，SDL 的 Java helper 启动时读本文件拼成 argv） */
     private const val LAUNCH_ARGS_FILENAME = "launch-args.txt"

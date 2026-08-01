@@ -15,7 +15,8 @@ android {
         versionName = "1.0.0"
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            // 只保留 CI 产出的 ABI，避免 APK 里 x86_64 空 ABI 导致运行时找不到 so
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -50,6 +51,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // 与 AndroidManifest 中 extractNativeLibs=true 配套，允许系统把 so 解压到 /data/app/<pkg>/lib/
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }
