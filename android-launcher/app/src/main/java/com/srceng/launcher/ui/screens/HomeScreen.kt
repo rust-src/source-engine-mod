@@ -25,17 +25,28 @@ import com.srceng.launcher.LauncherViewModel
 import com.srceng.launcher.data.CmdCategory
 import com.srceng.launcher.data.CommandLineOption
 import com.srceng.launcher.data.PredefinedCmdOptions
+import com.srceng.launcher.game.GameLauncher
 import com.srceng.launcher.ui.Screen
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun HomeScreen(vm: LauncherViewModel, navController: NavHostController) {
+fun HomeScreen(
+    vm: LauncherViewModel,
+    navController: NavHostController,
+    snackbarHostState: SnackbarHostState
+) {
     val config by vm.config.collectAsState()
     var showLaunchOptions by remember { mutableStateOf(false) }
     var showArgsDialog by remember { mutableStateOf(false) }
     var customArgs by remember(config.customLaunchArgs) { mutableStateOf(config.customLaunchArgs) }
+    var showDiagnostics by remember { mutableStateOf(true) }
+    var failureDialog by remember { mutableStateOf<GameLauncher.LaunchFlowResult?>(null) }
+    val scope = rememberCoroutineScope()
 
     val scrollState = rememberScrollState()
+    // 触发 recompute diagnostics 每当 config 或 gameDir 变化（每次重组拉一次即可）
+    val diagnostics = remember(config) { vm.diagnostics() }
 
     Column(
         modifier = Modifier
@@ -46,6 +57,13 @@ fun HomeScreen(vm: LauncherViewModel, navController: NavHostController) {
     ) {
         // === Hero 卡片 ===
         HeroCard(onClickSettings = { navController.navigate(Screen.Settings.route) })
+
+        // === 启动前自检：状态面板 ===
+        LauncherDiagnosticsPanel(
+            diagnostics = diagnostics,
+            expanded = showDiagnostics,
+            onToggle = { showDiagnostics = !showDiagnostics }
+        )
 
         // === 游戏目录 / 模组信息 ===
         InfoCard(config, vm, navController)
@@ -88,7 +106,48 @@ fun HomeScreen(vm: LauncherViewModel, navController: NavHostController) {
         ActionButtons(
             config = config,
             vm = vm,
-            customArgsPreview = vm.buildLaunchArgs()
+            customArgsPreview = vm.buildLaunchArgs(),
+            diagnostics = diagnostics,
+            onClickLaunch = {
+                val result = vm.launchNow()
+                when {
+                    result.canLaunch && result.launch?.success == true -> {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = "已启动引擎 · 已写入 autoexec.cfg + launch-args.txt",
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    }
+                    !result.canLaunch -> {
+                        // 前置条件未满足：弹窗 + Snackbar 提示
+                        failureDialog = result
+                        val wrote = buildList {
+                            if (result.autoexec?.success == true) add("autoexec.cfg")
+                            if (result.argsFile?.success == true) add("launch-args.txt")
+                        }
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (wrote.isNotEmpty()) {
+                                    "启动条件未满足，但已写入 ${wrote.joinToString(" / ")}。点击弹窗查看原因。"
+                                } else {
+                                    "启动条件未满足（详见弹出的诊断对话框）"
+                                },
+                                duration = SnackbarDuration.Long
+                            )
+                        }
+                    }
+                    else -> {
+                        // canLaunch=true 但 launch!=success：给出 launch 失败提示
+                        val msg = result.launch?.message?.takeIf { it.isNotBlank() }
+                            ?: "启动失败（原因未知）"
+                        failureDialog = result
+                        scope.launch {
+                            snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long)
+                        }
+                    }
+                }
+            }
         )
     }
 
@@ -126,6 +185,22 @@ fun HomeScreen(vm: LauncherViewModel, navController: NavHostController) {
                         minLines = 2,
                         placeholder = { Text("-novid -high") }
                     )
+                }
+            }
+        )
+    }
+
+    // ===== 启动失败 / 条件未满足 弹窗 =====
+    val fail = failureDialog
+    if (fail != null) {
+        LaunchFailureDialog(
+            result = fail,
+            onDismiss = { failureDialog = null },
+            onRetry = {
+                failureDialog = null
+                // 重新点一下 launch（条件满足的话）
+                if (fail.canLaunch && fail.launch?.success != true) {
+                    // canLaunch=true 只是 launch 失败，再尝试一次；否则保持用户手动按启动按钮
                 }
             }
         )
@@ -374,8 +449,11 @@ private fun SwitchRow(
 private fun ActionButtons(
     config: com.srceng.launcher.data.LauncherConfig,
     vm: LauncherViewModel,
-    customArgsPreview: String
+    customArgsPreview: String,
+    diagnostics: List<GameLauncher.Diagnostic>,
+    onClickLaunch: () -> Unit
 ) {
+    val ready = diagnostics.none { !it.ok }
     var showArgs by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -406,31 +484,38 @@ private fun ActionButtons(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             FilledTonalButton(
-                onClick = { /* TODO: 启动服务端 */ },
+                onClick = { onClickLaunch() }, // 复用同一流程（args 中已包含 +map 等服务器参数
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                enabled = true
             ) {
                 Icon(Icons.Default.Dns, null)
                 Spacer(Modifier.width(6.dp))
                 Text("服务端", fontWeight = FontWeight.Bold)
             }
+            val (btnLabel, btnIcon) = when {
+                config.startListenServer -> "启动主机" to Icons.Default.Router
+                ready -> "启动游戏" to Icons.Default.PlayArrow
+                else -> "启动（未就绪）" to Icons.Default.PlayArrow
+            }
             Button(
-                onClick = { /* TODO: 启动游戏 */ },
+                onClick = onClickLaunch,
                 modifier = Modifier
                     .weight(1.6f)
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    containerColor = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiaryContainer
+                ),
+                enabled = true  // 始终启用；不满足条件时点击后仍会写配置 + 清晰的诊断弹窗，避免“按钮灰掉用户以为坏掉
             ) {
-                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(28.dp))
+                Icon(btnIcon, null, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (config.startListenServer) "启动主机" else "启动游戏",
+                    text = if (config.startListenServer) "启动主机" else if (ready) "启动游戏" else "启动（未就绪）",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp
                 )
@@ -733,6 +818,223 @@ private fun CmdValueDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("数值") }
+                    )
+                }
+            }
+        }
+    )
+}
+
+// ============================================================
+// 启动前自检状态面板（HeroCard 下方显示）
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherDiagnosticsPanel(
+    diagnostics: List<GameLauncher.Diagnostic>,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val okCount = diagnostics.count { it.ok }
+    val failCount = diagnostics.size - okCount
+    val ok = failCount == 0
+
+    val bg = when {
+        ok -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+    }
+    val fg = when {
+        ok -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onErrorContainer
+    }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = bg),
+                headlineContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (ok) "启动条件已就绪" else "启动条件未满足",
+                            color = fg, fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        AssistChip(
+                            onClick = onToggle,
+                            label = {
+                                Text(
+                                    "✅ $okCount   ❌ $failCount",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        )
+                    }
+                },
+                supportingContent = {
+                    Text(
+                        if (ok) "引擎 native 库、游戏资源目录、入口 Activity 均已就绪" else "点击展开查看具体缺失项，修正后即可启动",
+                        color = fg.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        if (ok) Icons.Default.CheckCircle else Icons.Default.ErrorOutline,
+                        null,
+                        tint = fg
+                    )
+                },
+                trailingContent = {
+                    IconButton(onClick = onToggle) {
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            null,
+                            tint = fg
+                        )
+                    }
+                }
+            )
+            if (expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    diagnostics.forEach { d ->
+                        DiagnosticRow(d)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(d: GameLauncher.Diagnostic) {
+    val container = if (d.ok)
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    else
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f)
+    val onContainer = if (d.ok)
+        MaterialTheme.colorScheme.onSurfaceVariant
+    else
+        MaterialTheme.colorScheme.onErrorContainer
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(container)
+            .padding(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = if (d.ok) Icons.Default.TaskAlt else Icons.Default.WarningAmber,
+            contentDescription = null,
+            tint = if (d.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(18.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                d.title,
+                color = onContainer,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                d.detail,
+                color = onContainer.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp)
+            )
+        }
+    }
+}
+
+// ============================================================
+// 启动失败/条件未满足 —— 详细对话框
+// ============================================================
+
+@Composable
+private fun LaunchFailureDialog(
+    result: GameLauncher.LaunchFlowResult,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Info,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (!result.canLaunch) "启动条件未满足" else "启动失败",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (result.diagnostics.isNotEmpty()) {
+                    Text("自检结果：", fontWeight = FontWeight.SemiBold)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        result.diagnostics.forEach { DiagnosticRow(it) }
+                    }
+                } else {
+                    Text("无诊断细节。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                HorizontalDivider()
+                Text("写入结果：", fontWeight = FontWeight.SemiBold)
+                Column {
+                    Text(
+                        text = when {
+                            result.autoexec?.success == true -> "✅ autoexec.cfg → ${result.autoexec.autoexecPath}"
+                            result.autoexec != null -> "❌ ${result.autoexec.message}"
+                            else -> "— autoexec.cfg（未写入）"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            result.argsFile?.success == true -> "✅ launch-args.txt → ${result.argsFile.argsFile}"
+                            result.argsFile != null -> "❌ ${result.argsFile.message}"
+                            else -> "— launch-args.txt（未写入）"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                result.launch?.let { l ->
+                    HorizontalDivider()
+                    Text("启动结果：", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        l.message.ifBlank { "(无详细信息)" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                if (result.canLaunch) {
+                    TextButton(onClick = onRetry) {
+                        Text("重试", fontWeight = FontWeight.Bold)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        if (result.canLaunch) "关闭" else "知道了",
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }

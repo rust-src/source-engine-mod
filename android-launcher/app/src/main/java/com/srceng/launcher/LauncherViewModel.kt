@@ -9,6 +9,9 @@ import com.srceng.launcher.data.LauncherConfig
 import com.srceng.launcher.data.LauncherPreferences
 import com.srceng.launcher.data.PredefinedCmdOptions
 import com.srceng.launcher.data.PredefinedCVars
+import com.srceng.launcher.game.GameLauncher
+import com.srceng.launcher.game.GameLauncher.Diagnostic
+import com.srceng.launcher.game.GameLauncher.LaunchFlowResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -127,6 +130,33 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun buildLaunchArgs(): String {
         return config.value.toLaunchArgs()
+    }
+
+    /** 当前启动前自检（UI 用于显示状态条） */
+    fun diagnostics(): List<Diagnostic> {
+        val cfg = config.value
+        return GameLauncher.runDiagnostics(getApplication(), cfg.gameDirectory, cfg.selectedMod)
+    }
+
+    fun isReadyToLaunch(): Boolean = diagnostics().none { !it.ok }
+
+    /**
+     * 一键执行：写 autoexec.cfg → 写 launch-args.txt →（满足条件时）启动 SDLActivity
+     * 返回完整流程结果，UI 端根据结果弹 Snackbar / 错误对话框。
+     */
+    fun launchNow(): LaunchFlowResult {
+        val cfg = config.value
+        val cvars = _workingCVars.value
+        val autoexecBody = buildAutoExecCfg()
+        val args = buildLaunchArgs()
+        return GameLauncher.prepareAndLaunch(
+            context = getApplication(),
+            gameDir = cfg.gameDirectory,
+            mod = cfg.selectedMod,
+            cvars = cvars,
+            autoexecBody = autoexecBody,
+            launchArgs = args
+        )
     }
 }
 

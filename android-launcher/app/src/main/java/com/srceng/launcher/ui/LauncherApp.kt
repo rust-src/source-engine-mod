@@ -33,16 +33,18 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 @Composable
 fun LauncherApp(viewModel: LauncherViewModel) {
     val navController = rememberNavController()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
-        bottomBar = { LauncherBottomNav(navController) }
+        bottomBar = { LauncherBottomNav(navController) },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(padding)
         ) {
-            composable(Screen.Home.route) { HomeScreen(viewModel, navController) }
+            composable(Screen.Home.route) { HomeScreen(viewModel, navController, snackbarHostState) }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }
             composable(Screen.CVars.route) { CVarScreen(viewModel) }
             composable(Screen.About.route) { AboutScreen() }
