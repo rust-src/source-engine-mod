@@ -374,11 +374,10 @@ bool CDxvkAdapter::CreateSurface( void* hWnd )
 	}
 
 #ifdef _WIN32
-	struct { uint32_t sType; const void* pNext; uint32_t flags;
-			 void* hinstance; void* hwnd; } surfInfo = {};
-	surfInfo.sType = 1000009000; // VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR
+	VkWin32SurfaceCreateInfoKHR surfInfo = {};
+	surfInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
 	surfInfo.hinstance = GetModuleHandleA( nullptr );
-	surfInfo.hwnd = hWnd;
+	surfInfo.hwnd = (HWND)hWnd;
 
 	uint32_t res = s_vk.vkCreateWin32SurfaceKHR( m_vkInstance, &surfInfo, nullptr, &m_vkSurface );
 	DXVK_CHECK_VK( res, "vkCreateWin32SurfaceKHR" );
