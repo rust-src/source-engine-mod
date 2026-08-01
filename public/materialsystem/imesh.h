@@ -1236,7 +1236,7 @@ inline void CVertexBuilder::FastVertexSSE( const ModelVertexDX7_t &vertex )
 			movntps [edi + 16], xmm1
 			movntps [edi + 32], xmm2
 	}
-#elif defined(GNUC) || defined(PLATFORM_WINDOWS_PC64)
+#elif defined(GNUC) || defined(PLATFORM_WINDOWS_PC64) || defined(_M_ARM64) || defined(_M_ARM64EC)
 	const char *pRead = (char *)&vertex;
 	char *pCurrPos = (char *)m_pCurrPosition;
 	__m128 m1 = _mm_load_ps( (float *)pRead );
@@ -1309,7 +1309,7 @@ inline void CVertexBuilder::Fast4VerticesSSE(
 			movntps [edi + 80+96], xmm5
 
 	}
-#elif defined(__arm__) || defined(PLATFORM_WINDOWS_PC64)
+#elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC) || defined(PLATFORM_WINDOWS_PC64)
 	const void *pReadA = &vtx_a;
 	const void *pReadB = &vtx_b;
 	const void *pReadC = &vtx_c;

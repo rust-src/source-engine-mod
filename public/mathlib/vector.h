@@ -22,13 +22,14 @@
 // For rand(). We really need a library!
 #include <stdlib.h>
 
-#if defined(__SSE__) || defined(_M_IX86_FP)
+#if defined(__SSE__) || defined(_M_IX86_FP) || defined(_M_X64) || defined(_M_AMD64)
 #define USE_SSE
 // For MMX intrinsics
 #include <xmmintrin.h>
 #endif
 
 #if defined (__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#define USE_SSE
 #include "sse2neon.h"
 #endif
 

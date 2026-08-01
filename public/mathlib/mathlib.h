@@ -20,6 +20,8 @@
 #if defined(__i386__) || defined(_M_IX86)
 // For MMX intrinsics
 #include <xmmintrin.h>
+#elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#include "sse2neon.h"
 #endif
 
 // XXX remove me
@@ -417,7 +419,7 @@ void inline SinCos( float radians, float *sine, float *cosine )
 		fstp DWORD PTR [edx]
 		fstp DWORD PTR [eax]
 	}
-#elif defined( PLATFORM_WINDOWS_PC64 )
+#elif defined( PLATFORM_WINDOWS_PC64 ) || defined( _M_ARM64 ) || defined( _M_ARM64EC )
 	*sine = sin( radians );
 	*cosine = cos( radians );
 #elif defined( OSX )

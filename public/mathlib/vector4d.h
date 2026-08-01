@@ -16,7 +16,7 @@
 #include <math.h>
 #include <stdlib.h>		// For rand(). We really need a library!
 #include <float.h>
-#if defined(__SSE__) || defined(_M_IX86_FP)
+#if defined(__SSE__) || defined(_M_IX86_FP) || defined(_M_X64) || defined(_M_AMD64)
 #include <xmmintrin.h>	// For SSE
 #endif
 #include "basetypes.h"	// For vec_t, put this somewhere else?

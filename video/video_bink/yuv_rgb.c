@@ -3,17 +3,24 @@
 
 #include "yuv_rgb.h"
 
-#include <emmintrin.h>
-
 #ifdef _MSC_VER
 // MSVC does not have __SSE2__ macro
   #if (defined(_M_AMD64) || defined(_M_X64) || (_M_IX86_FP == 2))
     #define _YUVRGB_SSE2_
+    #include <emmintrin.h>
+  #elif defined(_M_ARM64) || defined(_M_ARM64EC)
+    // ARM64 Windows: use sse2neon.h to translate SSE2 intrinsics to NEON
+    #define _YUVRGB_SSE2_
+    #include "../../common/sse2neon.h"
   #endif
 #else
 // For everything else than MSVC
   #ifdef __SSE2__
     #define _YUVRGB_SSE2_
+    #include <emmintrin.h>
+  #elif defined(__arm__) || defined(__aarch64__)
+    #define _YUVRGB_SSE2_
+    #include "../../common/sse2neon.h"
   #endif // __SSE2__
 #endif // _MSC_VER
 

@@ -23,7 +23,11 @@
 #include "mathlib/compressed_vector.h"
 #include "r_studiolight.h"
 #if defined( _WIN32 ) && !defined( _X360 )
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#include "sse2neon.h"
+#else
 #include <xmmintrin.h>
+#endif
 #endif
 #include "tier0/dbg.h"
 
