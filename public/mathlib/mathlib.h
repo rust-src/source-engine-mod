@@ -1203,7 +1203,7 @@ FORCEINLINE int RoundFloatToInt(float f)
 	};
 	flResult = __fctiw( f );
 	return pResult[1];
-#elif defined (__arm__) ||  defined (__aarch64__)
+#elif defined (__arm__) ||  defined (__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
         return (int)(f + 0.5f);
 #else
 #error Unknown architecture
