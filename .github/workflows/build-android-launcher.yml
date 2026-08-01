@@ -38,7 +38,7 @@ jobs:
           ls -l ./gradlew ./gradle/wrapper/
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -53,10 +53,11 @@ jobs:
             build-tools;34.0.0
             platforms;android-34
             platform-tools
-          license-accept: 'android-sdk-license-.+'
+          accept-android-sdk-licenses: 'true'
+          log-accepted-android-sdk-licenses: 'true'
 
       - name: Cache Gradle packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -81,7 +82,7 @@ jobs:
 
       - name: Upload APK
         if: success() || steps.assemble.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: launcher-debug-apk
           path: |
@@ -91,7 +92,7 @@ jobs:
 
       - name: Upload AAB (if any)
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: launcher-release-aab
           path: |
@@ -100,7 +101,7 @@ jobs:
 
       - name: Upload mapping / proguard outputs
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: launcher-mappings
           path: |
