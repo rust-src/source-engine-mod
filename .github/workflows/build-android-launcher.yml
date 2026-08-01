@@ -6,16 +6,18 @@ on:
       - android-launcher
     paths:
       - 'android-launcher/**'
+      - '.github/workflows/build-android-launcher.yml'
   pull_request:
     paths:
       - 'android-launcher/**'
+      - '.github/workflows/build-android-launcher.yml'
   workflow_dispatch:
 
 jobs:
   build-launcher:
     name: Build Launcher (Debug)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     defaults:
       run:
@@ -27,6 +29,14 @@ jobs:
         with:
           submodules: false
 
+      # 先确认我们提交的 gradlew 文件存在
+      - name: Validate wrapper files
+        run: |
+          test -f ./gradlew || { echo "gradlew missing in git!"; exit 1; }
+          test -f ./gradle/wrapper/gradle-wrapper.jar || { echo "gradle-wrapper.jar missing!"; exit 1; }
+          chmod +x ./gradlew
+          ls -l ./gradlew ./gradle/wrapper/
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -34,9 +44,16 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ../gradlew 2>/dev/null || true
-        working-directory: android-launcher
+      # 安装并配置 Android SDK (platform-34 / build-tools 34.0.0 / cmdline-tools / platform-tools)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            cmdline-tools;latest
+            build-tools;34.0.0
+            platforms;android-34
+            platform-tools
+          license-accept: 'android-sdk-license-.+'
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -44,43 +61,48 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-launcher-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-launcher-${{ hashFiles('android-launcher/**/*.gradle*', 'android-launcher/**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-launcher-
 
       - name: Assemble Debug
+        id: assemble
         run: |
-          # 如无 gradlew 则使用本地 gradle wrapper 生成
-          if [ ! -f ./gradlew ]; then
-            # 快速生成 gradlew 脚本
-            cat > /tmp/genw.sh << 'EOF'
-          #!/bin/bash
-          cd android-launcher
-          set -e
-          mkdir -p gradle/wrapper
-          # 使用系统级 gradle 生成 wrapper（如果有）
-          if command -v gradle >/dev/null 2>&1; then
-            gradle wrapper --gradle-version 8.5 --distribution-type bin
-          fi
-          EOF
-            bash /tmp/genw.sh || true
-          fi
-          # 若 gradlew 仍然不存在，则使用 gradle-command-action
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-            ./gradlew :app:assembleDebug --stacktrace --no-daemon
-          else
-            echo "gradlew not found, skipping build to avoid infinite downloads."
-            echo "请本地执行: cd android-launcher && gradle wrapper --gradle-version 8.5"
-            mkdir -p app/build/outputs/apk/debug
-            echo "PLACEHOLDER" > app/build/outputs/apk/debug/README.txt
-          fi
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon \
+            -Dorg.gradle.parallel=true \
+            -Dorg.gradle.caching=true
+
+      - name: Assemble Release (AAB + APK)
+        id: assembleRelease
+        if: success()
+        run: |
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon \
+            -Dorg.gradle.parallel=true || true  # 允许 release 签名失败（没有 key 的情况下），但 debug 已经产出
 
       - name: Upload APK
+        if: success() || steps.assemble.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: launcher-debug-apk
           path: |
-            android-launcher/app/build/outputs/apk/**/*.apk
-            android-launcher/app/build/outputs/aab/**/*.aab
+            android-launcher/app/build/outputs/apk/debug/*.apk
+            android-launcher/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload AAB (if any)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-release-aab
+          path: |
+            android-launcher/app/build/outputs/bundle/**/*.aab
           if-no-files-found: warn
+
+      - name: Upload mapping / proguard outputs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-mappings
+          path: |
+            android-launcher/app/build/outputs/mapping/**/*
+          if-no-files-found: ignore
