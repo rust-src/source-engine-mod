@@ -30,6 +30,7 @@ jobs:
 
         New-Item -ItemType Directory -Force -Path ./win | Out-Null
         cat build/config.log >./win/info.txt
+        Get-ChildItem -Recurse -Path ./win -Include *.lib,*.pdb | Remove-Item -Force
 
     - uses: actions/upload-artifact@v4
       with:
@@ -57,6 +58,7 @@ jobs:
         ./waf.bat install -j4
         New-Item -ItemType Directory -Force -Path ./win | Out-Null
         cat build/config.log > ./win/info.txt
+        Get-ChildItem -Recurse -Path ./win -Include *.lib,*.pdb | Remove-Item -Force
     - uses: actions/upload-artifact@v4
       with:
         name: hl2dm-win32
@@ -83,6 +85,7 @@ jobs:
         ./waf.bat install -j4
         New-Item -ItemType Directory -Force -Path ./win | Out-Null
         cat build/config.log > ./win/info.txt
+        Get-ChildItem -Recurse -Path ./win -Include *.lib,*.pdb | Remove-Item -Force
     - uses: actions/upload-artifact@v4
       with:
         name: hl2dm-win-arm64
