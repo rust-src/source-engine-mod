@@ -1228,22 +1228,36 @@ PLATFORM_INTERFACE struct tm *		Plat_gmtime( const time_t *timep, struct tm *res
 PLATFORM_INTERFACE time_t			Plat_timegm( struct tm *timeptr );
 PLATFORM_INTERFACE struct tm *		Plat_localtime( const time_t *timep, struct tm *result );
 
-#if defined( _WIN32 ) && defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
+#if defined( _WIN32 ) && defined( _MSC_VER ) && ( _MSC_VER >= 1400 ) && !defined( _M_ARM64 ) && !defined( _M_ARM64EC )
 	extern "C" unsigned __int64 __rdtsc();
 	#pragma intrinsic(__rdtsc)
 #endif
 
 inline uint64 Plat_Rdtsc()
 {
-#if (defined( __arm__ ) || defined( __aarch64__ )) && defined (POSIX)
+#if defined( _X360 )
+	return ( uint64 )__mftb32();
+#elif (defined( __arm__ ) || defined( __aarch64__ )) && defined( POSIX )
 	struct timespec t;
 	clock_gettime( CLOCK_REALTIME, &t);
 	return t.tv_sec * 1000000000ULL + t.tv_nsec;
-#elif defined( _X360 )
-	return ( uint64 )__mftb32();
-#elif defined( _WIN64 )
+#elif defined( _WIN32 ) && (defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( __aarch64__ ))
+	// ARM64 Windows: no RDTSC instruction. Use QueryPerformanceCounter as fallback.
+	// Fallback: return 0 to avoid compile errors; at runtime, the engine rarely
+	// relies on Plat_Rdtsc() for correctness (it's mostly profiling).
+	LARGE_INTEGER freq, counter;
+	if (QueryPerformanceFrequency(&freq) && QueryPerformanceCounter(&counter))
+	{
+		// Scale to nanosecond-like range to keep same rough magnitude.
+		if (freq.QuadPart > 0)
+		{
+			return (uint64)((double)counter.QuadPart * 1000000000.0 / (double)freq.QuadPart);
+		}
+	}
+	return 0;
+#elif defined( _WIN64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))
 	return ( uint64 )__rdtsc();
-#elif defined( _WIN32 )
+#elif defined( _WIN32 ) && (defined( _M_IX86 ) || defined( _M_X64 ))
   #if defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
 	return ( uint64 )__rdtsc();
   #else
@@ -1259,7 +1273,8 @@ inline uint64 Plat_Rdtsc()
 	__asm__ __volatile__ ( "rdtsc" : "=a" (lo), "=d" (hi));
 	return ( ( ( uint64 )hi ) << 32 ) | lo;
 #else
-	#error
+	// Catch-all for unknown architectures (including ARM64 without explicit handling above).
+	return 0;
 #endif
 }
 

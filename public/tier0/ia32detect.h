@@ -123,6 +123,9 @@ public:
 	{
 
         cache = 0;
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || \
+    (defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))) || \
+    defined( COMPILER_MSVC32 )
 		uint32 m = init0();
 
 		uint32 *d = new uint32[m * 4];
@@ -159,6 +162,18 @@ public:
 		delete [] d;
 
 		init0x80000000();
+#else
+		// ARM64 / non-x86: no CPUID instruction.
+		// Provide safe defaults so the rest of the engine still compiles.
+		vendor = UNKNOWN_VENDOR;
+		vendor_name = _T("Unknown");
+		memset(&version, 0, sizeof(version));
+		memset(&misc, 0, sizeof(misc));
+		memset(&feature, 0, sizeof(feature));
+		cache = new byte[1];
+		cache[0] = 0;
+		brand = brand_na;
+#endif
 
 
         //-----------------------------------------------------------------------
@@ -242,7 +257,12 @@ private:
 		tchar * s1;
 
 		s1 = (tchar *) &data[1];
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || defined( COMPILER_MSVC32 )
 		__cpuid(data, 0);
+#else
+		// ARM64 / non-x86: no CPUID. Return safe default.
+		memset(data, 0, sizeof(data));
+#endif
 		data[4] = 0;
 		// Returns something like this:
 		//  data[0] = 0x0000000b
@@ -283,9 +303,9 @@ private:
 
 		for (int i = 0; i < count; i++)
 		{
-#ifdef COMPILER_MSVC64
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || defined( COMPILER_MSVC32 )
 			__cpuid((int *) d, 2);
-#else
+#elif defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))
 			__asm
 			{
 				mov	eax, 2;
@@ -296,6 +316,9 @@ private:
 				mov [esi + 0x8], ecx;
 				mov [esi + 0xC], edx;
 			}
+#else
+			// ARM64 / non-x86: no CPUID. Provide safe defaults.
+			memset(d, 0, sizeof(d));
 #endif
 
 			if (i == 0)
@@ -328,17 +351,20 @@ private:
 	{
 		uint32 m;
 
-#ifdef COMPILER_MSVC64
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || defined( COMPILER_MSVC32 )
 		int data[4];
 		__cpuid(data, 0x80000000);
 		m = data[0];
-#else
+#elif defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))
 		__asm
 		{
 			mov	eax, 0x80000000;
 			cpuid;
 			mov m, eax
 		}
+#else
+		// ARM64 / non-x86: no CPUID. Mark as not supported.
+		m = 0;
 #endif
 
 		if ((m & 0x80000000) != 0)
@@ -349,9 +375,9 @@ private:
 			{
 				uint32 *t = d + (i - 0x80000001) * 4;
 
-#ifdef COMPILER_MSVC64
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || defined( COMPILER_MSVC32 )
 				__cpuid((int *) (d + (i - 0x80000001) * 4), i);
-#else
+#elif defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))
 				__asm
 				{
 					mov	eax, i;
@@ -362,6 +388,8 @@ private:
 					mov dword ptr [esi + 0x8], ecx;
 					mov dword ptr [esi + 0xC], edx;
 				}
+#else
+				memset(t, 0, 4 * sizeof(uint32));
 #endif
 			}
 

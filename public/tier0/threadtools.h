@@ -235,10 +235,14 @@ inline void ThreadPause()
 	__db16cyc();
 #elif defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))
 	__asm __volatile( "pause" );
+#elif defined( COMPILER_GCC ) && (defined( __aarch64__ ) || defined( __arm__ ))
+	__asm __volatile( "yield" );
 #elif defined( POSIX )
         sched_yield();
-#elif defined ( COMPILER_MSVC64 )
+#elif defined ( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))
 	_mm_pause();
+#elif defined ( COMPILER_MSVC64 ) && (defined( _M_ARM64 ) || defined( _M_ARM64EC ))
+	__yield();
 #elif defined( COMPILER_MSVC32 )
 	__asm pause;
 #elif defined( COMPILER_MSVCX360 )
@@ -492,10 +496,26 @@ inline bool ThreadInterlockedAssignIf( uint32 volatile *p, uint32 value, uint32 
 //inline bool ThreadInterlockedAssignIf( int volatile *p, int value, int comperand )	{ return ThreadInterlockedAssignIf( (int32 volatile *)p, value, comperand ); }
 
 
-#if defined( _WIN64 )
+#if defined( _WIN64 ) && (defined( _M_X64 ) || defined( _M_IX86 ) || defined( __i386__ ) || defined( __x86_64__ ))
 typedef __m128i int128;
 inline int128 int128_zero()	{ return _mm_setzero_si128(); }
 PLATFORM_INTERFACE bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand ) NOINLINE;
+#elif defined( _WIN64 ) && (defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( __aarch64__ ))
+// On ARM64 Windows, use 128-bit integer intrinsics.
+// MSVC ARM64 does support __int128 for some operations, but InterlockedCompareExchange128
+// is available via the standard Windows API. Fall back to a struct-based int128 type.
+#if defined( _MSC_VER ) && (defined( _M_ARM64 ) || defined( _M_ARM64EC ))
+typedef struct int128_arm64_s {
+	unsigned __int64 lo;
+	__int64 hi;
+} int128;
+inline int128 int128_zero() { int128 r = {0, 0}; return r; }
+PLATFORM_INTERFACE bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand ) NOINLINE;
+#else
+typedef __int128 int128;
+inline int128 int128_zero() { return 0; }
+PLATFORM_INTERFACE bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand ) NOINLINE;
+#endif
 #endif
 
 //-----------------------------------------------------------------------------

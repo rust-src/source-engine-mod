@@ -235,15 +235,19 @@ public:
         //ReadMSR(counterPort, int64); 
 
         // we need to copy this into a temp for some reason
-#ifdef COMPILER_MSVC64
+#if (defined( COMPILER_MSVC64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))) || defined( COMPILER_MSVC32 )
 	return __readpmc((unsigned long) eventSelectNum);
-#else
+#elif defined( COMPILER_GCC ) && (defined( __i386__ ) || defined( __x86_64__ ))
         int temp = eventSelectNum;
         _asm 
         {
             mov ecx, temp
             RDPMC 
         }
+#else
+        // ARM64 / non-x86: no RDPMC instruction. This class is for AMD K8
+        // performance counters (x86-only). Return 0 as a safe fallback.
+        return 0;
 #endif
 
 	}
