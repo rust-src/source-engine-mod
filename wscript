@@ -447,7 +447,10 @@ def configure(conf):
 	# subsystem=bld.env.MSVC_SUBSYSTEM
 	# TODO: wrapper around bld.stlib, bld.shlib and so on?
 	conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
-	conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
+	if conf.env.DEST_CPU == 'aarch64':
+		conf.env.MSVC_TARGETS = ['arm64']
+	else:
+		conf.env.MSVC_TARGETS = ['x64']
 	if conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
 
@@ -457,6 +460,8 @@ def configure(conf):
 
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
+	elif conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'aarch64':
+		pass  # no masm for ARM64
 	elif conf.env.DEST_OS == 'darwin':
 		conf.load('mm_hook')
 
@@ -597,7 +602,7 @@ def configure(conf):
 		conf.define('MSVC', 1)
 		if conf.env.DEST_CPU == 'x86':
 			conf.define('COMPILER_MSVC32', 1)
-		elif conf.env.DEST_CPU in ['x86_64', 'amd64']:
+		elif conf.env.DEST_CPU in ['x86_64', 'amd64', 'aarch64']:
 			conf.define('COMPILER_MSVC64', 1)
 
 	if conf.env.COMPILER_CC != 'msvc':

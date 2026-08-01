@@ -73,6 +73,10 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Setup MSVC arm64
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: arm64
     - name: Install Vulkan SDK
       uses: humbletim/setup-vulkan-sdk@v1.2.1
       with:
