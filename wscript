@@ -431,10 +431,16 @@ def check_deps(conf):
 		conf.check(lib='SDL2', uselib_store='SDL2')
 		conf.check(lib='libjpeg', uselib_store='JPEG', define_name='HAVE_JPEG')
 		conf.check(lib='libpng', uselib_store='PNG', define_name='HAVE_PNG')
-		conf.check(lib='d3dx9', uselib_store='D3DX9')
-		conf.check(lib='d3d9', uselib_store='D3D9')
-		conf.check(lib='dsound', uselib_store='DSOUND')
-		conf.check(lib='dxguid', uselib_store='DXGUID')
+		# On WOA (Windows on ARM / ARM64), DirectX 9 SDK libraries
+		# (d3dx9/d3d9/dsound/dxguid) are not available natively.
+		# Skip these on ARM64 and fall back to DXVK-based rendering.
+		if conf.env.DEST_CPU != 'aarch64':
+			conf.check(lib='d3dx9', uselib_store='D3DX9')
+			conf.check(lib='d3d9', uselib_store='D3D9')
+			conf.check(lib='dsound', uselib_store='DSOUND')
+			conf.check(lib='dxguid', uselib_store='DXGUID')
+		else:
+			conf.define('NO_DX9_NATIVE', 1)
 		if conf.options.OPUS:
 			conf.check(lib='opus', uselib_store='OPUS')
 

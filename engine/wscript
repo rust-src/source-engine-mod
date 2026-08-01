@@ -362,7 +362,12 @@ def build(bld):
 	if bld.env.DEST_OS == 'android':
 		libs += ['SSL', 'CRYPTO'] # android curl was built with openssl
 	elif bld.env.DEST_OS == 'win32':
-		libs += ['USER32', 'WINMM', 'WININET', 'DSOUND', 'DXGUID', 'GDI32', 'bzip2']
+		# On WOA (ARM64), DSOUND and DXGUID are not available as native import libs.
+		# USER32/WINMM/WININET/GDI32 are still part of the Windows SDK and work.
+		if bld.env.DEST_CPU != 'aarch64':
+			libs += ['USER32', 'WINMM', 'WININET', 'DSOUND', 'DXGUID', 'GDI32', 'bzip2']
+		else:
+			libs += ['USER32', 'WINMM', 'WININET', 'GDI32', 'bzip2']
 	elif bld.env.DEST_OS == 'darwin' and not bld.env.DEDICATED:
 		libs += ['APPKIT', 'COREAUDIO', 'AUDIOTOOLBOX', 'SYSTEMCONFIGURATION']
 		
