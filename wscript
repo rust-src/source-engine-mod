@@ -434,7 +434,8 @@ def check_deps(conf):
 		# On WOA (Windows on ARM / ARM64), DirectX 9 SDK libraries
 		# (d3dx9/d3d9/dsound/dxguid) are not available natively.
 		# Skip these on ARM64 and fall back to DXVK-based rendering.
-		if conf.env.DEST_CPU != 'aarch64':
+		_is_arm64 = (conf.env.DEST_CPU == 'aarch64' or os.environ.get('VSCMD_ARG_TGT_ARCH', '') == 'arm64')
+		if not _is_arm64:
 			conf.check(lib='d3dx9', uselib_store='D3DX9')
 			conf.check(lib='d3d9', uselib_store='D3D9')
 			conf.check(lib='dsound', uselib_store='DSOUND')
@@ -476,6 +477,15 @@ def configure(conf):
 		_msvc.all_msvc_platforms.insert(0, ('arm64', 'arm64'))
 
 	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
+
+	# Re-apply ARM64 target override AFTER xcompile load, because xcompile may
+	# reset DEST_CPU to 'amd64' when Python runs under x64 emulation on WOA.
+	_msvc_target_env2 = os.environ.get('VSCMD_ARG_TGT_ARCH', '')
+	if _msvc_target_env2 == 'arm64':
+		conf.env.DEST_CPU = 'aarch64'
+		conf.env.MSVC_TARGETS = ['arm64']
+	if conf.options.TARGET32:
+		conf.env.MSVC_TARGETS = ['x86']
 
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
