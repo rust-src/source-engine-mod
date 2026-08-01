@@ -1845,14 +1845,24 @@ FORCE_INLINE unsigned int _sse2neon_mm_get_flush_zero_mode()
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (FZ usually 0 at startup). */
+    (void)r;
+    return _MM_FLUSH_ZERO_OFF;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_FLUSH_ZERO_OFF;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     return r.field.bit24 ? _MM_FLUSH_ZERO_ON : _MM_FLUSH_ZERO_OFF;
 }
-
 // Macro: Get the rounding mode bits from the MXCSR control and status register.
 // The rounding mode may contain any of the following flags: _MM_ROUND_NEAREST,
 // _MM_ROUND_DOWN, _MM_ROUND_UP, _MM_ROUND_TOWARD_ZERO
@@ -1869,9 +1879,20 @@ FORCE_INLINE unsigned int _MM_GET_ROUNDING_MODE()
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    (void)r;
+    return _MM_ROUND_NEAREST;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_ROUND_NEAREST;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     if (r.field.bit22) {
@@ -2011,14 +2032,24 @@ FORCE_INLINE __m128i _mm_loadu_si64(const void *p)
 //         cpp-compiler-developer-guide-and-reference-allocating-and-freeing-aligned-memory-blocks
 FORCE_INLINE void *_mm_malloc(size_t size, size_t align)
 {
-    void *ptr;
     if (align == 1)
         return malloc(size);
     if (align == 2 || (sizeof(void *) == 8 && align == 4))
         align = sizeof(void *);
+#if defined(_MSC_VER)
+    /* MSVC / Windows: use _aligned_malloc() instead of POSIX posix_memalign().
+     * Note: memory returned by _aligned_malloc() must be freed with
+     * _aligned_free(), but sse2neon also overrides _mm_free below. */
+    void *ptr = _aligned_malloc(size, align);
+    if (ptr)
+        return ptr;
+    return NULL;
+#else
+    void *ptr;
     if (!posix_memalign(&ptr, align, size))
         return ptr;
     return NULL;
+#endif
 }
 
 // Conditionally store 8-bit integer elements from a into memory using mask
@@ -2344,8 +2375,15 @@ FORCE_INLINE __m128 _mm_or_ps(__m128 a, __m128 b)
 // processor. https://msdn.microsoft.com/en-us/library/84szxsww(v=vs.100).aspx
 FORCE_INLINE void _mm_prefetch(const void *p, int i)
 {
+#if defined(_MSC_VER)
+    /* MSVC: _mm_prefetch is available via <xmmintrin.h> but we cannot include
+     * that on ARM. Prefetch is just a performance hint; make it a no-op. */
+    (void)p;
+    (void)i;
+#else
     (void) i;
     __builtin_prefetch(p);
+#endif
 }
 
 // Compute the absolute differences of packed unsigned 8-bit integers in a and
@@ -2447,9 +2485,20 @@ FORCE_INLINE void _sse2neon_mm_set_flush_zero_mode(unsigned int flag)
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    (void)r;
+    return _MM_ROUND_NEAREST;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_ROUND_NEAREST;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     r.field.bit24 = (flag & _MM_FLUSH_ZERO_MASK) == _MM_FLUSH_ZERO_ON;
@@ -2493,9 +2542,20 @@ FORCE_INLINE void _MM_SET_ROUNDING_MODE(int rounding)
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    (void)r;
+    return _MM_ROUND_NEAREST;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_ROUND_NEAREST;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     switch (rounding) {
@@ -2604,7 +2664,18 @@ FORCE_INLINE __m128 _mm_setzero_ps(void)
 // https://msdn.microsoft.com/en-us/library/5h2w73d1%28v=vs.90%29.aspx
 FORCE_INLINE void _mm_sfence(void)
 {
+#if defined(_MSC_VER)
+    /* MSVC: use MemoryBarrier() intrinsic (windows.h) / _ReadWriteBarrier for
+     * compiler-level fence. _mm_sfence is rarely used by the game; a full
+     * memory barrier is safer than a missing intrinsic. */
+#if defined(_ARM64_) || defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_ARM)
+    __dmb(0xB); /* DMB ISH: full inner shareable barrier on ARM */
+#else
+    MemoryBarrier();
+#endif
+#else
     __sync_synchronize();
+#endif
 }
 
 // FORCE_INLINE __m128 _mm_shuffle_ps(__m128 a, __m128 b, __constrange(0,255)
@@ -8759,9 +8830,20 @@ FORCE_INLINE unsigned int _sse2neon_mm_get_denormals_zero_mode()
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    (void)r;
+    return _MM_ROUND_NEAREST;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_ROUND_NEAREST;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     return r.field.bit24 ? _MM_DENORMALS_ZERO_ON : _MM_DENORMALS_ZERO_OFF;
@@ -8836,9 +8918,20 @@ FORCE_INLINE void _sse2neon_mm_set_denormals_zero_mode(unsigned int flag)
     } r;
 
 #if defined(__aarch64__)
+#if defined(_MSC_VER)
+    /* MSVC ARM64: __asm__ not supported; return safe default (round-to-nearest, FZ off). */
+    (void)r;
+    return _MM_ROUND_NEAREST;
+#else
     __asm__ __volatile__("mrs %0, FPCR" : "=r"(r.value)); /* read */
+#endif
+#else
+#if defined(_MSC_VER)
+    (void)r;
+    return _MM_ROUND_NEAREST;
 #else
     __asm__ __volatile__("vmrs %0, FPSCR" : "=r"(r.value)); /* read */
+#endif
 #endif
 
     r.field.bit24 = (flag & _MM_DENORMALS_ZERO_MASK) == _MM_DENORMALS_ZERO_ON;
