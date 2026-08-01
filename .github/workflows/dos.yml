@@ -96,3 +96,16 @@ jobs:
         name: hl2dm-win-arm64
         path: ./win
         if-no-files-found: error
+    - name: Upload config.log on failure
+      if: failure()
+      run: |
+        New-Item -ItemType Directory -Force -Path ./diag | Out-Null
+        if (Test-Path build/config.log) {
+          Copy-Item build/config.log ./diag/config.log
+        }
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: hl2dm-win-arm64-diag
+        path: ./diag
+        if-no-files-found: ignore
