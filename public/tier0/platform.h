@@ -13,6 +13,56 @@
 #define PLATFORM_64BITS 1
 #endif
 
+/* ============================================================================
+ * MSVC ARM/ARM64 architecture macro shims
+ *
+ * Most of the codebase uses GCC/Clang-style architecture feature macros
+ * (__aarch64__, __arm__, __ARM_ARCH, __ARM_NEON__, etc.) to select
+ * architecture-specific code paths (SSE vs NEON, inline asm, etc.).
+ *
+ * MSVC for ARM/ARM64 uses different predefined macros (_M_ARM64, _M_ARM64EC,
+ * _M_ARM). Translate them here (in a header that every TU pulls in) so
+ * existing conditional-compilation blocks (sse.cpp, mathlib headers,
+ * materialsystem, etc.) work unchanged on MSVC for WOA.
+ * ========================================================================== */
+#if defined(_MSC_VER)
+#  if defined(_M_ARM64) || defined(_M_ARM64EC)
+     /* ARM64 (AArch64) / ARM64EC on Windows with MSVC */
+#    if !defined(__aarch64__)
+#      define __aarch64__ 1
+#    endif
+#    if !defined(__ARM_ARCH)
+#      define __ARM_ARCH 8
+#    endif
+#    if !defined(__ARM_NEON)
+#      define __ARM_NEON 1
+#    endif
+#    if !defined(__ARM_NEON__)
+#      define __ARM_NEON__ 1
+#    endif
+#  elif defined(_M_ARM)
+     /* 32-bit ARM (AArch32) on Windows with MSVC */
+#    if !defined(__arm__)
+#      define __arm__ 1
+#    endif
+#    if !defined(__ARM_ARCH)
+#      if (_M_ARM >= 8)
+#        define __ARM_ARCH 8
+#      elif (_M_ARM >= 7)
+#        define __ARM_ARCH 7
+#      else
+#        define __ARM_ARCH 6
+#      endif
+#    endif
+#    if !defined(__ARM_NEON) && (_M_ARM >= 7)
+#      define __ARM_NEON 1
+#    endif
+#    if !defined(__ARM_NEON__) && (_M_ARM >= 7)
+#      define __ARM_NEON__ 1
+#    endif
+#  endif
+#endif
+
 #if defined(__GCC__) || defined(__GNUC__)
 #define COMPILER_GCC 1
 #endif
