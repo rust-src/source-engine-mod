@@ -22,9 +22,9 @@ const tchar* GetProcessorVendorId();
 
 static bool cpuid(uint32 function, uint32& out_eax, uint32& out_ebx, uint32& out_ecx, uint32& out_edx)
 {
-#if defined (__arm__) || defined (__aarch64__) || defined( _X360 )
+#if defined (__arm__) || defined (__aarch64__) || defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( _X360 )
 	return false;
-#elif defined(GNUC)
+#elif defined(__GNUC__) && (defined( __i386__ ) || defined( __x86_64__ ))
 
 #if defined(PLATFORM_64BITS)
 	asm("mov %%rbx, %%rsi\n\t"
@@ -49,7 +49,7 @@ static bool cpuid(uint32 function, uint32& out_eax, uint32& out_ebx, uint32& out
 #endif
 	return true;
 
-#elif defined(_WIN64)
+#elif defined(_WIN64) && (defined( _M_X64 ) || defined( _M_IX86 ))
 	int pCPUInfo[4];
 	__cpuid( pCPUInfo, (int)function );
 	out_eax = pCPUInfo[0];
@@ -372,7 +372,7 @@ const tchar* GetProcessorArchName()
 	return "amd64";
 #elif defined(__i386__) || defined(_X86_) || defined(_M_IX86)
 	return "i386";
-#elif defined __aarch64__
+#elif defined __aarch64__ || defined _M_ARM64 || defined _M_ARM64EC
         return "aarch64";
 #elif defined __arm__ || defined _M_ARM
         return "arm";
