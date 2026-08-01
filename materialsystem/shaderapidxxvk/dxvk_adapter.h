@@ -16,6 +16,11 @@
 #include "tier0/platform.h"
 #include "tier0/dbg.h"
 
+#ifndef _WIN32
+#define VK_USE_PLATFORM_XLIB_KHR
+#define VK_USE_PLATFORM_XCB_KHR
+#endif
+
 #include <vulkan/vulkan.h>
 
 // Vulkan forward declarations (only used when vulkan.h is unavailable)

@@ -12,7 +12,9 @@
 
 #include <string.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 // Global singleton
 CDxvkAdapter* g_pDxvkAdapter = nullptr;
