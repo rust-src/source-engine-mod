@@ -601,6 +601,12 @@ def configure(conf):
 			'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/'+conf.env.DEST_CPU+'/',
 			'/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/'+conf.env.DEST_CPU+'/'
 		]
+		# On WOA (Windows on ARM), DEST_CPU may be 'amd64' due to x64 emulation.
+		# Check VSCMD_ARG_TGT_ARCH for the actual ARM64 target.
+		if os.environ.get('VSCMD_ARG_TGT_ARCH', '') == 'arm64' or conf.env.DEST_CPU == 'aarch64':
+			linkflags += [
+				'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/arm64/'
+			]
 
 	# And here C++ flags starts to be treated separately
 	cxxflags = list(cflags)
