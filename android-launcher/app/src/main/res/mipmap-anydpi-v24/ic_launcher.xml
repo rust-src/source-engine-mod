@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 背景圆 -->
+    <path
+        android:fillColor="#FF6D00"
+        android:pathData="M54,54 m-50,0 a50,50 0,1 1,100 0 a50,50 0,1 1,-100 0"/>
+    <!-- 游戏手柄 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,34 h12 c6,0 8,2 12,2 c4,0 6,-2 12,-2 h12 c7,0 12,5 12,12 v16 c0,7 -5,12 -12,12 h-8 c-4,0 -8,-4 -10,-8 l-2,-6 h-8 l-2,6 c-2,4 -6,8 -10,8 h-8 c-7,0 -12,-5 -12,-12 v-16 c0,-7 5,-12 12,-12 z"/>
+    <!-- 十字键 -->
+    <path
+        android:fillColor="#FF6D00"
+        android:pathData="M40,40 h8 v-4 h4 v4 h8 v4 h-8 v8 h-4 v-8 h-8 z"/>
+    <!-- AB 按钮 -->
+    <path
+        android:fillColor="#FF6D00"
+        android:pathData="M68,36 m-4,0 a4,4 0,1 0,8 0 a4,4 0,1 0,-8 0 M68,50 m-4,0 a4,4 0,1 0,8 0 a4,4 0,1 0,-8 0"/>
+</vector>

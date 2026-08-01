@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+    <group
+        android:scaleX="1.0"
+        android:scaleY="1.0"
+        android:translateX="24.0"
+        android:translateY="24.0">
+        <!-- 游戏手柄外框 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M30,20 L42,20 C48,20 50,22 54,22 C58,22 60,20 66,20 L78,20 C85,20 90,25 90,32 L90,48 C90,55 85,60 78,60 L70,60 C66,60 62,56 60,52 L58,46 L50,46 L48,52 C46,56 42,60 38,60 L30,60 C23,60 18,55 18,48 L18,32 C18,25 23,20 30,20 Z"/>
+    </group>
+    <!-- 左侧十字方向键 -->
+    <group android:translateX="40" android:translateY="38">
+        <path
+            android:fillColor="#FF6D00"
+            android:pathData="M0,4 L8,4 L8,0 L12,0 L12,4 L20,4 L20,8 L12,8 L12,16 L8,16 L8,8 L0,8 Z"/>
+    </group>
+    <!-- 右侧 AB 按钮 -->
+    <group android:translateX="68" android:translateY="34">
+        <path
+            android:fillColor="#FF6D00"
+            android:pathData="M6,0 C2.7,0 0,2.7 0,6 C0,9.3 2.7,12 6,12 C9.3,12 12,9.3 12,6 C12,2.7 9.3,0 6,0 Z M6,14 C2.7,14 0,16.7 0,20 C0,23.3 2.7,26 6,26 C9.3,26 12,23.3 12,20 C12,16.7 9.3,14 6,14 Z"/>
+    </group>
+</vector>

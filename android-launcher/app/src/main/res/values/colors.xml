@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="orange_500">#FF9800</color>
+    <color name="orange_700">#E65100</color>
+    <color name="launcher_primary">#FF6D00</color>
+    <color name="launcher_primary_dark">#BF360C</color>
+</resources>

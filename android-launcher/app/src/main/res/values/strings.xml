@@ -1,0 +1,97 @@
+<resources>
+    <string name="app_name">Source Engine Launcher</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">主页</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_cvars">CVars</string>
+    <string name="nav_about">关于</string>
+
+    <!-- Home Screen -->
+    <string name="home_title">Source Engine</string>
+    <string name="home_subtitle">Half-Life 2 移动端启动器</string>
+    <string name="launch_game">启动游戏</string>
+    <string name="launch_server">启动服务端</string>
+    <string name="game_directory">游戏目录</string>
+    <string name="select_game_directory">选择游戏文件夹</string>
+    <string name="selected_mod">当前模组</string>
+    <string name="select_mod">选择模组</string>
+    <string name="launch_options">启动参数</string>
+    <string name="custom_launch_options">自定义启动参数…</string>
+    <string name="quick_launch">快速启动</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="category_appearance">外观</string>
+    <string name="theme_mode">主题模式</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="accent_color">强调色</string>
+    <string name="dynamic_color">使用动态取色</string>
+    <string name="category_graphics">图形</string>
+    <string name="render_api">渲染 API</string>
+    <string name="resolution">分辨率</string>
+    <string name="fullscreen">全屏模式</string>
+    <string name="vsync">垂直同步</string>
+    <string name="msaa">MSAA 抗锯齿</string>
+    <string name="category_performance">性能</string>
+    <string name="threads">线程数</string>
+    <string name="threads_auto">自动</string>
+    <string name="memory_limit">内存限制 (MB)</string>
+    <string name="memory_limit_desc">0 表示不限制</string>
+    <string name="category_audio">音频</string>
+    <string name="audio_device">音频设备</string>
+    <string name="master_volume">主音量</string>
+    <string name="sfx_volume">音效音量</string>
+    <string name="music_volume">音乐音量</string>
+    <string name="category_controls">控制</string>
+    <string name="touch_controls">触控操作</string>
+    <string name="show_onscreen_controls">显示虚拟按键</string>
+    <string name="controller_support">手柄支持</string>
+    <string name="category_misc">其他</string>
+    <string name="debug_mode">调试模式</string>
+    <string name="show_console">显示控制台</string>
+    <string name="reset_defaults">恢复默认设置</string>
+
+    <!-- CVars -->
+    <string name="cvars_title">CVar 管理</string>
+    <string name="cvars_search">搜索 CVar…</string>
+    <string name="cvars_category_general">通用</string>
+    <string name="cvars_category_graphics">图形</string>
+    <string name="cvars_category_network">网络</string>
+    <string name="cvars_category_performance">性能</string>
+    <string name="cvars_category_cheats">作弊 (需 sv_cheats 1)</string>
+    <string name="cvar_on">开</string>
+    <string name="cvar_off">关</string>
+    <string name="cvar_default">默认</string>
+    <string name="cvar_current">当前值</string>
+    <string name="cvar_reset">重置</string>
+    <string name="apply_changes">应用更改</string>
+    <string name="discard_changes">放弃更改</string>
+
+    <!-- About -->
+    <string name="about_title">关于</string>
+    <string name="app_version">版本</string>
+    <string name="app_build">构建号</string>
+    <string name="source_code">源代码</string>
+    <string name="license">开源协议</string>
+    <string name="credits">致谢</string>
+    <string name="credits_desc">
+        • Source Engine © Valve Corporation\n
+        • Android 移植社区贡献者\n
+        • Material Design 3 UI\n
+        • Jetpack Compose
+    </string>
+
+    <!-- Common -->
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="ok">确定</string>
+    <string name="loading">加载中…</string>
+    <string name="error">错误</string>
+    <string name="success">成功</string>
+    <string name="warning">警告</string>
+    <string name="copy">复制</string>
+    <string name="copied">已复制</string>
+</resources>
