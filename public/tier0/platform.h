@@ -1242,18 +1242,11 @@ inline uint64 Plat_Rdtsc()
 	clock_gettime( CLOCK_REALTIME, &t);
 	return t.tv_sec * 1000000000ULL + t.tv_nsec;
 #elif defined( _WIN32 ) && (defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( __aarch64__ ))
-	// ARM64 Windows: no RDTSC instruction. Use QueryPerformanceCounter as fallback.
-	// Fallback: return 0 to avoid compile errors; at runtime, the engine rarely
-	// relies on Plat_Rdtsc() for correctness (it's mostly profiling).
-	LARGE_INTEGER freq, counter;
-	if (QueryPerformanceFrequency(&freq) && QueryPerformanceCounter(&counter))
-	{
-		// Scale to nanosecond-like range to keep same rough magnitude.
-		if (freq.QuadPart > 0)
-		{
-			return (uint64)((double)counter.QuadPart * 1000000000.0 / (double)freq.QuadPart);
-		}
-	}
+	// ARM64 Windows: no RDTSC instruction. Use 0 as fallback.
+	// The engine rarely relies on Plat_Rdtsc() for correctness (it's profiling-only),
+	// so returning 0 is safe and avoids having to pull in <windows.h> for
+	// QueryPerformanceCounter / LARGE_INTEGER from this header (which would
+	// cause include-order issues in leaf translation units).
 	return 0;
 #elif defined( _WIN64 ) && (defined( _M_X64 ) || defined( _M_IX86 ))
 	return ( uint64 )__rdtsc();
