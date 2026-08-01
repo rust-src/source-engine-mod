@@ -23,7 +23,7 @@
 #include "tier0/dbg.h"
 #include "mathlib/math_pfns.h"
 
-#if defined (__arm__) || defined(__aarch64__)
+#if defined (__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 #include "sse2neon.h"
 #endif
 

@@ -28,6 +28,10 @@
 #include <xmmintrin.h>
 #endif
 
+#if defined (__arm__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#include "sse2neon.h"
+#endif
+
 #include "tier0/dbg.h"
 #include "tier0/threadtools.h"
 #include "mathlib/vector2d.h"
