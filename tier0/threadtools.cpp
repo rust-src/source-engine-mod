@@ -1837,6 +1837,26 @@ bool ThreadInterlockedAssignIf64(volatile int64 *pDest, int64 value, int64 compe
 bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, const int128 &comperand )
 {
 	DbgAssert( ( (size_t)pDest % 16 ) == 0 );
+
+#if defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( __aarch64__ )
+	// ARM64 Windows: int128 is a struct-based type { unsigned __int64 lo; __int64 hi; } (see threadtools.h).
+	// Use the standard Win32 InterlockedCompareExchange128 API, which is available on ARM64 as well.
+	// Note: InterlockedCompareExchange128 takes ComparandResult as an in/out array of 2 int64s,
+	// and exchanges with ExchangeHigh / ExchangeLow. Memory layout must match 128-bit struct ordering.
+	int64 comperandInOut[2];
+	int64 valueAsInt64s[2];
+	// Match struct int128_arm64_s layout: first field is lo (bits 0-63), second is hi (bits 64-127).
+	comperandInOut[0] = (int64)comperand.lo;
+	comperandInOut[1] = (int64)comperand.hi;
+	valueAsInt64s[0]   = (int64)value.lo;
+	valueAsInt64s[1]   = (int64)value.hi;
+	if ( InterlockedCompareExchange128( (volatile LONG64 *)pDest,
+		(LONG64)valueAsInt64s[1], (LONG64)valueAsInt64s[0], (LONG64 *)comperandInOut ) )
+	{
+		return true;
+	}
+	return false;
+#else
 	// Must copy comperand to stack because the intrinsic uses it as an in/out param
 	int64 comperandInOut[2] = { comperand.m128i_i64[0], comperand.m128i_i64[1] };
 
@@ -1850,6 +1870,7 @@ bool ThreadInterlockedAssignIf128( volatile int128 *pDest, const int128 &value, 
 	if ( _InterlockedCompareExchange128( ( volatile int64 * )pDest, value.m128i_i64[1], value.m128i_i64[0], comperandInOut ) )
 		return true;
 	return false;
+#endif
 }
 #endif
 
