@@ -478,6 +478,21 @@ def configure(conf):
 	elif conf.env.DEST_OS == 'darwin':
 		conf.load('mm_hook')
 
+	# Add library search paths early so conf.check(lib=...) can find them.
+	# On ARM64 (WOA), also add /lib/win32/arm64/ in addition to aarch64/.
+	if conf.env.DEST_OS == 'win32':
+		conf.env.append_unique('LIBPATH', [
+			os.path.abspath('.') + '/lib/win32/' + conf.env.DEST_CPU + '/',
+			os.path.abspath('.') + '/dx9sdk/lib/' + conf.env.DEST_CPU + '/'
+		])
+		if os.environ.get('VSCMD_ARG_TGT_ARCH', '') == 'arm64' or conf.env.DEST_CPU == 'aarch64':
+			conf.env.append_unique('LIBPATH', [
+				os.path.abspath('.') + '/lib/win32/arm64/',
+				os.path.abspath('.') + '/dx9sdk/lib/arm64/'
+			])
+			# Also set LIB env var so the linker can find libz.lib etc.
+			os.environ['LIB'] = os.path.abspath('.') + '/lib/win32/arm64/;' + os.environ.get('LIB', '')
+
 	conf.env.BIT32_MANDATORY = conf.options.TARGET32
 	if conf.env.BIT32_MANDATORY:
 		Logs.info('WARNING: will build engine for 32-bit target')
