@@ -22,7 +22,7 @@ import com.srceng.launcher.data.CVar
 import com.srceng.launcher.data.CVarCategory
 import com.srceng.launcher.data.CVarType
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CVarScreen(vm: LauncherViewModel) {
     val workingCVars by vm.workingCVars.collectAsState()
@@ -311,6 +311,7 @@ private fun CVarCard(
 }
 
 // ===== Edit dialog =====
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CVarEditDialog(
     cvar: CVar,

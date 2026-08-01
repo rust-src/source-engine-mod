@@ -13,6 +13,22 @@ import java.io.IOException
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "launcher_prefs")
 
 /**
+ * 默认的命令行快速勾选开关：根据 CmdOption.defaultEnabled 生成
+ */
+fun defaultQuickFlags(): Map<String, Boolean> =
+    PredefinedCmdOptions.androidSafe()
+        .filter { it.defaultEnabled }
+        .associate { it.id to true }
+
+/**
+ * 默认的命令行参数值：对需要数值的参数使用 defaultValue
+ */
+fun defaultQuickFlagValues(): Map<String, String> =
+    PredefinedCmdOptions.androidSafe()
+        .filter { it.requiresValue && it.defaultValue.isNotBlank() }
+        .associate { it.id to it.defaultValue }
+
+/**
  * 游戏配置数据类
  */
 data class LauncherConfig(
@@ -51,7 +67,12 @@ data class LauncherConfig(
     // 服务端
     val serverMap: String = "d1_trainstation_01",
     val serverMaxPlayers: Int = 16,
-    val startListenServer: Boolean = false
+    val startListenServer: Boolean = false,
+
+    // ===== 快速勾选的命令行参数 (key = CmdOption.id, value = 勾选状态/自定义值) =====
+    val quickFlags: Map<String, Boolean> = defaultQuickFlags(),
+    // 对需要数值的参数保存值 (key = CmdOption.id)
+    val quickFlagValues: Map<String, String> = defaultQuickFlagValues()
 ) {
     /**
      * 根据设置生成 +exec cfg 文件内容 (用于在游戏内自动执行)
@@ -126,6 +147,15 @@ data class LauncherConfig(
             "vulkan" -> args.add("-vulkan")
         }
 
+        // ===== 快速勾选的常用命令行参数 =====
+        PredefinedCmdOptions.androidSafe().forEach { opt ->
+            val enabled = quickFlags[opt.id] ?: opt.defaultEnabled
+            if (!enabled) return@forEach
+            val value = if (opt.requiresValue) quickFlagValues[opt.id].orEmpty().ifBlank { opt.defaultValue } else ""
+            if (opt.requiresValue && value.isBlank()) return@forEach
+            args.add(opt.format(value))
+        }
+
         if (customLaunchArgs.isNotBlank()) {
             args.add(customLaunchArgs.trim())
         }
@@ -161,6 +191,8 @@ class LauncherPreferences(private val context: Context) {
         val SERVER_MAP = stringPreferencesKey("server_map")
         val SERVER_MAXPLAYERS = intPreferencesKey("server_maxplayers")
         val SERVER_START = booleanPreferencesKey("start_server")
+        val QUICK_FLAGS_JSON = stringPreferencesKey("quick_flags_json")
+        val QUICK_FLAG_VALUES_JSON = stringPreferencesKey("quick_flag_values_json")
     }
 
     val configFlow: Flow<LauncherConfig> = context.dataStore.data
@@ -189,7 +221,9 @@ class LauncherPreferences(private val context: Context) {
                 showConsole = prefs[Keys.CONSOLE] ?: false,
                 serverMap = prefs[Keys.SERVER_MAP] ?: "d1_trainstation_01",
                 serverMaxPlayers = prefs[Keys.SERVER_MAXPLAYERS] ?: 16,
-                startListenServer = prefs[Keys.SERVER_START] ?: false
+                startListenServer = prefs[Keys.SERVER_START] ?: false,
+                quickFlags = prefs[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
+                quickFlagValues = prefs[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues()
             )
         }
 
@@ -218,6 +252,8 @@ class LauncherPreferences(private val context: Context) {
             prefs[Keys.SERVER_MAP] = next.serverMap
             prefs[Keys.SERVER_MAXPLAYERS] = next.serverMaxPlayers
             prefs[Keys.SERVER_START] = next.startListenServer
+            prefs[Keys.QUICK_FLAGS_JSON] = next.quickFlags.flagsToJsonString()
+            prefs[Keys.QUICK_FLAG_VALUES_JSON] = next.quickFlagValues.valuesToJsonString()
         }
     }
 
@@ -242,6 +278,105 @@ class LauncherPreferences(private val context: Context) {
         showConsole = this[Keys.CONSOLE] ?: false,
         serverMap = this[Keys.SERVER_MAP] ?: "d1_trainstation_01",
         serverMaxPlayers = this[Keys.SERVER_MAXPLAYERS] ?: 16,
-        startListenServer = this[Keys.SERVER_START] ?: false
+        startListenServer = this[Keys.SERVER_START] ?: false,
+        quickFlags = this[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
+        quickFlagValues = this[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues()
     )
 }
+
+// ====== 简易 Map<String, T> 的 JSON 序列化（不依赖 Moshi，避免反射成本） ======
+
+private fun Map<String, Boolean>.flagsToJsonString(): String {
+    if (isEmpty()) return "{}"
+    val sb = StringBuilder("{")
+    var first = true
+    for ((k, v) in this) {
+        if (!first) sb.append(",")
+        first = false
+        sb.append("\"").append(k.jsonEscape()).append("\":").append(if (v) "true" else "false")
+    }
+    sb.append("}")
+    return sb.toString()
+}
+
+private fun Map<String, String>.valuesToJsonString(): String {
+    if (isEmpty()) return "{}"
+    val sb = StringBuilder("{")
+    var first = true
+    for ((k, v) in this) {
+        if (!first) sb.append(",")
+        first = false
+        sb.append("\"").append(k.jsonEscape()).append("\":\"").append(v.jsonEscape()).append("\"")
+    }
+    sb.append("}")
+    return sb.toString()
+}
+
+private fun String.jsonEscape(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+
+private fun String.parseFlagMap(): Map<String, Boolean> {
+    val m = mutableMapOf<String, Boolean>()
+    val s = this.trim()
+    if (s.length < 2 || !s.startsWith("{") || !s.endsWith("}")) return m
+    val inner = s.substring(1, s.length - 1).trim()
+    if (inner.isEmpty()) return m
+    splitTopLevel(inner, ',').forEach { pair ->
+        val (k, v) = splitTopLevel(pair, ':').let { parts ->
+            if (parts.size < 2) return@forEach
+            parts[0].trim().unquote() to parts[1].trim()
+        }
+        m[k] = v.equals("true", ignoreCase = true)
+    }
+    return m
+}
+
+private fun String.parseValueMap(): Map<String, String> {
+    val m = mutableMapOf<String, String>()
+    val s = this.trim()
+    if (s.length < 2 || !s.startsWith("{") || !s.endsWith("}")) return m
+    val inner = s.substring(1, s.length - 1).trim()
+    if (inner.isEmpty()) return m
+    splitTopLevel(inner, ',').forEach { pair ->
+        val (k, v) = splitTopLevel(pair, ':').let { parts ->
+            if (parts.size < 2) return@forEach
+            parts[0].trim().unquote() to parts[1].trim().unquote()
+        }
+        m[k] = v
+    }
+    return m
+}
+
+private fun splitTopLevel(s: String, delim: Char): List<String> {
+    val out = mutableListOf<String>()
+    var inStr = false
+    var esc = false
+    var depth = 0
+    var start = 0
+    for (i in s.indices) {
+        val c = s[i]
+        if (esc) { esc = false; continue }
+        when (c) {
+            '\\' -> { esc = true }
+            '"' -> inStr = !inStr
+            '{', '[' -> if (!inStr) depth++
+            '}', ']' -> if (!inStr) depth--
+            delim -> if (!inStr && depth == 0) {
+                out.add(s.substring(start, i))
+                start = i + 1
+            }
+        }
+    }
+    if (start <= s.length) out.add(s.substring(start))
+    return out
+}
+
+private fun String.unquote(): String =
+    if (startsWith("\"") && endsWith("\"") && length >= 2) {
+        substring(1, length - 1)
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+    } else this
+

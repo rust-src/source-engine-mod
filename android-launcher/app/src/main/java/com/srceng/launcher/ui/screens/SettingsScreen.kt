@@ -287,6 +287,7 @@ private fun SwitchRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun <T> ModeSegmentedButton(
     selected: T,

@@ -2,6 +2,7 @@ package com.srceng.launcher.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -84,7 +85,7 @@ fun AboutScreen() {
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp))
                     AboutRow(
-                        icon = Icons.Default.LauncherPlay,
+                        icon = Icons.Default.Smartphone,
                         title = "Android 启动器参考",
                         subtitle = "SourceEngineAndroid-Launcher",
                         onClick = {

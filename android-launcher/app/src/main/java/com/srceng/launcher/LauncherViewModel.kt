@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.srceng.launcher.data.CVar
+import com.srceng.launcher.data.CommandLineOption
 import com.srceng.launcher.data.LauncherConfig
 import com.srceng.launcher.data.LauncherPreferences
+import com.srceng.launcher.data.PredefinedCmdOptions
 import com.srceng.launcher.data.PredefinedCVars
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -78,6 +80,46 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { prefs.update(block) }
     }
 
+    // ===== 命令行快速勾选开关 =====
+    fun toggleQuickFlag(opt: CommandLineOption, enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.update { cfg ->
+                val nextFlags = cfg.quickFlags.toMutableMap().apply {
+                    if (enabled) put(opt.id, true) else remove(opt.id)
+                }
+                val nextValues = cfg.quickFlagValues.toMutableMap()
+                // 首次启用时填充默认值
+                if (enabled && opt.requiresValue && opt.defaultValue.isNotBlank()
+                    && !nextValues.containsKey(opt.id)) {
+                    nextValues[opt.id] = opt.defaultValue
+                }
+                cfg.copy(quickFlags = nextFlags, quickFlagValues = nextValues)
+            }
+        }
+    }
+
+    fun setQuickFlagValue(opt: CommandLineOption, value: String) {
+        viewModelScope.launch {
+            prefs.update { cfg ->
+                val nextValues = cfg.quickFlagValues.toMutableMap()
+                if (value.isBlank()) nextValues.remove(opt.id) else nextValues[opt.id] = value
+                cfg.copy(quickFlagValues = nextValues)
+            }
+        }
+    }
+
+    // 当前选项是否勾选
+    fun isQuickFlagEnabled(opt: CommandLineOption): Boolean {
+        val cfg = config.value
+        return cfg.quickFlags[opt.id] ?: opt.defaultEnabled
+    }
+
+    // 当前选项取值（未显式设置返回 defaultValue）
+    fun quickFlagValue(opt: CommandLineOption): String {
+        val cfg = config.value
+        return cfg.quickFlagValues[opt.id].orEmpty().ifBlank { opt.defaultValue }
+    }
+
     // === 游戏启动 ===
     fun buildAutoExecCfg(): String {
         return config.value.toAutoExecCfg(_workingCVars.value)
@@ -87,3 +129,4 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         return config.value.toLaunchArgs()
     }
 }
+
