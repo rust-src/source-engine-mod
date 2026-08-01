@@ -441,37 +441,19 @@ def check_deps(conf):
 		# conf.multicheck(*a, run_all_tests = True, mandatory = True)
 
 def configure(conf):
-	# Allow overriding auto-detected target CPU from CI/environment.
-	# This is required for Windows ARM64 runners where Python may report amd64.
-	forced_cpu = os.environ.get('WAF_DEST_CPU')
-	if forced_cpu:
-		conf.env.DEST_CPU = forced_cpu
-
 	conf.load('fwgslib reconfigure compiler_optimizations')
 
 	# Force XP compability, all build targets should add
 	# subsystem=bld.env.MSVC_SUBSYSTEM
 	# TODO: wrapper around bld.stlib, bld.shlib and so on?
-	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'aarch64':
-		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,10.00'
-	else:
-		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
-
-	# explicitly request target architecture for MSVC
-	if conf.env.DEST_CPU == 'x86' or conf.options.TARGET32:
+	conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
+	conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
+	if conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
-	elif conf.env.DEST_CPU == 'aarch64':
-		conf.env.MSVC_TARGETS = ['amd64_arm64']
-	else:
-		conf.env.MSVC_TARGETS = ['x64']
 
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
 	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
-
-	# Re-apply forced target CPU after compiler detection, which may overwrite it.
-	if forced_cpu:
-		conf.env.DEST_CPU = forced_cpu
 
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
@@ -615,7 +597,7 @@ def configure(conf):
 		conf.define('MSVC', 1)
 		if conf.env.DEST_CPU == 'x86':
 			conf.define('COMPILER_MSVC32', 1)
-		elif conf.env.DEST_CPU in ['x86_64', 'amd64', 'aarch64']:
+		elif conf.env.DEST_CPU in ['x86_64', 'amd64']:
 			conf.define('COMPILER_MSVC64', 1)
 
 	if conf.env.COMPILER_CC != 'msvc':

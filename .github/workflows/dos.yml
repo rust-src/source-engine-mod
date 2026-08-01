@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - "*"
-    tags:
-      - "v*"
   pull_request:
     branches:
       - "*"
@@ -24,15 +22,15 @@ jobs:
         vulkan-components: Vulkan-Headers, Vulkan-Loader
     - name: Build-sv
       run: |
-        
+
         git submodule init;git submodule update
         #sudo apt update;sudo apt upgrade;sudo apt-get install -f -y gdb libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
         ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2mp --enable-opus
         ./waf.bat install -j4
-        
+
         New-Item -ItemType Directory -Force -Path ./win | Out-Null
         cat build/config.log >./win/info.txt
-        
+
     - uses: actions/upload-artifact@v4
       with:
         name: hl2dm-win64
@@ -64,62 +62,3 @@ jobs:
         name: hl2dm-win32
         path: ./win
         if-no-files-found: error
-
-  build-srceng-win-arm64:
-    runs-on: windows-11-arm
-    env:
-      WAF_DEST_CPU: aarch64
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        architecture: x64
-    - name: Setup MSVC ARM64
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: amd64_arm64
-    - name: Install Vulkan SDK
-      uses: humbletim/setup-vulkan-sdk@v1.2.1
-      with:
-        vulkan-query-version: 1.3.290.0
-        vulkan-components: Vulkan-Headers, Vulkan-Loader
-    - name: Build Windows ARM64
-      run: |
-        git submodule init;git submodule update
-        ./waf.bat configure -T release --prefix=./win --disable-warns --build-game=hl2mp --enable-opus
-        ./waf.bat install -j4
-        New-Item -ItemType Directory -Force -Path ./win | Out-Null
-        cat build/config.log > ./win/info.txt
-    - uses: actions/upload-artifact@v4
-      with:
-        name: hl2dm-win-arm64
-        path: ./win
-        if-no-files-found: error
-
-  release:
-    runs-on: ubuntu-latest
-    needs: [build-srceng-server-win-32-hl2dm, build-srceng-win-hl2dm, build-srceng-win-arm64]
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-    - name: Pack release assets
-      run: |
-        mkdir -p ./release
-        for dir in ./artifacts/*/; do
-          name=$(basename "$dir")
-          zip -r "./release/${name}.zip" "$dir"
-        done
-    - name: Upload release assets
-      uses: softprops/action-gh-release@v2
-      with:
-        files: ./release/*.zip
-        generate_release_notes: true
-
