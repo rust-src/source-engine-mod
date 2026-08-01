@@ -461,12 +461,22 @@ def configure(conf):
 	if _msvc_target_env == 'arm64':
 		conf.env.DEST_CPU = 'aarch64'
 		conf.env.MSVC_TARGETS = ['arm64']
+		Logs.info('ARM64: Detected VSCMD_ARG_TGT_ARCH=arm64, setting DEST_CPU=aarch64, MSVC_TARGETS=[arm64]')
 	elif conf.env.DEST_CPU == 'aarch64':
 		conf.env.MSVC_TARGETS = ['arm64']
+		Logs.info('ARM64: DEST_CPU was already aarch64, setting MSVC_TARGETS=[arm64]')
 	else:
 		conf.env.MSVC_TARGETS = ['x64']
+		Logs.info('ARM64: Using default MSVC_TARGETS=[x64], DEST_CPU=%s' % conf.env.DEST_CPU)
 	if conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
+		Logs.info('ARM64: TARGET32 set, overriding MSVC_TARGETS=[x86]')
+
+	Logs.info('ARM64 debug: DEST_CPU=%s, DEST_OS=%s, MSVC_TARGETS=%s, COMPILER_CC=%s' % (
+		getattr(conf.env, 'DEST_CPU', 'unset'),
+		getattr(conf.env, 'DEST_OS', 'unset'),
+		getattr(conf.env, 'MSVC_TARGETS', 'unset'),
+		getattr(conf.env, 'COMPILER_CC', 'unset')))
 
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
@@ -484,12 +494,20 @@ def configure(conf):
 	if _msvc_target_env2 == 'arm64':
 		conf.env.DEST_CPU = 'aarch64'
 		conf.env.MSVC_TARGETS = ['arm64']
+		Logs.info('ARM64: After xcompile load, re-applied DEST_CPU=aarch64, MSVC_TARGETS=[arm64]')
 	if conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
+
+	Logs.info('ARM64 debug (post-xcompile): DEST_CPU=%s, DEST_OS=%s, MSVC_TARGETS=%s, COMPILER_CC=%s' % (
+		getattr(conf.env, 'DEST_CPU', 'unset'),
+		getattr(conf.env, 'DEST_OS', 'unset'),
+		getattr(conf.env, 'MSVC_TARGETS', 'unset'),
+		getattr(conf.env, 'COMPILER_CC', 'unset')))
 
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
 	elif conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'aarch64':
+		Logs.info('ARM64: Skipping masm load (not supported on ARM64)')
 		pass  # no masm for ARM64
 	elif conf.env.DEST_OS == 'darwin':
 		conf.load('mm_hook')
@@ -508,6 +526,8 @@ def configure(conf):
 			])
 			# Also set LIB env var so the linker can find libz.lib etc.
 			os.environ['LIB'] = os.path.abspath('.') + '/lib/win32/arm64/;' + os.environ.get('LIB', '')
+			Logs.info('ARM64: Added ARM64 LIBPATH. Current LIBPATH=%s' % conf.env.LIBPATH)
+			Logs.info('ARM64: Set LIB env var to: %s' % os.environ.get('LIB', ''))
 
 	conf.env.BIT32_MANDATORY = conf.options.TARGET32
 	if conf.env.BIT32_MANDATORY:

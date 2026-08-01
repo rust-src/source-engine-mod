@@ -125,13 +125,34 @@ jobs:
           Get-ChildItem "$vcpkgBin\*.dll" | Copy-Item -Destination ./lib/win32/arm64/ -Force
           Get-ChildItem "$vcpkgBin\*.dll" | Copy-Item -Destination ./lib/win32/aarch64/ -Force
         }
-        Write-Host "ARM64 libraries in ./lib/win32/arm64/:"
+        Write-Host "=== Environment ==="
+        Write-Host "VSCMD_ARG_TGT_ARCH=$env:VSCMD_ARG_TGT_ARCH"
+        Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+        Write-Host "LIB=$env:LIB"
+        Write-Host "INCLUDE=$env:INCLUDE"
+        Write-Host "=== ARM64 libraries in ./lib/win32/arm64/: ==="
         Get-ChildItem ./lib/win32/arm64/ -Name
-        Write-Host "ARM64 libraries in ./lib/win32/aarch64/:"
+        Write-Host "=== ARM64 libraries in ./lib/win32/aarch64/: ==="
         Get-ChildItem ./lib/win32/aarch64/ -Name
         # Now configure and build
-        ./waf.bat configure -T release --prefix=./win --disable-warns --enable-opus
-        ./waf.bat install -j4
+        Write-Host "=== Running waf configure ==="
+        ./waf.bat configure -T release --prefix=./win --disable-warns --enable-opus 2>&1 | Tee-Object -FilePath configure.log
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "=== CONFIGURE FAILED ==="
+          if (Test-Path build/config.log) {
+            Write-Host "=== Last 100 lines of build/config.log: ==="
+            Get-Content build/config.log -Tail 100
+          }
+          exit 1
+        }
+        Write-Host "=== Running waf install ==="
+        ./waf.bat install -j4 2>&1 | Tee-Object -FilePath build.log
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "=== BUILD FAILED ==="
+          Write-Host "=== Last 200 lines of build.log: ==="
+          Get-Content build.log -Tail 200
+          exit 1
+        }
         New-Item -ItemType Directory -Force -Path ./win | Out-Null
         cat build/config.log > ./win/info.txt
         Get-ChildItem -Recurse -Path ./win -Include *.lib,*.pdb | Remove-Item -Force
@@ -140,12 +161,18 @@ jobs:
         name: hl2dm-win-arm64
         path: ./win
         if-no-files-found: error
-    - name: Upload config.log on failure
+    - name: Upload config.log and build logs on failure
       if: failure()
       run: |
         New-Item -ItemType Directory -Force -Path ./diag | Out-Null
         if (Test-Path build/config.log) {
           Copy-Item build/config.log ./diag/config.log
+        }
+        if (Test-Path configure.log) {
+          Copy-Item configure.log ./diag/configure.log
+        }
+        if (Test-Path build.log) {
+          Copy-Item build.log ./diag/build.log
         }
     - uses: actions/upload-artifact@v4
       if: failure()
