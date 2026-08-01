@@ -640,8 +640,8 @@ def configure(conf):
 def build(bld):
 	os.environ["CCACHE_DIR"] = os.path.abspath('.ccache/'+bld.env.COMPILER_CC+'/'+bld.env.DEST_OS+'/'+bld.env.DEST_CPU)
 
-	# DXVK is not used on Android or OpenGL ES (TOGLES) builds
-	if bld.env.DEST_OS == 'android' or bld.env.TOGLES:
+	# DXVK is only needed on Windows and Linux
+	if bld.env.DEST_OS not in ['win32', 'linux'] or bld.env.TOGLES:
 		if 'materialsystem/shaderapidxxvk' in projects['game']:
 			projects['game'].remove('materialsystem/shaderapidxxvk')
 
