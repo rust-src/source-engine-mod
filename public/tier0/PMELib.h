@@ -26,6 +26,14 @@
 
 using namespace std;
 
+#if defined( _M_ARM64 ) || defined( _M_ARM64EC ) || defined( __aarch64__ ) || defined( __arm__ )
+// ARM64 / ARM: no RDTSC / RDPMC instructions or x86 inline asm support.
+// Provide safe no-op stubs so PMELib (performance monitoring, x86-only) still compiles.
+#  define RDTSC(var)   do { (var) = 0; } while (0)
+#  define RDPMC(counter, var)  do { (var) = 0; } while (0)
+#  define RDPMC0(var)  do { (var) = 0; } while (0)
+#  define RDPMC1(var)  do { (var) = 0; } while (0)
+#else
 // RDTSC Instruction macro
 #define RDTSC(var) var = __rdtsc()
 
@@ -48,6 +56,7 @@ _asm mov ecx, 1 \
 _asm RDPMC \
 _asm mov DWORD PTR var,eax \
 _asm mov DWORD PTR var+4,edx
+#endif
 
 #define EVENT_TYPE(mode) EventType##mode
 #define EVENT_MASK(mode) EventMask##mode
