@@ -5,9 +5,6 @@
 //
 //===========================================================================//
 
-#define VK_USE_PLATFORM_XLIB_KHR
-#define VK_USE_PLATFORM_XCB_KHR
-
 #include "dxvk_adapter.h"
 #include "tier0/threadtools.h"
 #include "tier0/icommandline.h"

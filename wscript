@@ -461,7 +461,7 @@ def configure(conf):
 	if conf.env.DEST_CPU == 'x86' or conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
 	elif conf.env.DEST_CPU == 'aarch64':
-		conf.env.MSVC_TARGETS = ['arm64']
+		conf.env.MSVC_TARGETS = ['amd64_arm64']
 	else:
 		conf.env.MSVC_TARGETS = ['x64']
 
