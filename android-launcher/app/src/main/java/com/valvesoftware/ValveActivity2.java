@@ -27,7 +27,9 @@ import java.util.Locale;
 public class ValveActivity2 {
 
     private static final String TAG = "ValveActivity2";
-    private static final String PREF_NAME = "srceng_launcher";
+    // 与两个原型 (srceng-launcher_cn / SourceEngineAndroid-Launcher) 保持一致：
+    // 原生 native 侧 / UpdateSystem / SharedPreferences 约定使用 "mod" 作为 key
+    private static final String PREF_NAME = "mod";
 
     // JNI 入口（由 native 层在 System.loadLibrary("launcher") 时注册）
     public static native void setArgs(String args);
@@ -75,9 +77,12 @@ public class ValveActivity2 {
             }
             if (argv == null) argv = "";
 
-            // ---- 4. 提取 assets：extras_dir.vpk 到 filesDir（引擎启动需要） ----
-            // 参考原型：两个原型都在 initNatives 最前面调 extractAssets/extractVPK
-            ExtractAssets.extractVPK(context);
+            // ---- 4. 提取 assets：extras_dir.vpk + 全部字体文件 到 filesDir（引擎启动需要） ----
+            // 参考原型：
+            //   SourceEngineAndroid-Launcher: ExtractAssets.extractAssets() 先 chmod dataDir+filesDir 为 0777，
+            //                                 再 extractVPK + 7 个字体文件全部 extractAsset
+            //   srceng-launcher_cn: ExtractAssets.extractVPK(context, false) 并 chmod dataDir/filesDir/vpk 为 0777
+            ExtractAssets.extractAssets(context);
 
             // ---- 5. 写入环境变量（严格照原型 srceng-launcher_cn） ----
             String filesDir = context.getFilesDir().getAbsolutePath();
@@ -96,11 +101,16 @@ public class ValveActivity2 {
             safeSetenv("APP_LIB_PATH", appInfo.nativeLibraryDir);
             safeSetenv("VALVE_GAME_PATH", gamepath);
 
-            // ---- 5. 最终 argv：完全按用户给出的字符串透传
-            // 参考 SourceEngineAndroid-Launcher 原型：setArgs(MainActivity.profile.getGameCmdVar())
-            // 不自动 prepend "-game <gamedir>"，用户在自定义参数里自己需要时自己加
-            String finalArgv = (argv != null) ? argv : "";
+            // ---- 5. 最终 argv：严格对齐 srceng-launcher_cn 第 97 行
+            //   argv = "-game "+gamedir+" "+argv;
+            // 注意：GameLauncher.toLaunchArgs() 生成的用户参数里**不再包含** -game（我们在那里主动去掉了），
+            // 避免 "-game" 在命令行中出现两次导致引擎解析出错。
+            String finalArgv = "-game " + gamedir;
+            if (argv != null && !argv.isEmpty()) {
+                finalArgv = finalArgv + " " + argv;
+            }
             Log.i(TAG, "setenv VALVE_GAME_PATH=" + gamepath);
+            Log.i(TAG, "setenv APP_MOD_LIB  fallback=" + appInfo.nativeLibraryDir);
             Log.i(TAG, "setArgs: [" + finalArgv + "]");
             try {
                 setArgs(finalArgv);

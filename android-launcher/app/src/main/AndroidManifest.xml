@@ -3,14 +3,16 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 录音：SDL 音频 + 引擎内语音支持（srceng-launcher_cn 运行时会申请） -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 蓝牙手柄支持（SDL 需要） -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
@@ -19,9 +21,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
     <!-- SDL 需要 Immersive Sticky/全屏相关 -->
-    <uses-feature android:glEsVersion="0x00030001" android:required="false" />
+    <!-- 引擎仅需要 GLES2，glEsVersion=0x00020000 与 srceng-launcher_cn 一致（原声明 3.0.1 为过度声明） -->
+    <uses-feature android:glEsVersion="0x00020000" android:required="true" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -32,7 +37,9 @@
         android:theme="@style/Theme.SourceEngineLauncher"
         android:usesCleartextTraffic="true"
         tools:targetApi="31"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:requestLegacyExternalStorage="true"
+        android:allowAudioPlaybackCapture="true">
 
         <activity
             android:name=".MainActivity"
@@ -64,6 +71,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- srceng-launcher_cn 中声明的 meta-data：避免折叠屏/高宽比设备裁剪画面，允许多 Activity 恢复 -->
+        <meta-data android:name="android.max_aspect" android:value="9999.0" />
+        <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />
 
     </application>
 
