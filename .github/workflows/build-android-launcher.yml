@@ -67,15 +67,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-launcher-
 
-      - name: Assemble Debug + Release (both signed via shared debug.keystore)
+      - name: Assemble 4 variants (withLibs + nolibs × debug + release)
         id: assemble
         run: |
-          ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace --no-daemon \
+          ./gradlew \
+            :app:assembleWithLibsDebug :app:assembleWithLibsRelease \
+            :app:assembleNoLibsDebug :app:assembleNoLibsRelease \
+            --stacktrace --no-daemon \
             -Dorg.gradle.parallel=true \
             -Dorg.gradle.caching=true
 
           echo "=== build outputs ==="
-          find app/build/outputs -maxdepth 5 -type f \( -name "*.apk" -o -name "*.aab" \) -print0 | xargs -0 -r ls -lh
+          find app/build/outputs -maxdepth 6 -type f \( -name "*.apk" -o -name "*.aab" \) -print0 | xargs -0 -r ls -lh
 
       - name: Verify APK signatures with apksigner
         id: verify
@@ -89,7 +92,15 @@ jobs:
           chmod +x "$APKSIGNER" 2>/dev/null || true
 
           FAIL=0
-          for APK in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+          # 验证 4 个 variant 目录下所有 APK：
+          #   apk/withLibs/debug/ + apk/withLibs/release/
+          #   apk/nolibs/debug/   + apk/nolibs/release/
+          for APK in \
+            app/build/outputs/apk/withLibs/debug/*.apk \
+            app/build/outputs/apk/withLibs/release/*.apk \
+            app/build/outputs/apk/nolibs/debug/*.apk \
+            app/build/outputs/apk/nolibs/release/*.apk
+          do
             test -f "$APK" || continue
             echo
             echo "=========================================================================="
@@ -101,23 +112,40 @@ jobs:
               echo "[FAIL] $APK failed signature verification"
               FAIL=1
             fi
-            # 额外：列出 v1/v2/v3 签名方案
             "$APKSIGNER" verify -v "$APK" 2>&1 | grep -E "^(Verified using|APK signature scheme)" || true
+            # 统计 nolibs 的 APK 应该不含任何 .so
+            if echo "$APK" | grep -q "nolibs"; then
+              SO_COUNT=$(unzip -l "$APK" 2>/dev/null | grep -cE "\.so$" || echo 0)
+              echo "==> nolibs APK .so count: $SO_COUNT (expect 0)"
+              if [ "$SO_COUNT" -ne 0 ]; then
+                echo "::error:: nolibs APK still contains .so files ($SO_COUNT)! ABORT"
+                FAIL=1
+              fi
+            fi
           done
           if [ "$FAIL" -ne 0 ]; then
-            echo "::error:: One or more APKs failed apksigner verify"
+            echo "::error:: One or more APKs failed checks (apksigner / nolibs-has-so)"
             exit 1
           fi
 
-      - name: Upload Signed APKs
+      - name: Upload Signed APKs (with libs)
         if: success() || (steps.assemble.outcome == 'success' && steps.verify.outcome == 'success')
         uses: actions/upload-artifact@v5
         with:
-          # 名称明确写 "signed" 与 "apk"，避免用户装 AAB/unsigned 包
-          name: launcher-signed-apk
+          name: launcher-signed-withLibs-apk
           path: |
-            android-launcher/app/build/outputs/apk/debug/*.apk
-            android-launcher/app/build/outputs/apk/release/*.apk
+            android-launcher/app/build/outputs/apk/withLibs/debug/*.apk
+            android-launcher/app/build/outputs/apk/withLibs/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload Signed APKs (nolibs / 空壳)
+        if: success() || (steps.assemble.outcome == 'success' && steps.verify.outcome == 'success')
+        uses: actions/upload-artifact@v5
+        with:
+          name: launcher-signed-nolibs-apk
+          path: |
+            android-launcher/app/build/outputs/apk/nolibs/debug/*.apk
+            android-launcher/app/build/outputs/apk/nolibs/release/*.apk
           if-no-files-found: error
 
       - name: Upload mapping / proguard outputs (optional)

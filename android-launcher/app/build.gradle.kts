@@ -45,15 +45,42 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        ndk {
-            // 只保留 CI 产出的 ABI，避免 APK 里 x86_64 空 ABI 导致运行时找不到 so
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-        }
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+    }
+
+    // 双产物：
+    //   withLibs  → 打包 jniLibs (armeabi-v7a / arm64-v8a 引擎 native libs)
+    //   nolibs    → 空壳 APK（不含任何 .so）
+    flavorDimensions += "withLibs"
+    productFlavors {
+        create("withLibs") {
+            dimension = "withLibs"
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            }
+        }
+        create("nolibs") {
+            dimension = "withLibs"
+            ndk {
+                abiFilters.clear()
+            }
+        }
+    }
+
+    // 最关键：把 jniLibs 从 main 源集移除，仅在 withLibs flavor 下挂载。
+    // 必须用 setSrcDirs() 先清空，jniLibs.srcDirs 是追加模式，不能保证生效。
+    sourceSets {
+        getByName("main") {
+            // 先 setSrcDirs 清空，避免 AGP 用默认 src/main/jniLibs
+            jniLibs.setSrcDirs(emptyList<Any>())
+        }
+        maybeCreate("withLibs").apply {
+            jniLibs.setSrcDirs(listOf("src/main/jniLibs"))
+        }
+        // nolibs: 保持空 → 不含 so
     }
 
     buildTypes {
