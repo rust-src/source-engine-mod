@@ -186,7 +186,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** 当前启动前自检（UI 用于显示状态条） */
     fun diagnostics(): List<Diagnostic> {
         val cfg = config.value
-        return GameLauncher.runDiagnostics(getApplication(), cfg.gameDirectory, cfg.selectedMod)
+        return GameLauncher.runDiagnostics(getApplication(), cfg.gameDirectory, cfg.gameDirectoryUri, cfg.selectedMod)
     }
 
     fun isReadyToLaunch(): Boolean = diagnostics().none { !it.ok }
@@ -203,6 +203,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         return GameLauncher.prepareAndLaunch(
             context = getApplication(),
             gameDir = cfg.gameDirectory,
+            gameDirUri = cfg.gameDirectoryUri,
             mod = cfg.selectedMod,
             cvars = cvars,
             autoexecBody = autoexecBody,

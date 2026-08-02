@@ -79,13 +79,13 @@ fun HomeScreen(
         if (!looksSource) {
             scope.launch {
                 snackbarHostState.showSnackbar(
-                    message = "所选目录看起来不像 Source Engine 资源目录（没找到 hl2/platform/bin）。仅作参考：仍可使用，但启动可能失败）",
-                    duration = SnackbarDuration.Long
+                    message = "所选目录不像 Source 资源目录（没找到 hl2/platform/bin）",
+                    duration = SnackbarDuration.Short
                 )
             }
         }
-        // 无论像不像都写入配置
-        vm.updateConfig { it.copy(gameDirectory = path) }
+        // 无论像不像都写入配置（路径 + URI 都要存，URI 用于 Android 11+ 作用域存储检测）
+        vm.updateConfig { it.copy(gameDirectory = path, gameDirectoryUri = uri.toString()) }
         scope.launch {
             snackbarHostState.showSnackbar(
                 message = "已保存游戏目录: $path",
@@ -189,9 +189,8 @@ fun HomeScreen(
                                 } else {
                                     "启动条件未满足（详见弹出的诊断对话框）"
                                 },
-                                duration = SnackbarDuration.Long
-                            )
-                        }
+                                duration = SnackbarDuration.Short
+                        )
                     }
                     else -> {
                         // canLaunch=true 但 launch!=success：给出 launch 失败提示
@@ -199,7 +198,7 @@ fun HomeScreen(
                             ?: "启动失败（原因未知）"
                         failureDialog = result
                         scope.launch {
-                            snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long)
+                            snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Short)
                         }
                     }
                 }

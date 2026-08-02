@@ -38,6 +38,7 @@ data class LauncherConfig(
 
     // 游戏路径
     val gameDirectory: String = "",
+    val gameDirectoryUri: String = "",   // SAF tree URI，用于 DocumentFile 检测（Android 11+ 作用域存储需要）
     val selectedMod: String = "hl2",
     val customLaunchArgs: String = "",
 
@@ -202,6 +203,7 @@ class LauncherPreferences(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val GAME_DIR = stringPreferencesKey("game_dir")
+        val GAME_DIR_URI = stringPreferencesKey("game_dir_uri")
         val SELECTED_MOD = stringPreferencesKey("selected_mod")
         val CUSTOM_ARGS = stringPreferencesKey("custom_args")
         val RENDER_API = stringPreferencesKey("render_api")
@@ -234,6 +236,7 @@ class LauncherPreferences(private val context: Context) {
                 themeMode = prefs[Keys.THEME_MODE]?.let(ThemeMode::valueOf) ?: ThemeMode.SYSTEM,
                 useDynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: true,
                 gameDirectory = prefs[Keys.GAME_DIR] ?: "",
+                gameDirectoryUri = prefs[Keys.GAME_DIR_URI] ?: "",
                 selectedMod = prefs[Keys.SELECTED_MOD] ?: "hl2",
                 customLaunchArgs = prefs[Keys.CUSTOM_ARGS] ?: "",
                 renderApi = prefs[Keys.RENDER_API] ?: "gles3",
@@ -265,6 +268,7 @@ class LauncherPreferences(private val context: Context) {
             prefs[Keys.THEME_MODE] = next.themeMode.name
             prefs[Keys.DYNAMIC_COLOR] = next.useDynamicColor
             prefs[Keys.GAME_DIR] = next.gameDirectory
+            prefs[Keys.GAME_DIR_URI] = next.gameDirectoryUri
             prefs[Keys.SELECTED_MOD] = next.selectedMod
             prefs[Keys.CUSTOM_ARGS] = next.customLaunchArgs
             prefs[Keys.RENDER_API] = next.renderApi
@@ -293,6 +297,7 @@ class LauncherPreferences(private val context: Context) {
         themeMode = this[Keys.THEME_MODE]?.let(ThemeMode::valueOf) ?: ThemeMode.SYSTEM,
         useDynamicColor = this[Keys.DYNAMIC_COLOR] ?: true,
         gameDirectory = this[Keys.GAME_DIR] ?: "",
+        gameDirectoryUri = this[Keys.GAME_DIR_URI] ?: "",
         selectedMod = this[Keys.SELECTED_MOD] ?: "hl2",
         customLaunchArgs = this[Keys.CUSTOM_ARGS] ?: "",
         renderApi = this[Keys.RENDER_API] ?: "gles3",

@@ -1,12 +1,15 @@
 package com.srceng.launcher.game
 
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import com.srceng.launcher.data.CVar
 import java.io.File
 import java.io.IOException
@@ -67,7 +70,7 @@ object GameLauncher {
     //  启动前自检
     // ============================================================
 
-    fun runDiagnostics(context: Context, gameDir: String, mod: String): List<Diagnostic> {
+    fun runDiagnostics(context: Context, gameDir: String, gameDirUri: String, mod: String): List<Diagnostic> {
         val out = mutableListOf<Diagnostic>()
 
         // 1) 引擎 native libs 是否已打包进 APK
@@ -84,29 +87,59 @@ object GameLauncher {
             )
         }
 
-        // 2) 游戏目录是否已选择
-        val root = resolveGameRoot(gameDir, context)
-        if (root == null) {
+        // 2) 游戏目录检测：优先用 SAF DocumentFile（Android 11+ 作用域存储），回退到 File
+        val gameRoot = resolveGameRoot(gameDir, context)
+        val gameRootDoc = resolveGameRootDoc(context, gameDirUri)
+
+        if (gameDir.isBlank() && gameDirUri.isBlank()) {
             out += Diagnostic(
                 false,
                 "尚未配置游戏目录",
-                "请在「设置」中选择包含 hl2/、platform/、bin/ 等文件夹的 Source 资源根目录。"
+                "请在主页点击「从文件管理器选择」或手动输入路径，选择包含 hl2/、platform/、bin/ 的 Source 资源根目录。"
             )
         } else {
-            val modDir = File(root, mod)
-            val gi = File(modDir, "gameinfo.txt")
-            if (!modDir.isDirectory || !gi.isFile) {
+            // 尝试用 DocumentFile 检测（SAF 路径优先）
+            val (rootFound, rootDesc) = if (gameRootDoc != null) {
+                true to "SAF URI: $gameDirUri"
+            } else if (gameRoot != null) {
+                true to "文件路径: ${gameRoot.absolutePath}"
+            } else {
+                // 路径指定了但都可访问不到 → 提示用户
+                false to (gameDir.ifBlank { "（未设置）" })
+            }
+
+            if (!rootFound) {
                 out += Diagnostic(
                     false,
-                    "游戏/模组目录不完整",
-                    "在 ${root.absolutePath}/$mod/ 下未找到 gameinfo.txt。\n请确认选择的目录以及模组名（当前：$mod）是否正确。"
+                    "游戏目录不可访问",
+                    "已配置路径为: $rootDesc\n" +
+                            "原因：Android 11+ 作用域存储导致 APP 无法直接通过文件路径访问。\n" +
+                            "解决方案：请重新点击「从文件管理器选择」选择游戏目录，确保系统文件选择器弹窗后正常授权。\n" +
+                            "提示：如果仍然无效，请尝试通过「手动粘贴路径」输入 /storage/emulated/0/ 下的完整路径。"
                 )
             } else {
-                out += Diagnostic(true, "游戏资源", "已定位 ${gi.absolutePath}")
+                // 在根目录下找 gameinfo.txt（支持三种常见结构）
+                val gameInfoCheck = findGameInfo(gameRootDoc, gameRoot, mod)
+                if (gameInfoCheck == null) {
+                    // 详细列出用户目录下有什么
+                    val listing = listDirContents(gameRootDoc, gameRoot)
+                    out += Diagnostic(
+                        false,
+                        "未找到 gameinfo.txt",
+                        "在游戏根目录下未找到 $mod/gameinfo.txt。\n\n" +
+                                "当前目录内容：\n${listing.ifEmpty { "（空目录或无法列出）" }}\n\n" +
+                                "请确认：\n" +
+                                "1) 选择的目录是 Source 引擎根目录（包含 hl2/、platform/、bin/）\n" +
+                                "2) 当前模组选择正确（当前：$mod，可在「运行信息」中切换）\n" +
+                                "3) 游戏资源文件已正确解压到该目录"
+                    )
+                } else {
+                    out += Diagnostic(true, "游戏资源", "已定位 ${gameInfoCheck.absolutePath}")
+                }
             }
         }
 
-        // 3) SDL Activity 是否能在本 APK 中解析（Manifest 有声明 + Java 类存在）
+        // 3) SDL Activity 是否能在本 APK 中解析
         val sdlIntent = Intent().setClassName(context.packageName, SDL_ACTIVITY_CLASS)
         val resolved = context.packageManager.resolveActivity(sdlIntent, PackageManager.MATCH_DEFAULT_ONLY)
         if (resolved == null) {
@@ -116,7 +149,6 @@ object GameLauncher {
                 "Manifest 未声明或无法解析 $SDL_ACTIVITY_CLASS。请重新构建引擎 APK。"
             )
         } else {
-            // 确认类真的能加载（只有当 libSDL2 Java 类存在时才会通过）
             val classOk = try {
                 Class.forName(SDL_ACTIVITY_CLASS)
                 true
@@ -139,8 +171,109 @@ object GameLauncher {
     }
 
     /** 是否“完全可以启动”（没有失败级别的诊断项） */
-    fun isReadyToLaunch(context: Context, gameDir: String, mod: String): Boolean =
-        runDiagnostics(context, gameDir, mod).none { !it.ok }
+    fun isReadyToLaunch(context: Context, gameDir: String, gameDirUri: String, mod: String): Boolean =
+        runDiagnostics(context, gameDir, gameDirUri, mod).none { !it.ok }
+
+    // ===== 游戏目录解析辅助 =====
+
+    /** 用 File API 解析目录（传统路径，可能受作用域存储限制） */
+    private fun resolveGameRoot(gameDir: String, context: Context): File? {
+        val candidates = mutableListOf<File>()
+        if (gameDir.isNotBlank()) candidates += File(gameDir)
+        val ext = Environment.getExternalStorageDirectory()
+        candidates += File(ext, "Android/data/${context.packageName}/files/source")
+        candidates += File(ext, "source")
+        candidates += File(context.getExternalFilesDir(null), "source")
+        candidates += context.filesDir
+        return candidates.firstOrNull { it.isDirectory }
+    }
+
+    /** 用 SAF DocumentFile 解析目录（Android 11+ 推荐方式） */
+    private fun resolveGameRootDoc(context: Context, gameDirUri: String): DocumentFile? {
+        if (gameDirUri.isBlank()) return null
+        return try {
+            val uri = Uri.parse(gameDirUri)
+            val doc = DocumentFile.fromTreeUri(context, uri)
+            if (doc != null && doc.exists() && doc.isDirectory) doc else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 在游戏根目录下找 gameinfo.txt，支持多种目录结构：
+     * 1) $root/$mod/gameinfo.txt  （标准 Source 结构）
+     * 2) $root/gameinfo.txt       （用户直接选了 mod 目录）
+     * 3) $root/game/$mod/gameinfo.txt（备选结构）
+     */
+    private fun findGameInfo(
+        rootDoc: DocumentFile?,
+        rootFile: File?,
+        mod: String
+    ): File? {
+        // 优先用 SAF DocumentFile（返回路径）
+        if (rootDoc != null) {
+            val ctx = rootDoc.uri
+            // 尝试 $root/$mod/gameinfo.txt
+            for (sub in listOf(mod, "")) {
+                val dir = if (sub.isNotBlank()) rootDoc.findFile(sub) else rootDoc
+                if (dir != null && dir.isDirectory) {
+                    val gi = dir.findFile("gameinfo.txt")
+                    if (gi != null && gi.isFile) {
+                        // 转成真实路径（如果可能）
+                        return try {
+                            val docId = DocumentsContract.getDocumentId(gi.uri)
+                            val path = if (docId.contains(":")) {
+                                val parts = docId.split(":")
+                                "/storage/emulated/0/${parts.getOrElse(1) { parts[0] }}"
+                            } else null
+                            path?.let { File(it) } ?: File(gi.uri.toString())
+                        } catch (_: Exception) {
+                            File(gi.uri.toString())
+                        }
+                    }
+                }
+            }
+        }
+
+        // 回退到 File API
+        if (rootFile != null) {
+            // 标准结构：$root/$mod/gameinfo.txt
+            val modDir = File(rootFile, mod)
+            val gi1 = File(modDir, "gameinfo.txt")
+            if (gi1.isFile) return gi1
+            // 用户直接选了 mod 目录
+            val gi2 = File(rootFile, "gameinfo.txt")
+            if (gi2.isFile) return gi2
+            // $root/game/$mod/gameinfo.txt
+            val gameDir = File(rootFile, "game")
+            if (gameDir.isDirectory) {
+                val gi3 = File(File(gameDir, mod), "gameinfo.txt")
+                if (gi3.isFile) return gi3
+            }
+        }
+        return null
+    }
+
+    /** 列出目录内容（用于诊断提示） */
+    private fun listDirContents(rootDoc: DocumentFile?, rootFile: File?): String {
+        val items = mutableListOf<String>()
+        if (rootDoc != null) {
+            try {
+                rootDoc.listFiles().take(20).forEach { f ->
+                    items += "  ${if (f.isDirectory) "📁" else "📄"} ${f.name ?: "?"}"
+                }
+            } catch (_: Exception) {}
+        }
+        if (items.isEmpty() && rootFile != null) {
+            try {
+                rootFile.listFiles()?.take(20)?.forEach { f ->
+                    items += "  ${if (f.isDirectory) "📁" else "📄"} ${f.name}"
+                }
+            } catch (_: Exception) {}
+        }
+        return items.joinToString("\n")
+    }
 
     // ============================================================
     //  写入 autoexec.cfg
@@ -284,12 +417,13 @@ object GameLauncher {
     fun prepareAndLaunch(
         context: Context,
         gameDir: String,
+        gameDirUri: String,
         mod: String,
         cvars: List<CVar>,
         autoexecBody: String,
         launchArgs: String
     ): LaunchFlowResult {
-        val diags = runDiagnostics(context, gameDir, mod)
+        val diags = runDiagnostics(context, gameDir, gameDirUri, mod)
         val canLaunch = diags.none { !it.ok }
 
         // 总是尝试写配置（哪怕缺少 lib 也先写好，让用户下次带 lib 时就能用）
@@ -365,15 +499,4 @@ object GameLauncher {
         }
     }
 
-    private fun resolveGameRoot(gameDir: String, context: Context): File? {
-        val candidates = mutableListOf<File>()
-        if (gameDir.isNotBlank()) candidates += File(gameDir)
-        // 经典默认路径
-        val ext = Environment.getExternalStorageDirectory()
-        candidates += File(ext, "Android/data/${context.packageName}/files/source")
-        candidates += File(ext, "source")
-        candidates += File(context.getExternalFilesDir(null), "source")
-        candidates += context.filesDir
-        return candidates.firstOrNull { it.isDirectory }
     }
-}
