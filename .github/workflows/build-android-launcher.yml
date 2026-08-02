@@ -15,9 +15,9 @@ on:
 
 jobs:
   build-launcher:
-    name: Build Launcher (Debug)
+    name: Build Launcher (Signed APK)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -29,13 +29,13 @@ jobs:
         with:
           submodules: false
 
-      # 先确认我们提交的 gradlew 文件存在
-      - name: Validate wrapper files
+      - name: Validate wrapper + signing files
         run: |
           test -f ./gradlew || { echo "gradlew missing in git!"; exit 1; }
           test -f ./gradle/wrapper/gradle-wrapper.jar || { echo "gradle-wrapper.jar missing!"; exit 1; }
+          test -f ./app/debug.keystore || { echo "signing keystore missing! (expected android-launcher/app/debug.keystore)"; exit 1; }
           chmod +x ./gradlew
-          ls -l ./gradlew ./gradle/wrapper/
+          ls -l ./gradlew ./gradle/wrapper/ ./app/debug.keystore
 
       - name: Setup JDK 17
         uses: actions/setup-java@v5
@@ -45,6 +45,7 @@ jobs:
           cache: 'gradle'
 
       # 安装并配置 Android SDK (platform-34 / build-tools 34.0.0 / cmdline-tools / platform-tools)
+      # apksigner / zipalign 均来自 build-tools;34.0.0
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -66,40 +67,60 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-launcher-
 
-      - name: Assemble Debug
+      - name: Assemble Debug + Release (both signed via shared debug.keystore)
         id: assemble
         run: |
-          ./gradlew :app:assembleDebug --stacktrace --no-daemon \
+          ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace --no-daemon \
             -Dorg.gradle.parallel=true \
             -Dorg.gradle.caching=true
 
-      - name: Assemble Release (AAB + APK)
-        id: assembleRelease
+          echo "=== build outputs ==="
+          find app/build/outputs -maxdepth 5 -type f \( -name "*.apk" -o -name "*.aab" \) -print0 | xargs -0 -r ls -lh
+
+      - name: Verify APK signatures with apksigner
+        id: verify
         if: success()
         run: |
-          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace --no-daemon \
-            -Dorg.gradle.parallel=true || true  # 允许 release 签名失败（没有 key 的情况下），但 debug 已经产出
+          # 找出 build-tools 路径（取最大版本号）
+          BT_ROOT="$ANDROID_SDK_ROOT/build-tools"
+          BT_VER=$(ls -1 "$BT_ROOT" | sort -Vr | head -n1)
+          APKSIGNER="$BT_ROOT/$BT_VER/apksigner"
+          echo "Using apksigner: $APKSIGNER (build-tools $BT_VER)"
+          chmod +x "$APKSIGNER" 2>/dev/null || true
 
-      - name: Upload APK
-        if: success() || steps.assemble.outcome == 'success'
+          FAIL=0
+          for APK in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            test -f "$APK" || continue
+            echo
+            echo "=========================================================================="
+            echo "==> Verifying: $APK"
+            echo "=========================================================================="
+            if "$APKSIGNER" verify --verbose --print-certs "$APK"; then
+              echo "[OK] $APK signature verified"
+            else
+              echo "[FAIL] $APK failed signature verification"
+              FAIL=1
+            fi
+            # 额外：列出 v1/v2/v3 签名方案
+            "$APKSIGNER" verify -v "$APK" 2>&1 | grep -E "^(Verified using|APK signature scheme)" || true
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error:: One or more APKs failed apksigner verify"
+            exit 1
+          fi
+
+      - name: Upload Signed APKs
+        if: success() || (steps.assemble.outcome == 'success' && steps.verify.outcome == 'success')
         uses: actions/upload-artifact@v5
         with:
-          name: launcher-debug-apk
+          # 名称明确写 "signed" 与 "apk"，避免用户装 AAB/unsigned 包
+          name: launcher-signed-apk
           path: |
             android-launcher/app/build/outputs/apk/debug/*.apk
             android-launcher/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-      - name: Upload AAB (if any)
-        if: success()
-        uses: actions/upload-artifact@v5
-        with:
-          name: launcher-release-aab
-          path: |
-            android-launcher/app/build/outputs/bundle/**/*.aab
-          if-no-files-found: warn
-
-      - name: Upload mapping / proguard outputs
+      - name: Upload mapping / proguard outputs (optional)
         if: success()
         uses: actions/upload-artifact@v5
         with:

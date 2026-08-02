@@ -7,6 +7,37 @@ android {
     namespace = "com.srceng.launcher"
     compileSdk = 34
 
+    // 签名：debug 与 release 统一使用仓库自带 debug.keystore（标准密码：androiddebugkey / android）
+    // 目的：CI 产出的 release APK 也带签名，可直接安装；避免 unsigned release APK 被当成"没签名"装不了
+    signingConfigs {
+        create("shared") {
+            val store = rootProject.file("app/debug.keystore")
+            storeFile = store
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            // v1 (JAR signing) + v2 (APK Signature Scheme v2) 全开：
+            //  Android 7.0+ 优先 v2（更快更安全），老版本/老工具回落到 v1
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+        getByName("debug") {
+            val store = rootProject.file("app/debug.keystore")
+            if (store.exists()) {
+                storeFile = store
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+    }
+
     defaultConfig {
         applicationId = "com.srceng.launcher"
         minSdk = 24
@@ -28,10 +59,19 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // release 也强制用 shared 签名，保证 CI 产出的 release APK 始终是 signed 的，能直接 adb install
+            // v1+v2 在 signingConfigs.shared 里已开启
+            signingConfig = signingConfigs.getByName("shared")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            // debug 用和 release 一样的 key（若仓库提供了 keystore），以便跨构建稳定签名
+            // v1+v2 在 signingConfigs.debug 里已开启
+            signingConfig = signingConfigs.findByName("debug").takeIf { it?.storeFile?.exists() == true }
+                ?: signingConfigs.getByName("shared")
         }
     }
     compileOptions {
