@@ -75,131 +75,6 @@ fun SettingsScreen(vm: LauncherViewModel) {
                 }
             }
 
-            // === 图形 ===
-            SectionTitle("图形", Icons.Default.Brush)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Render API
-                    Text("渲染 API", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    val renderApis = listOf(
-                        "gles3" to "OpenGL ES 3.1",
-                        "gles2" to "OpenGL ES 2.0",
-                        "vulkan" to "Vulkan"
-                    )
-                    ModeSegmentedButton(
-                        selected = config.renderApi,
-                        options = renderApis,
-                        onSelect = { api ->
-                            vm.updateConfig { it.copy(renderApi = api) }
-                        }
-                    )
-
-                    Spacer(Modifier.height(14.dp))
-                    Divider()
-                    Spacer(Modifier.height(10.dp))
-
-                    SwitchRow(
-                        "全屏模式", checked = config.fullscreen,
-                        onCheckedChange = { vm.updateConfig { c -> c.copy(fullscreen = it) } }
-                    )
-                    SwitchRow(
-                        "垂直同步", checked = config.vsync,
-                        onCheckedChange = { vm.updateConfig { c -> c.copy(vsync = it) } }
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    LabeledSlider(
-                        label = "MSAA 抗锯齿",
-                        value = config.msaaLevel.toFloat(),
-                        min = 0f, max = 4f, steps = 3,
-                        format = {
-                            when (it.toInt()) {
-                                0 -> "关闭"
-                                2 -> "2x"
-                                4 -> "4x"
-                                else -> "${it.toInt()}x"
-                            }
-                        },
-                        onValueChange = { vm.updateConfig { c -> c.copy(msaaLevel = it.toInt()) } }
-                    )
-                }
-            }
-
-            // === 性能 ===
-            SectionTitle("性能", Icons.Default.Speed)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Threads
-                    Text("线程数", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    val threadOptions = (-1..8).toList()
-                    ModeSegmentedButton(
-                        selected = config.threads,
-                        options = threadOptions.map { t ->
-                            t to if (t < 0) "自动" else "$t 线程"
-                        },
-                        onSelect = { t -> vm.updateConfig { it.copy(threads = t) } }
-                    )
-
-                    Spacer(Modifier.height(14.dp))
-                    Divider()
-                    Spacer(Modifier.height(8.dp))
-
-                    LabeledSlider(
-                        label = "内存限制 (MB)",
-                        value = config.memoryLimitMb.toFloat(),
-                        min = 0f, max = 8192f, steps = 31,
-                        format = { if (it.toInt() == 0) "自动/不限制" else "${it.toInt()} MB" },
-                        onValueChange = { vm.updateConfig { c -> c.copy(memoryLimitMb = it.toInt()) } }
-                    )
-                }
-            }
-
-            // === 音频 ===
-            SectionTitle("音频", Icons.Default.VolumeUp)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    LabeledSlider(
-                        label = "主音量",
-                        value = config.masterVolume,
-                        format = { "${(it * 100).toInt()}%" },
-                        onValueChange = { vm.updateConfig { c -> c.copy(masterVolume = it) } }
-                    )
-                    LabeledSlider(
-                        label = "音效音量",
-                        value = config.sfxVolume,
-                        format = { "${(it * 100).toInt()}%" },
-                        onValueChange = { vm.updateConfig { c -> c.copy(sfxVolume = it) } }
-                    )
-                    LabeledSlider(
-                        label = "音乐音量",
-                        value = config.musicVolume,
-                        format = { "${(it * 100).toInt()}%" },
-                        onValueChange = { vm.updateConfig { c -> c.copy(musicVolume = it) } }
-                    )
-                }
-            }
-
-            // === 控制 ===
-            SectionTitle("控制", Icons.Default.Gamepad)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SwitchRow(
-                        "显示虚拟按键",
-                        subtitle = "在屏幕上显示触控按钮（推荐）",
-                        checked = config.showOnscreenControls,
-                        onCheckedChange = { vm.updateConfig { c -> c.copy(showOnscreenControls = it) } }
-                    )
-                    SwitchRow(
-                        "手柄支持",
-                        subtitle = "启用外接游戏手柄控制器",
-                        checked = config.controllerSupport,
-                        onCheckedChange = { vm.updateConfig { c -> c.copy(controllerSupport = it) } }
-                    )
-                }
-            }
-
             // === 其他 ===
             SectionTitle("其他", Icons.Default.SettingsApplications)
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -230,7 +105,7 @@ fun SettingsScreen(vm: LauncherViewModel) {
 
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "💡 设置将自动保存；点击 CVar 页可自定义高级控制台变量。",
+                text = "💡 命令行参数在首页设置。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

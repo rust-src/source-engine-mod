@@ -93,107 +93,13 @@ object PredefinedCmdOptions {
                 category = CmdCategory.DEVELOPER,
                 description = "禁用 Valve Anti-Cheat，单机/局域网用。"
             ),
-            CommandLineOption(
-                id = "autoconfig",
-                flag = "-autoconfig",
-                displayName = "自动检测硬件",
-                category = CmdCategory.VIDEO,
-                description = "根据检测到的硬件自动设置视频/性能参数，忽略 cfg 中的保存值。"
-            ),
-
-            // ========== 窗口/显示 ==========
-            CommandLineOption(
-                id = "noborder",
-                flag = "-noborder",
-                displayName = "无边框窗口",
-                category = CmdCategory.WINDOW,
-                description = "窗口模式下移除窗口边框（Borderless Windowed，需配合 -windowed）。"
-            ),
-            CommandLineOption(
-                id = "sw",
-                flag = "-sw",
-                displayName = "窗口化启动",
-                category = CmdCategory.WINDOW,
-                description = "同 -windowed，强制窗口模式。"
-            ),
-            CommandLineOption(
-                id = "refresh",
-                flag = "-refresh",
-                displayName = "强制刷新率 (Hz)",
-                category = CmdCategory.VIDEO,
-                description = "指定屏幕刷新率（如 60/90/120）。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true,
-                defaultValue = "60"
-            ),
-            CommandLineOption(
-                id = "w",
-                flag = "-w",
-                displayName = "分辨率宽度 (px)",
-                category = CmdCategory.VIDEO,
-                description = "强制分辨率宽度，例如 1920。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true
-            ),
-            CommandLineOption(
-                id = "h",
-                flag = "-h",
-                displayName = "分辨率高度 (px)",
-                category = CmdCategory.VIDEO,
-                description = "强制分辨率高度，例如 1080。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true
-            ),
-
             // ========== 图形 ==========
-            CommandLineOption(
-                id = "mat_vsync",
-                flag = "-mat_vsync",
-                displayName = "启动时启用 VSync",
-                category = CmdCategory.VIDEO,
-                description = "强制开启垂直同步（另可用 mat_vsync CVar）。"
-            ),
-            CommandLineOption(
-                id = "forcenovsync",
-                flag = "-forcenovsync",
-                displayName = "强制关闭 VSync",
-                category = CmdCategory.VIDEO,
-                description = "无论设置如何都关闭垂直同步，可能减少输入延迟。",
-                defaultEnabled = false
-            ),
-            CommandLineOption(
-                id = "mat_antialias",
-                flag = "-mat_antialias",
-                displayName = "MSAA 倍数",
-                category = CmdCategory.VIDEO,
-                description = "全屏抗锯齿。支持 0/2/4/8。",
-                valueHint = CmdValueType.ENUM,
-                requiresValue = true,
-                defaultValue = "0"
-            ),
-            CommandLineOption(
-                id = "mat_aaquality",
-                flag = "-mat_aaquality",
-                displayName = "MSAA 质量",
-                category = CmdCategory.VIDEO,
-                description = "设置 MSAA 抗锯齿质量等级（0 - 最高）。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true
-            ),
             CommandLineOption(
                 id = "mat_softwaretl",
                 flag = "-mat_softwaretl",
                 displayName = "软件顶点处理",
                 category = CmdCategory.VIDEO,
                 description = "用 CPU 做顶点处理（调试/兼容用，性能较差）。"
-            ),
-            CommandLineOption(
-                id = "g15",
-                flag = "-g15",
-                displayName = "Logitech G15 支持",
-                category = CmdCategory.INPUT,
-                description = "启用 Logitech G15 键盘 LCD 支持（仅部分分支）。",
-                androidSafe = false
             ),
 
             // ========== 语言 ==========
@@ -216,35 +122,6 @@ object PredefinedCmdOptions {
             ),
 
             // ========== 性能/内存 ==========
-            CommandLineOption(
-                id = "heapsize",
-                flag = "-heapsize",
-                displayName = "堆内存大小 (KB)",
-                category = CmdCategory.PERFORMANCE,
-                description = "指定引擎堆内存（KB），如 524288 = 512MB，1048576 = 1GB。老引擎有效。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true,
-                defaultValue = "524288"
-            ),
-            CommandLineOption(
-                id = "maxmemory",
-                flag = "-maxmemory",
-                displayName = "最大内存 (MB)",
-                category = CmdCategory.PERFORMANCE,
-                description = "限制引擎使用的最大系统内存（MB）。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true,
-                defaultValue = "0"
-            ),
-            CommandLineOption(
-                id = "threads",
-                flag = "-threads",
-                displayName = "渲染线程数",
-                category = CmdCategory.PERFORMANCE,
-                description = "强制指定渲染/逻辑线程数。",
-                valueHint = CmdValueType.INTEGER,
-                requiresValue = true
-            ),
             CommandLineOption(
                 id = "noasync",
                 flag = "-noasync",
@@ -391,37 +268,6 @@ object PredefinedCmdOptions {
                 displayName = "自动构建 Cubemap",
                 category = CmdCategory.VIDEO,
                 description = "进入地图后自动执行 buildcubemaps，然后退出。"
-            ),
-            CommandLineOption(
-                id = "makereslists",
-                flag = "-makereslists",
-                category = CmdCategory.DEVELOPER,
-                displayName = "生成资源列表",
-                description = "生成发布用的资源列表（需配合 -textmode）。",
-                androidSafe = false
-            ),
-            CommandLineOption(
-                id = "gamepadui",
-                flag = "-gamepadui",
-                displayName = "启用手柄 UI (Big Picture)",
-                category = CmdCategory.INPUT,
-                description = "启用 Steam Deck 风格的手柄优化大 UI，同时会强制启用 Vulkan。"
-            ),
-            CommandLineOption(
-                id = "32bit",
-                flag = "-32bit",
-                displayName = "强制 32 位模式",
-                category = CmdCategory.PERFORMANCE,
-                description = "在 64 位系统/引擎上强制 32 位执行（一般 Android 不适用）。",
-                androidSafe = false
-            ),
-            CommandLineOption(
-                id = "disable_d3d9ex",
-                flag = "-disable_d3d9ex",
-                displayName = "禁用 Direct3D 9Ex",
-                category = CmdCategory.VIDEO,
-                description = "强制禁用 D3D9Ex（仅 Windows/D3D 分支，Android 不生效）。",
-                androidSafe = false
             )
         )
     }

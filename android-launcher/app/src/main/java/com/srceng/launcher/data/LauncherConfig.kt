@@ -39,33 +39,9 @@ data class LauncherConfig(
     val selectedMod: String = "hl2",
     val customLaunchArgs: String = "",
 
-    // 图形
-    val renderApi: String = "gles3",
-    val fullscreen: Boolean = true,
-    val vsync: Boolean = true,
-    val msaaLevel: Int = 0,
-
-    // 性能
-    val threads: Int = -1, // -1 = 自动
-    val memoryLimitMb: Int = 0, // 0 = 自动/无限制
-
-    // 音频
-    val masterVolume: Float = 1.0f,
-    val sfxVolume: Float = 1.0f,
-    val musicVolume: Float = 1.0f,
-
-    // 控制
-    val showOnscreenControls: Boolean = true,
-    val controllerSupport: Boolean = true,
-
     // 其他
     val debugMode: Boolean = false,
     val showConsole: Boolean = false,
-
-    // 服务端
-    val serverMap: String = "d1_trainstation_01",
-    val serverMaxPlayers: Int = 16,
-    val startListenServer: Boolean = false,
 
     // ===== 快速勾选的命令行参数 (key = CmdOption.id, value = 勾选状态/自定义值) =====
     val quickFlags: Map<String, Boolean> = defaultQuickFlags(),
@@ -79,10 +55,6 @@ data class LauncherConfig(
      * 根据设置生成 +exec cfg 文件内容 (用于在游戏内自动执行)
      *
      * 规则：默认值不写入，只有用户显式修改/启用过的才写入，避免 cfg 被一大堆默认值污染
-     *  - 音量: masterVolume / sfxVolume / musicVolume != 1.0f 才写
-     *  - VSync: vsync == false 才写 (引擎默认开)
-     *  - 线程数: threads > 0 才写
-     *  - 内存限制: memoryLimitMb > 0 才写
      *  - CVar: isModified == true 才写
      */
     fun toAutoExecCfg(cvars: List<CVar>): String {
@@ -93,22 +65,6 @@ data class LauncherConfig(
         lines.add("")
 
         val body = mutableListOf<String>()
-
-        // ===== 音量：默认 1.0 不写 =====
-        if (masterVolume != 1.0f) body += "volume ${fmtFloat(masterVolume)}"
-        if (sfxVolume != 1.0f) body += "snd_musicvolume ${fmtFloat(sfxVolume)}"   // SFX 对应 snd_volume? 这里保留与原逻辑一致
-        if (musicVolume != 1.0f) body += "snd_musicvolume ${fmtFloat(musicVolume)}"
-
-        // ===== VSync：引擎默认开启，仅当用户关闭时写入 =====
-        if (!vsync) {
-            body += "mat_vsync 0"
-            body += "r_shadows 1"   // r_shadows 与 vsync 不再强绑定；保留默认值不写的原则，这里只在 vsync 关时额外保证 1 还是不写？
-            // 由于 r_shadows 的默认值不是由 vsync 决定，默认不动它；只有 mat_vsync 覆盖
-        }
-
-        // ===== 线程 / 内存：只有显式设置才写 =====
-        if (threads > 0) body += "threads $threads"
-        if (memoryLimitMb > 0) body += "mem_max_heapsize $memoryLimitMb"
 
         // ===== CVar：只有 isModified 的才写 =====
         cvars.filter { it.isModified }.forEach { cvar ->
@@ -124,17 +80,11 @@ data class LauncherConfig(
         return lines.joinToString("\n")
     }
 
-    private fun fmtFloat(v: Float): String {
-        // 去掉无意义的 0 尾巴，如 0.50000 -> 0.5、1.0 -> 1
-        val s = "%.6f".format(v)
-        return s.trimEnd('0').trimEnd('.')
-    }
-
     /**
      * 生成命令行启动参数
      *
-     * 规则：默认值（如 fullscreen=true、renderApi=gles3、未勾选的 quickFlag）不写入，避免参数过长
-     * 仅当用户显式修改/启用时才写入；-game 和自定义参数始终保留
+     * 规则：未勾选的 quickFlag 不写入，避免参数过长
+     * 仅当用户显式修改/启用时才写入；自定义参数始终保留
      */
     fun toLaunchArgs(): String {
         val args = mutableListOf<String>()
@@ -143,24 +93,9 @@ data class LauncherConfig(
         // （参考 srceng-launcher_cn 的 setArgs 调用：finalArgv = "-game "+gamedir+" "+argv）
         // 这里**不能**再重复写 -game，否则会在最终命令行出现两次。
 
-        // 窗口模式：fullscreen=true 是默认，只在非默认时写
-        if (!fullscreen) args.add("-windowed")
-
-        // 启动监听服务器：只有勾选时写
-        if (startListenServer) {
-            args.add("+map $serverMap +maxplayers $serverMaxPlayers")
-        }
-
         // 开发者模式：只有开启时写
         if (debugMode) args.add("-dev -condebug")
         if (showConsole) args.add("-console")
-
-        // 渲染 API：gles3 是默认值，不写入；非默认才写
-        when (renderApi) {
-            "gles2" -> args.add("-gles2")
-            "vulkan" -> args.add("-vulkan")
-            // gles3 默认 → 不写
-        }
 
         // ===== 快速勾选：只在用户显式勾选 (quickFlags[id]=true) 时写；值为空的必填参数跳过 =====
         PredefinedCmdOptions.androidSafe().forEach { opt ->
@@ -199,22 +134,8 @@ class LauncherPreferences(private val context: Context) {
         val GAME_DIR_URI = stringPreferencesKey("game_dir_uri")
         val SELECTED_MOD = stringPreferencesKey("selected_mod")
         val CUSTOM_ARGS = stringPreferencesKey("custom_args")
-        val RENDER_API = stringPreferencesKey("render_api")
-        val FULLSCREEN = booleanPreferencesKey("fullscreen")
-        val VSYNC = booleanPreferencesKey("vsync")
-        val MSAA = intPreferencesKey("msaa")
-        val THREADS = intPreferencesKey("threads")
-        val MEMORY = intPreferencesKey("memory_mb")
-        val MASTER_VOL = floatPreferencesKey("master_vol")
-        val SFX_VOL = floatPreferencesKey("sfx_vol")
-        val MUSIC_VOL = floatPreferencesKey("music_vol")
-        val TOUCH_CTL = booleanPreferencesKey("touch_controls")
-        val CTRLR = booleanPreferencesKey("controller")
         val DEBUG = booleanPreferencesKey("debug")
         val CONSOLE = booleanPreferencesKey("console")
-        val SERVER_MAP = stringPreferencesKey("server_map")
-        val SERVER_MAXPLAYERS = intPreferencesKey("server_maxplayers")
-        val SERVER_START = booleanPreferencesKey("start_server")
         val QUICK_FLAGS_JSON = stringPreferencesKey("quick_flags_json")
         val QUICK_FLAG_VALUES_JSON = stringPreferencesKey("quick_flag_values_json")
         val CUSTOM_CVARS_JSON = stringPreferencesKey("custom_cvars_json")
@@ -232,22 +153,8 @@ class LauncherPreferences(private val context: Context) {
                 gameDirectoryUri = prefs[Keys.GAME_DIR_URI] ?: "",
                 selectedMod = prefs[Keys.SELECTED_MOD] ?: "hl2",
                 customLaunchArgs = prefs[Keys.CUSTOM_ARGS] ?: "",
-                renderApi = prefs[Keys.RENDER_API] ?: "gles3",
-                fullscreen = prefs[Keys.FULLSCREEN] ?: true,
-                vsync = prefs[Keys.VSYNC] ?: true,
-                msaaLevel = prefs[Keys.MSAA] ?: 0,
-                threads = prefs[Keys.THREADS] ?: -1,
-                memoryLimitMb = prefs[Keys.MEMORY] ?: 0,
-                masterVolume = prefs[Keys.MASTER_VOL] ?: 1f,
-                sfxVolume = prefs[Keys.SFX_VOL] ?: 1f,
-                musicVolume = prefs[Keys.MUSIC_VOL] ?: 1f,
-                showOnscreenControls = prefs[Keys.TOUCH_CTL] ?: true,
-                controllerSupport = prefs[Keys.CTRLR] ?: true,
                 debugMode = prefs[Keys.DEBUG] ?: false,
                 showConsole = prefs[Keys.CONSOLE] ?: false,
-                serverMap = prefs[Keys.SERVER_MAP] ?: "d1_trainstation_01",
-                serverMaxPlayers = prefs[Keys.SERVER_MAXPLAYERS] ?: 16,
-                startListenServer = prefs[Keys.SERVER_START] ?: false,
                 quickFlags = prefs[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
                 quickFlagValues = prefs[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues(),
                 customCvars = prefs[Keys.CUSTOM_CVARS_JSON]?.parseValueMap() ?: emptyMap()
@@ -264,22 +171,8 @@ class LauncherPreferences(private val context: Context) {
             prefs[Keys.GAME_DIR_URI] = next.gameDirectoryUri
             prefs[Keys.SELECTED_MOD] = next.selectedMod
             prefs[Keys.CUSTOM_ARGS] = next.customLaunchArgs
-            prefs[Keys.RENDER_API] = next.renderApi
-            prefs[Keys.FULLSCREEN] = next.fullscreen
-            prefs[Keys.VSYNC] = next.vsync
-            prefs[Keys.MSAA] = next.msaaLevel
-            prefs[Keys.THREADS] = next.threads
-            prefs[Keys.MEMORY] = next.memoryLimitMb
-            prefs[Keys.MASTER_VOL] = next.masterVolume
-            prefs[Keys.SFX_VOL] = next.sfxVolume
-            prefs[Keys.MUSIC_VOL] = next.musicVolume
-            prefs[Keys.TOUCH_CTL] = next.showOnscreenControls
-            prefs[Keys.CTRLR] = next.controllerSupport
             prefs[Keys.DEBUG] = next.debugMode
             prefs[Keys.CONSOLE] = next.showConsole
-            prefs[Keys.SERVER_MAP] = next.serverMap
-            prefs[Keys.SERVER_MAXPLAYERS] = next.serverMaxPlayers
-            prefs[Keys.SERVER_START] = next.startListenServer
             prefs[Keys.QUICK_FLAGS_JSON] = next.quickFlags.flagsToJsonString()
             prefs[Keys.QUICK_FLAG_VALUES_JSON] = next.quickFlagValues.valuesToJsonString()
             prefs[Keys.CUSTOM_CVARS_JSON] = next.customCvars.valuesToJsonString()
@@ -293,22 +186,8 @@ class LauncherPreferences(private val context: Context) {
         gameDirectoryUri = this[Keys.GAME_DIR_URI] ?: "",
         selectedMod = this[Keys.SELECTED_MOD] ?: "hl2",
         customLaunchArgs = this[Keys.CUSTOM_ARGS] ?: "",
-        renderApi = this[Keys.RENDER_API] ?: "gles3",
-        fullscreen = this[Keys.FULLSCREEN] ?: true,
-        vsync = this[Keys.VSYNC] ?: true,
-        msaaLevel = this[Keys.MSAA] ?: 0,
-        threads = this[Keys.THREADS] ?: -1,
-        memoryLimitMb = this[Keys.MEMORY] ?: 0,
-        masterVolume = this[Keys.MASTER_VOL] ?: 1f,
-        sfxVolume = this[Keys.SFX_VOL] ?: 1f,
-        musicVolume = this[Keys.MUSIC_VOL] ?: 1f,
-        showOnscreenControls = this[Keys.TOUCH_CTL] ?: true,
-        controllerSupport = this[Keys.CTRLR] ?: true,
         debugMode = this[Keys.DEBUG] ?: false,
         showConsole = this[Keys.CONSOLE] ?: false,
-        serverMap = this[Keys.SERVER_MAP] ?: "d1_trainstation_01",
-        serverMaxPlayers = this[Keys.SERVER_MAXPLAYERS] ?: 16,
-        startListenServer = this[Keys.SERVER_START] ?: false,
         quickFlags = this[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
         quickFlagValues = this[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues(),
         customCvars = this[Keys.CUSTOM_CVARS_JSON]?.parseValueMap() ?: emptyMap()
@@ -410,4 +289,3 @@ private fun String.unquote(): String =
             .replace("\\n", "\n")
             .replace("\\r", "\r")
     } else this
-

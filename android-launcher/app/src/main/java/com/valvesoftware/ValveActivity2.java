@@ -6,6 +6,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import com.nillerusr.ExtractAssets;
+
 import java.util.Locale;
 
 /**
@@ -73,7 +75,11 @@ public class ValveActivity2 {
             }
             if (argv == null) argv = "";
 
-            // ---- 4. 写入环境变量（严格照原型 srceng-launcher_cn） ----
+            // ---- 4. 提取 assets：extras_dir.vpk 到 filesDir（引擎启动需要） ----
+            // 参考原型：两个原型都在 initNatives 最前面调 extractAssets/extractVPK
+            ExtractAssets.extractVPK(context);
+
+            // ---- 5. 写入环境变量（严格照原型 srceng-launcher_cn） ----
             String filesDir = context.getFilesDir().getAbsolutePath();
             // extras_dir.vpk：若启动器未内嵌此 vpk，设为空字符串也不会崩
             String vpkPath = filesDir + "/extras_dir.vpk";

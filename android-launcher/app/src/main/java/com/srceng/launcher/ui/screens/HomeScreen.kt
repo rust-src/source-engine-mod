@@ -513,17 +513,7 @@ private fun InfoCard(
                     it.copy(selectedMod = if (it.selectedMod == "hl2") "hl2mp" else "hl2")
                 }
             }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
-            RowInfo(Icons.Default.Preview, "渲染 API",
-                when (config.renderApi) {
-                    "gles2" -> "OpenGL ES 2.0"
-                    "gles3" -> "OpenGL ES 3.1"
-                    "vulkan" -> "Vulkan"
-                    else -> config.renderApi
-                }
-            ) {
-                navController.navigate(Screen.Settings.route)
-            }
+            
         }
     }
 }
@@ -590,28 +580,7 @@ private fun QuickLaunchOptions(
             )
             if (expanded) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    SwitchRow(
-                        title = "全屏模式",
-                        checked = config.fullscreen,
-                        onCheckedChange = {
-                            vm.updateConfig { c -> c.copy(fullscreen = it) }
-                        }
-                    )
-                    SwitchRow(
-                        title = "垂直同步 (VSync)",
-                        checked = config.vsync,
-                        onCheckedChange = {
-                            vm.updateConfig { c -> c.copy(vsync = it) }
-                        }
-                    )
-                    SwitchRow(
-                        title = "同时启动服务端",
-                        subtitle = "启动监听服务器（主机）",
-                        checked = config.startListenServer,
-                        onCheckedChange = {
-                            vm.updateConfig { c -> c.copy(startListenServer = it) }
-                        }
-                    )
+                    
                     SwitchRow(
                         title = "显示控制台",
                         subtitle = "调试模式可见",
@@ -708,20 +677,7 @@ private fun ActionButtons(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            FilledTonalButton(
-                onClick = { onClickLaunch() }, // 复用同一流程（args 中已包含 +map 等服务器参数
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                enabled = true
-            ) {
-                Icon(Icons.Default.Dns, null)
-                Spacer(Modifier.width(6.dp))
-                Text("服务端", fontWeight = FontWeight.Bold)
-            }
             val (btnLabel, btnIcon) = when {
-                config.startListenServer -> "启动主机" to Icons.Default.Router
                 ready -> "启动游戏" to Icons.Default.PlayArrow
                 else -> "启动（未就绪）" to Icons.Default.PlayArrow
             }
@@ -740,7 +696,7 @@ private fun ActionButtons(
                 Icon(btnIcon, null, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (config.startListenServer) "启动主机" else if (ready) "启动游戏" else "启动（未就绪）",
+                    text = if (ready) "启动游戏" else "启动（未就绪）",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp
                 )
