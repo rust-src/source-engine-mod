@@ -48,7 +48,7 @@ object PredefinedCmdOptions {
                 displayName = "跳过开场视频",
                 category = CmdCategory.GAMEPLAY,
                 description = "不播放启动时的 Valve/Source 片头动画，更快进入主菜单。",
-                defaultEnabled = true,
+                defaultEnabled = false,
                 androidSafe = true
             ),
             CommandLineOption(
@@ -159,7 +159,7 @@ object PredefinedCmdOptions {
                 displayName = "强制关闭 VSync",
                 category = CmdCategory.VIDEO,
                 description = "无论设置如何都关闭垂直同步，可能减少输入延迟。",
-                defaultEnabled = true
+                defaultEnabled = false
             ),
             CommandLineOption(
                 id = "mat_antialias",

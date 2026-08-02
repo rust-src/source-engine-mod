@@ -90,10 +90,12 @@ public class ValveActivity2 {
             safeSetenv("APP_LIB_PATH", appInfo.nativeLibraryDir);
             safeSetenv("VALVE_GAME_PATH", gamepath);
 
-            // ---- 5. 最终 argv：必须以 -game <gamedir> 开头（和原型完全一致） ----
-            String finalArgv = "-game " + gamedir + (argv.isEmpty() ? "" : (" " + argv));
+            // ---- 5. 最终 argv：完全按用户给出的字符串透传
+            // 参考 SourceEngineAndroid-Launcher 原型：setArgs(MainActivity.profile.getGameCmdVar())
+            // 不自动 prepend "-game <gamedir>"，用户在自定义参数里自己需要时自己加
+            String finalArgv = (argv != null) ? argv : "";
             Log.i(TAG, "setenv VALVE_GAME_PATH=" + gamepath);
-            Log.i(TAG, "setArgs: " + finalArgv);
+            Log.i(TAG, "setArgs: [" + finalArgv + "]");
             try {
                 setArgs(finalArgv);
             } catch (UnsatisfiedLinkError ule) {

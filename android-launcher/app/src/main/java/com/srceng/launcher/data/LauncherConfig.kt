@@ -15,10 +15,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 /**
  * 默认的命令行快速勾选开关：根据 CmdOption.defaultEnabled 生成
  */
-fun defaultQuickFlags(): Map<String, Boolean> =
-    PredefinedCmdOptions.androidSafe()
-        .filter { it.defaultEnabled }
-        .associate { it.id to true }
+fun defaultQuickFlags(): Map<String, Boolean> = emptyMap()
 
 /**
  * 默认的命令行参数值：对需要数值的参数使用 defaultValue
