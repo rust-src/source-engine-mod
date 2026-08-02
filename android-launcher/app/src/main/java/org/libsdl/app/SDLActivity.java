@@ -151,7 +151,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * It can be overridden by derived classes.
      */
     protected String getMainFunction() {
-        return "SDL_main";
+        return "LauncherMainAndroid";
     }
 
     /**
@@ -165,11 +165,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected String[] getLibraries() {
         return new String[] {
             "SDL2",
-            // "SDL2_image",
-            // "SDL2_mixer",
-            // "SDL2_net",
-            // "SDL2_ttf",
-            "main"
+            "tier0",
+            "vstdlib",
+            "launcher",
         };
     }
 
@@ -268,6 +266,15 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         // So we can call stuff from static callbacks
         mSingleton = this;
         SDL.setContext(this);
+
+        // Source Engine: setenv(VALVE_GAME_PATH) + setArgs(argv) via JNI
+        try {
+            Class<?> vc = Class.forName("com.valvesoftware.ValveActivity2");
+            java.lang.reflect.Method m = vc.getMethod("initNatives", Context.class, Intent.class);
+            m.invoke(null, this, getIntent());
+        } catch (Throwable t) {
+            Log.e(TAG, "ValveActivity2.initNatives 调用失败（native 库未提供 JNI 入口？）", t);
+        }
 
         mClipboardHandler = new SDLClipboardHandler();
 

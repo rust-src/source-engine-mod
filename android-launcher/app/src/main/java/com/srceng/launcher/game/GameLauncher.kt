@@ -371,15 +371,33 @@ object GameLauncher {
     fun launchGame(
         context: Context,
         args: String,
-        extraFlags: Int = 0
+        extraFlags: Int = 0,
+        gameDir: String = "",
+        gamedir: String = "hl2"
     ): PrepareResult {
         val intent = Intent().apply {
             setClassName(context.packageName, SDL_ACTIVITY_CLASS)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or extraFlags)
-            // 额外信息：URI + String-ArrayList extra，便于 SDL Java 侧/自定义入口读取
+
+            // ↓↓↓ 严格对齐两个原型（srceng-launcher_cn / SourceEngineAndroid-Launcher）的 Intent extras：
+            //
+            //   argv     → 用户自定义启动参数（不包含 -game，ValveActivity2.initNatives 会拼 "-game "+gamedir+" "+argv）
+            //   gamedir  → mod 子目录名（如 hl2 / episodic / hl2mp）
+            //   gamepath → 游戏根目录绝对路径（对应 setenv VALVE_GAME_PATH）
+            //   gamelibdir → (可选) 自定义 mod lib 路径
+            //
+            // 其他 key（cmdline / args ArrayList）为兼容保留，原型不使用。
+            putExtra("argv", args)
+            putExtra("gamedir", gamedir)
+            if (gameDir.isNotEmpty()) {
+                putExtra("gamepath", gameDir)
+            }
+
+            // 兼容保留（不作为主路径）
             val list = ArrayList(args.splitQuotedArgs().filter { it.isNotBlank() })
             putStringArrayListExtra("args", list)
             putExtra("cmdline", args)
+
             data = Uri.parse("srceng://launch?pkg=${context.packageName}")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -440,7 +458,7 @@ object GameLauncher {
             )
         }
 
-        val launchResult = launchGame(context, launchArgs)
+        val launchResult = launchGame(context, launchArgs, gameDir = gameDir, gamedir = mod)
         return LaunchFlowResult(true, diags, wCfg, wArgs, launchResult)
     }
 

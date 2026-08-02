@@ -142,10 +142,9 @@ data class LauncherConfig(
     fun toLaunchArgs(): String {
         val args = mutableListOf<String>()
 
-        // 核心：-game 始终写
-        // 注意：两个原型（SourceEngineAndroid-Launcher / srceng-launcher_cn）均不使用 -basedir，
-        // 引擎启动时通过环境变量 VALVE_GAME_PATH 定位游戏根目录。
-        args.add("-game $selectedMod")
+        // 注意：-game <mod> 由 ValveActivity2.initNatives 根据 Intent 的 gamedir extra 拼接
+        // （参考 srceng-launcher_cn 的 setArgs 调用：finalArgv = "-game "+gamedir+" "+argv）
+        // 这里**不能**再重复写 -game，否则会在最终命令行出现两次。
 
         // 窗口模式：fullscreen=true 是默认，只在非默认时写
         if (!fullscreen) args.add("-windowed")
