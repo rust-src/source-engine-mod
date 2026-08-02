@@ -72,7 +72,10 @@ data class LauncherConfig(
     // ===== 快速勾选的命令行参数 (key = CmdOption.id, value = 勾选状态/自定义值) =====
     val quickFlags: Map<String, Boolean> = defaultQuickFlags(),
     // 对需要数值的参数保存值 (key = CmdOption.id)
-    val quickFlagValues: Map<String, String> = defaultQuickFlagValues()
+    val quickFlagValues: Map<String, String> = defaultQuickFlagValues(),
+
+    // ===== 用户手动修改过的 CVar 值 (key = cvar.name, value = 用户覆盖值) =====
+    val customCvars: Map<String, String> = emptyMap()
 ) {
     /**
      * 根据设置生成 +exec cfg 文件内容 (用于在游戏内自动执行)
@@ -219,6 +222,7 @@ class LauncherPreferences(private val context: Context) {
         val SERVER_START = booleanPreferencesKey("start_server")
         val QUICK_FLAGS_JSON = stringPreferencesKey("quick_flags_json")
         val QUICK_FLAG_VALUES_JSON = stringPreferencesKey("quick_flag_values_json")
+        val CUSTOM_CVARS_JSON = stringPreferencesKey("custom_cvars_json")
     }
 
     val configFlow: Flow<LauncherConfig> = context.dataStore.data
@@ -249,7 +253,8 @@ class LauncherPreferences(private val context: Context) {
                 serverMaxPlayers = prefs[Keys.SERVER_MAXPLAYERS] ?: 16,
                 startListenServer = prefs[Keys.SERVER_START] ?: false,
                 quickFlags = prefs[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
-                quickFlagValues = prefs[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues()
+                quickFlagValues = prefs[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues(),
+                customCvars = prefs[Keys.CUSTOM_CVARS_JSON]?.parseValueMap() ?: emptyMap()
             )
         }
 
@@ -280,6 +285,7 @@ class LauncherPreferences(private val context: Context) {
             prefs[Keys.SERVER_START] = next.startListenServer
             prefs[Keys.QUICK_FLAGS_JSON] = next.quickFlags.flagsToJsonString()
             prefs[Keys.QUICK_FLAG_VALUES_JSON] = next.quickFlagValues.valuesToJsonString()
+            prefs[Keys.CUSTOM_CVARS_JSON] = next.customCvars.valuesToJsonString()
         }
     }
 
@@ -306,7 +312,8 @@ class LauncherPreferences(private val context: Context) {
         serverMaxPlayers = this[Keys.SERVER_MAXPLAYERS] ?: 16,
         startListenServer = this[Keys.SERVER_START] ?: false,
         quickFlags = this[Keys.QUICK_FLAGS_JSON]?.parseFlagMap() ?: defaultQuickFlags(),
-        quickFlagValues = this[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues()
+        quickFlagValues = this[Keys.QUICK_FLAG_VALUES_JSON]?.parseValueMap() ?: defaultQuickFlagValues(),
+        customCvars = this[Keys.CUSTOM_CVARS_JSON]?.parseValueMap() ?: emptyMap()
     )
 }
 

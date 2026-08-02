@@ -28,6 +28,49 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private val _workingCVars = MutableStateFlow<List<CVar>>(PredefinedCVars.all)
     val workingCVars: StateFlow<List<CVar>> = _workingCVars.asStateFlow()
 
+    init {
+        // 启动时：把持久化的 customCvars 应用到 workingCVars，让用户上一次保存的覆盖值
+        // 再次显示为 "已修改"，避免用户以为 CVar "没保存"。
+        viewModelScope.launch {
+            prefs.configFlow
+                .take(1)
+                .collect { cfg ->
+                    applyCustomCvarsToWorking(cfg.customCvars)
+                }
+        }
+        // 当 customCvars 被保存/刷新时，也同步到工作副本（仅对未 isModified 的项覆盖）
+        viewModelScope.launch {
+            prefs.configFlow
+                .drop(1) // 跳过启动时那一次（上面处理过了）
+                .collect { cfg ->
+                    mergeCustomCvarsToWorking(cfg.customCvars)
+                }
+        }
+    }
+
+    /** 首次加载时：把 customCvars 直接覆盖到 workingCVars，保留 isModified=true 状态 */
+    private fun applyCustomCvarsToWorking(saved: Map<String, String>) {
+        if (saved.isEmpty()) return
+        _workingCVars.update { list ->
+            list.map { cvar ->
+                val override = saved[cvar.name] ?: return@map cvar
+                cvar.withValue(override)
+            }
+        }
+    }
+
+    /** 后续同步：只有用户当前没有在 working 里显式改过的 CVar 才用 persisted 值覆盖，
+     *  防止用户刚改的 working 值被一次保存动作冲掉 */
+    private fun mergeCustomCvarsToWorking(saved: Map<String, String>) {
+        _workingCVars.update { list ->
+            list.map { cvar ->
+                if (cvar.isModified) return@map cvar // 用户有未保存改动，保留用户值
+                val override = saved[cvar.name] ?: return@map cvar
+                cvar.withValue(override)
+            }
+        }
+    }
+
     val hasUnsavedCVarChanges: StateFlow<Boolean> = _workingCVars
         .map { list -> list.any { it.isModified } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -74,7 +117,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveCVarsAsCustom() {
         viewModelScope.launch {
-            // TODO: 持久化用户修改过的 CVars
+            val modified = _workingCVars.value.filter { it.isModified }
+                .associate { it.name to it.currentValue }
+            // 已重置为默认（=不在 modified）的项目应当从持久化中清掉：
+            // 做法：从当前 customCvars 中先载入；然后把 isModified 的覆盖进去；把 reset 回默认的删掉
+            // 由于 LauncherConfig.customCvars 本身存的就是 "非默认项"，逻辑就是直接用 workingCVars 中所有 isModified 重新覆盖写。
+            // 这样：当用户点 "重置默认"（isModified=false）就会自然从保存结果中移除，下一次读入时默认值就会回来。
+            prefs.update { cfg ->
+                cfg.copy(customCvars = modified)
+            }
         }
     }
 

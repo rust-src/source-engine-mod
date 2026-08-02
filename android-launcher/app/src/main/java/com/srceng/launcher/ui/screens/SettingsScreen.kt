@@ -1,5 +1,6 @@
 package com.srceng.launcher.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -294,15 +295,29 @@ private fun <T> ModeSegmentedButton(
     options: List<Pair<T, String>>,
     onSelect: (T) -> Unit
 ) {
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        options.forEachIndexed { idx, (value, label) ->
-            SegmentedButton(
-                selected = value == selected,
-                onClick = { onSelect(value) },
-                shape = SegmentedButtonDefaults.itemShape(idx, options.size)
-            ) {
-                Text(label)
-            }
+    // 旧实现 SingleChoiceSegmentedButtonRow + SegmentedButton 在窄屏/选项较多(如线程数 0..8)时，
+    // Material3 会在选中项绘制一个 "对勾 leadingIcon"，与标签文本叠加导致绘制错乱，
+    // 出现截图中「一个 Chip 被画两次」的视觉错位。改用横向可滚动的 FilterChip，
+    // 选中时不会额外插入 leading icon，且选项多时仍可左右滑动正常浏览。
+    val scrollState = rememberScrollState()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (value, label) ->
+            val sel = value == selected
+            FilterChip(
+                selected = sel,
+                onClick = { if (!sel) onSelect(value) },
+                label = {
+                    Text(
+                        text = label,
+                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            )
         }
     }
 }
