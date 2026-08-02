@@ -190,7 +190,8 @@ fun HomeScreen(
                                     "启动条件未满足（详见弹出的诊断对话框）"
                                 },
                                 duration = SnackbarDuration.Short
-                        )
+                            )
+                        }
                     }
                     else -> {
                         // canLaunch=true 但 launch!=success：给出 launch 失败提示
