@@ -278,7 +278,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mClipboardHandler = new SDLClipboardHandler();
 
-        mHIDDeviceManager = HIDDeviceManager.acquire(this);
+        // 注意：两个原型（SourceEngineAndroid-Launcher / srceng-launcher_cn）均无 HIDDeviceManager 调用，
+        // 引擎分支编译的 libSDL2.so 不含 HID JNI 符号（HIDDeviceRegisterCallback 等），
+        // 直接调用会 UnsatisfiedLinkError，所以包一层 try-catch。
+        try {
+            mHIDDeviceManager = HIDDeviceManager.acquire(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "HIDDeviceManager 不可用（libSDL2.so 未编译 HID 支持）", t);
+        }
 
         // Set up the surface
         mSurface = new SDLSurface(getApplication());
