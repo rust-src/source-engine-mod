@@ -143,12 +143,9 @@ data class LauncherConfig(
         val args = mutableListOf<String>()
 
         // 核心：-game 始终写
+        // 注意：两个原型（SourceEngineAndroid-Launcher / srceng-launcher_cn）均不使用 -basedir，
+        // 引擎启动时通过环境变量 VALVE_GAME_PATH 定位游戏根目录。
         args.add("-game $selectedMod")
-
-        // 游戏根目录：只有用户配置了才写
-        if (gameDirectory.isNotEmpty()) {
-            args.add("-basedir \"$gameDirectory\"")
-        }
 
         // 窗口模式：fullscreen=true 是默认，只在非默认时写
         if (!fullscreen) args.add("-windowed")
