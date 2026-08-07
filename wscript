@@ -300,6 +300,9 @@ def options(opt):
 	grp.add_option('--arm64', action = 'store_true', dest = 'TARGET_ARM64', default = False,
 		help = 'target Windows on ARM64 (MSVC arm64) [default: %default]')
 
+	grp.add_option('--arm64ec', action = 'store_true', dest = 'TARGET_ARM64EC', default = False,
+		help = 'target Windows on ARM64EC (MSVC arm64ec, links x64 libs) [default: %default]')
+
 	grp.add_option('-d', '--dedicated', action = 'store_true', dest = 'DEDICATED', default = False,
 		help = 'build dedicated server [default: %default]')
 
@@ -466,9 +469,11 @@ def configure(conf):
 		conf.env.MSVC_TARGETS = ['x86']
 	if conf.options.TARGET_ARM64:
 		conf.env.MSVC_TARGETS = ['arm64']
+	if conf.options.TARGET_ARM64EC:
+		conf.env.MSVC_TARGETS = ['arm64ec']
 
 	if sys.platform == 'win32':
-		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
+		conf.load('msvc_arm64ec msvc_pdb_ext msdev msvs msvcdeps')
 	conf.load('subproject xcompile compiler_c compiler_cxx gccdeps gitversion clang_compilation_database strip_on_install_v2 waf_unit_test enforce_pic')
 	if conf.env.DEST_OS == 'win32' and conf.env.DEST_CPU == 'amd64':
 		conf.load('masm')
@@ -591,9 +596,11 @@ def configure(conf):
 				'/LARGEADDRESSAWARE'
 			]
 
+		# ARM64EC uses the x64 ABI and links the x64 prebuilt libraries
+		libcpu = 'amd64' if conf.env.DEST_CPU == 'arm64ec' else conf.env.DEST_CPU
 		linkflags += [
-			'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/'+conf.env.DEST_CPU+'/',
-			'/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/'+conf.env.DEST_CPU+'/'
+			'/LIBPATH:'+os.path.abspath('.')+'/lib/win32/'+libcpu+'/',
+			'/LIBPATH:'+os.path.abspath('.')+'/dx9sdk/lib/'+libcpu+'/'
 		]
 
 	# And here C++ flags starts to be treated separately
@@ -608,7 +615,7 @@ def configure(conf):
 		conf.define('MSVC', 1)
 		if conf.env.DEST_CPU == 'x86':
 			conf.define('COMPILER_MSVC32', 1)
-		elif conf.env.DEST_CPU in ['x86_64', 'amd64', 'arm64', 'aarch64']:
+		elif conf.env.DEST_CPU in ['x86_64', 'amd64', 'arm64', 'aarch64', 'arm64ec']:
 			conf.define('COMPILER_MSVC64', 1)
 
 	if conf.env.COMPILER_CC != 'msvc':

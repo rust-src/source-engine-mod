@@ -122,9 +122,9 @@ jobs:
     - uses: actions/checkout@v5
       with:
         submodules: recursive
-    - name: Build windows-arm64
+    - name: Build windows-arm64 (ARM64EC)
       run: |
-        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64
+        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64ec
         ./waf.bat install
     - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
       run: |
