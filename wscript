@@ -297,6 +297,9 @@ def options(opt):
 	grp.add_option('-4', '--32bits', action = 'store_true', dest = 'TARGET32', default = False,
 		help = 'allow targetting 32-bit engine(Linux/Windows/OSX x86 only) [default: %default]')
 
+	grp.add_option('--arm64', action = 'store_true', dest = 'TARGET_ARM64', default = False,
+		help = 'target Windows on ARM64 (MSVC arm64) [default: %default]')
+
 	grp.add_option('-d', '--dedicated', action = 'store_true', dest = 'DEDICATED', default = False,
 		help = 'build dedicated server [default: %default]')
 
@@ -461,6 +464,8 @@ def configure(conf):
 	conf.env.MSVC_TARGETS = ['x64'] # explicitly request x86 target for MSVC
 	if conf.options.TARGET32:
 		conf.env.MSVC_TARGETS = ['x86']
+	if conf.options.TARGET_ARM64:
+		conf.env.MSVC_TARGETS = ['arm64']
 
 	if sys.platform == 'win32':
 		conf.load('msvc_pdb_ext msdev msvs msvcdeps')
@@ -557,7 +562,7 @@ def configure(conf):
 	else:
 		cflags += [
 			'/I'+os.path.abspath('.')+'/thirdparty/SDL',
-			'/arch:SSE' if conf.env.DEST_CPU == 'x86' else '/arch:AVX',
+			'/arch:SSE' if conf.env.DEST_CPU == 'x86' else ('/arch:AVX' if conf.env.DEST_CPU in ['x86_64', 'amd64'] else ''),
 			'/GF',
 			'/Gy',
 			'/fp:fast',
@@ -603,7 +608,7 @@ def configure(conf):
 		conf.define('MSVC', 1)
 		if conf.env.DEST_CPU == 'x86':
 			conf.define('COMPILER_MSVC32', 1)
-		elif conf.env.DEST_CPU in ['x86_64', 'amd64']:
+		elif conf.env.DEST_CPU in ['x86_64', 'amd64', 'arm64', 'aarch64']:
 			conf.define('COMPILER_MSVC64', 1)
 
 	if conf.env.COMPILER_CC != 'msvc':

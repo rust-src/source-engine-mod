@@ -13,6 +13,13 @@
 #define PLATFORM_64BITS 1
 #endif
 
+// MSVC on Windows ARM64 defines _M_ARM64 but not __aarch64__; alias it so
+// the ARM code paths (sse2neon, NEON, timing, ...) are selected on that
+// target too.
+#if defined(_M_ARM64) && !defined(__aarch64__)
+#define __aarch64__ 1
+#endif
+
 #if defined(__GCC__) || defined(__GNUC__)
 #define COMPILER_GCC 1
 #endif
@@ -1241,6 +1248,11 @@ inline uint64 Plat_Rdtsc()
 	return t.tv_sec * 1000000000ULL + t.tv_nsec;
 #elif defined( _X360 )
 	return ( uint64 )__mftb32();
+#elif defined( _M_ARM64 )
+	// ARM64 has no rdtsc; use the Windows performance counter.
+	LARGE_INTEGER ctr;
+	QueryPerformanceCounter( &ctr );
+	return ( uint64 )ctr.QuadPart;
 #elif defined( _WIN64 )
 	return ( uint64 )__rdtsc();
 #elif defined( _WIN32 )
