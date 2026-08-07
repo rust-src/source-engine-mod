@@ -17,19 +17,19 @@ jobs:
     - name: Build SDL2
       shell: pwsh
       run: |
-        cmake -S thirdparty/SDL-src -B build/deps/sdl -A ARM64
+        cmake -S thirdparty/SDL-src -B build/deps/sdl -A ARM64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build build/deps/sdl --config Release --parallel
 
     - name: Build zlib
       shell: pwsh
       run: |
-        cmake -S thirdparty/zlib -B build/deps/zlib -A ARM64
+        cmake -S thirdparty/zlib -B build/deps/zlib -A ARM64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build build/deps/zlib --config Release --parallel
 
     - name: Build libjpeg
       shell: pwsh
       run: |
-        cmake -S thirdparty/libjpeg -B build/deps/jpeg -A ARM64 -DBUILD_SHARED_LIBS=OFF
+        cmake -S thirdparty/libjpeg -B build/deps/jpeg -A ARM64 -DBUILD_SHARED_LIBS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build build/deps/jpeg --config Release --parallel
 
     - name: Build libpng
@@ -38,7 +38,8 @@ jobs:
         cmake -S thirdparty/libpng -B build/deps/png -A ARM64 `
           -DPNG_SHARED=OFF -DPNG_TESTS=OFF `
           "-DZLIB_LIBRARY=${{ github.workspace }}/build/deps/zlib/Release/zlibstatic.lib" `
-          "-DZLIB_INCLUDE_DIR=${{ github.workspace }}/thirdparty/zlib"
+          "-DZLIB_INCLUDE_DIR=${{ github.workspace }}/thirdparty/zlib" `
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build build/deps/png --config Release --parallel
 
     - name: Build FFmpeg (MSVC ARM64, bink decoders)
