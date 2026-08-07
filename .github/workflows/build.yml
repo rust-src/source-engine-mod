@@ -116,24 +116,13 @@ jobs:
         if-no-files-found: error
 
   build-windows-arm64:
-    runs-on: windows-2022
+    runs-on: windows-arm64
 
     steps:
     - uses: actions/checkout@v5
       with:
         submodules: recursive
-    - name: Install ARM64 MSVC build tools
-      shell: pwsh
-      run: |
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        $vsPath = & $vswhere -latest -products * -property installationPath
-        if (-not $vsPath) { throw "Visual Studio not found" }
-        & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe" modify `
-          --installPath $vsPath `
-          --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 `
-          --quiet --norestart
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    - name: Build windows-arm64 (cross)
+    - name: Build windows-arm64
       run: |
         ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64
         ./waf.bat install
