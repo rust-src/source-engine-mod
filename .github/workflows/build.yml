@@ -132,13 +132,24 @@ jobs:
           Write-Output "vswhere not found"
         }
         Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -ErrorAction SilentlyContinue | Select-Object Name
+    - name: Install ARM64EC MSVC build tools
+      shell: pwsh
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = & $vswhere -latest -products * -property installationPath
+        if (-not $vsPath) { throw "Visual Studio not found" }
+        & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe" modify `
+          --installPath $vsPath `
+          --add Microsoft.VisualStudio.Component.VC.Tools.ARM64EC `
+          --quiet --norestart
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - name: Build windows-arm64 (ARM64EC)
       shell: pwsh
       run: |
-        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64ec
+        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64ec -v
         if ($LASTEXITCODE -ne 0) {
-          Write-Output "===== config.log tail ====="
-          Get-Content build/config.log -ErrorAction SilentlyContinue | Select-Object -Last 120
+          Write-Output "===== config.log ====="
+          Get-Content build/config.log -ErrorAction SilentlyContinue | Select-Object -First 200
           exit $LASTEXITCODE
         }
         ./waf.bat install
