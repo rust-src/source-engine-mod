@@ -115,6 +115,34 @@ jobs:
         path: ./win
         if-no-files-found: error
 
+  build-windows-arm64:
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+    - name: Diagnostic (VS presence)
+      shell: pwsh
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          & $vswhere -latest -products * -format json | ConvertFrom-Json | Select-Object displayName, installationVersion, installationPath | Format-List
+        } else {
+          Write-Output "vswhere not found"
+        }
+        Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -ErrorAction SilentlyContinue | Select-Object Name
+    - name: Build windows-arm64 (ARM64EC)
+      shell: pwsh
+      run: |
+        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64ec
+        if ($LASTEXITCODE -ne 0) {
+          Write-Output "===== config.log tail ====="
+          Get-Content build/config.log -ErrorAction SilentlyContinue | Select-Object -Last 120
+          exit $LASTEXITCODE
+        }
+        ./waf.bat install
+
   build-dedicated-windows-i386:
     runs-on: windows-2022
 
