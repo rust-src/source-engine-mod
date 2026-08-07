@@ -115,6 +115,26 @@ jobs:
         path: ./win
         if-no-files-found: error
 
+  build-windows-arm64:
+    runs-on: windows-2022
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+    - name: Build windows-arm64 (cross)
+      run: |
+        ./waf.bat configure -T release --prefix=./win-arm64 --disable-warns --arm64
+        ./waf.bat install
+    - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
+      run: |
+        Get-ChildItem -Path ./win-arm64 -Recurse -Include *.lib,*.pdb,*.obj,*.exp,*.ilk | Remove-Item -Force -Recurse
+    - uses: actions/upload-artifact@v5
+      with:
+        name: win-source-engine-arm64
+        path: ./win-arm64
+        if-no-files-found: error
+
   build-dedicated-windows-i386:
     runs-on: windows-2022
 
