@@ -41,6 +41,19 @@ jobs:
           "-DZLIB_INCLUDE_DIR=${{ github.workspace }}/thirdparty/zlib"
         cmake --build build/deps/png --config Release --parallel
 
+    - name: Build FFmpeg (MSVC ARM64, bink decoders)
+      shell: pwsh
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = & $vswhere -latest -products * -property installationPath
+        $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+        if (-not (Test-Path $vcvars)) { throw "vcvarsall not found: $vcvars" }
+        curl.exe -sSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-7.0.tar.xz"
+        tar -xf ffmpeg.tar.xz
+        $gitBin = "C:\Program Files\Git\bin"
+        cmd /c "`"$vcvars`" arm64 && set PATH=$gitBin;%PATH% && cd ffmpeg-7.0 && sh configure --toolchain=msvc --arch=aarch64 --disable-asm --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --enable-decoder=binkvideo --enable-decoder=binkaudio_dct --enable-decoder=binkaudio_rdft --enable-demuxer=bink --enable-protocol=file --enable-swresample && nmake -f Makefile"
+        if ($LASTEXITCODE -ne 0) { throw "FFmpeg build failed" }
+
     - name: Collect ARM64 libs
       shell: pwsh
       run: |
@@ -50,6 +63,16 @@ jobs:
         Copy-Item build/deps/zlib/Release/zlibstatic.lib lib/win32/arm64/libz.lib
         Copy-Item build/deps/jpeg/Release/jpeg.lib lib/win32/arm64/libjpeg.lib
         Copy-Item build/deps/png/Release/libpng_static.lib lib/win32/arm64/libpng.lib
+        Copy-Item ffmpeg-7.0/libavcodec/libavcodec.lib lib/win32/arm64/
+        Copy-Item ffmpeg-7.0/libavformat/libavformat.lib lib/win32/arm64/
+        Copy-Item ffmpeg-7.0/libavutil/libavutil.lib lib/win32/arm64/
+        Copy-Item ffmpeg-7.0/libswresample/libswresample.lib lib/win32/arm64/
+        New-Item -ItemType Directory -Force -Path lib/win32/arm64/ffmpeg/include | Out-Null
+        Copy-Item ffmpeg-7.0/config.h lib/win32/arm64/ffmpeg/include/
+        foreach ($d in @('libavcodec','libavformat','libavutil','libswresample')) {
+          New-Item -ItemType Directory -Force -Path "lib/win32/arm64/ffmpeg/include/$d" | Out-Null
+          Copy-Item "ffmpeg-7.0/$d/*.h" "lib/win32/arm64/ffmpeg/include/$d/"
+        }
         Get-ChildItem lib/win32/arm64 | Select-Object Name, Length
 
     - uses: actions/upload-artifact@v5
