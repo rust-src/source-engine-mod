@@ -1,0 +1,59 @@
+name: Build ARM64 Windows deps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ woa ]
+
+jobs:
+  build-arm64-deps:
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+
+    - name: Build SDL2
+      shell: pwsh
+      run: |
+        cmake -S thirdparty/SDL-src -B build/deps/sdl -A ARM64
+        cmake --build build/deps/sdl --config Release --parallel
+
+    - name: Build zlib
+      shell: pwsh
+      run: |
+        cmake -S thirdparty/zlib -B build/deps/zlib -A ARM64
+        cmake --build build/deps/zlib --config Release --parallel
+
+    - name: Build libjpeg
+      shell: pwsh
+      run: |
+        cmake -S thirdparty/libjpeg -B build/deps/jpeg -A ARM64 -DBUILD_SHARED_LIBS=OFF
+        cmake --build build/deps/jpeg --config Release --parallel
+
+    - name: Build libpng
+      shell: pwsh
+      run: |
+        cmake -S thirdparty/libpng -B build/deps/png -A ARM64 `
+          -DPNG_SHARED=OFF -DPNG_TESTS=OFF `
+          "-DZLIB_LIBRARY=${{ github.workspace }}/build/deps/zlib/Release/zlibstatic.lib" `
+          "-DZLIB_INCLUDE_DIR=${{ github.workspace }}/thirdparty/zlib"
+        cmake --build build/deps/png --config Release --parallel
+
+    - name: Collect ARM64 libs
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path lib/win32/arm64 | Out-Null
+        Copy-Item build/deps/sdl/Release/SDL2.lib lib/win32/arm64/
+        Copy-Item build/deps/sdl/Release/SDL2.dll lib/win32/arm64/
+        Copy-Item build/deps/zlib/Release/zlibstatic.lib lib/win32/arm64/libz.lib
+        Copy-Item build/deps/jpeg/Release/jpeg.lib lib/win32/arm64/libjpeg.lib
+        Copy-Item build/deps/png/Release/libpng_static.lib lib/win32/arm64/libpng.lib
+        Get-ChildItem lib/win32/arm64 | Select-Object Name, Length
+
+    - uses: actions/upload-artifact@v5
+      with:
+        name: win-arm64-deps
+        path: lib/win32/arm64
+        if-no-files-found: error
