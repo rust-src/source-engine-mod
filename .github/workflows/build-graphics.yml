@@ -47,10 +47,14 @@ jobs:
 
     - name: Build graphics modules
       run: |
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
 
     - name: Install graphics modules
       run: |
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
 
     - uses: actions/upload-artifact@v5
@@ -98,10 +102,14 @@ jobs:
 
     - name: Build graphics modules
       run: |
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
 
     - name: Install graphics modules
       run: |
+        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
+        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
         python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
 
     - uses: actions/upload-artifact@v5
