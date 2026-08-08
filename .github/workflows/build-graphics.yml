@@ -14,106 +14,38 @@ on:
 jobs:
   build-android-aarch64-graphics:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
-    - name: Check out source
-      uses: actions/checkout@v5
-      with:
-        submodules: recursive
-
-    - name: Install build dependencies
+    - uses: actions/checkout@v5
+    - name: Build android-aarch64
       run: |
-        sudo apt-get update
-        sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-
-    - name: Download NDK and Clang
-      run: |
-        wget -q https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -nc
-        wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -nc
-        unzip -q android-ndk-r10e-linux-x86_64.zip
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-
-    - name: Build FFmpeg
-      run: |
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
-        ./scripts/build-ffmpeg-android.sh aarch64
-
-    - name: Configure
-      run: |
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
-        python3 ./waf configure -T release --prefix=../android_build --android=aarch64,host,21 --target=../android_build/aarch64 --disable-warns --togles
-
-    - name: Build graphics modules
-      run: |
-        python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
-
-    - name: Install graphics modules
-      run: |
-        python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
-
-    - name: Upload graphics libs
-      uses: actions/upload-artifact@v5
+        scripts/build-android-arm64.sh
+    - uses: actions/upload-artifact@v5
       with:
         name: android-aarch64-graphics
         path: |
-          android_build/lib/arm64-v8a/libtogles.so
-          android_build/lib/arm64-v8a/libmaterialsystem.so
-          android_build/lib/arm64-v8a/libshaderapidx9.so
-          android_build/lib/arm64-v8a/libstdshader_dx9.so
+          /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/libtogles.so
+          /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/libmaterialsystem.so
+          /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/libshaderapidx9.so
+          /home/runner/work/source-engine-mod/android_build/lib/arm64-v8a/libstdshader_dx9.so
         if-no-files-found: warn
 
   build-android-armv7a-graphics:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
-    - name: Check out source
-      uses: actions/checkout@v5
-      with:
-        submodules: recursive
-
-    - name: Install build dependencies
+    - uses: actions/checkout@v5
+    - name: Build android-armv7a
       run: |
-        sudo apt-get update
-        sudo apt-get install -f -y libopenal-dev g++-multilib gcc-multilib libpng-dev libjpeg-dev libfreetype6-dev libfontconfig1-dev libcurl4-gnutls-dev libsdl2-dev zlib1g-dev libbz2-dev libedit-dev
-
-    - name: Download NDK and Clang
-      run: |
-        wget -q https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip -nc
-        wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz -nc
-        unzip -q android-ndk-r10e-linux-x86_64.zip
-        tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
-
-    - name: Build FFmpeg
-      run: |
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
-        ./scripts/build-ffmpeg-android.sh armeabi-v7a-hard
-
-    - name: Configure
-      run: |
-        export ANDROID_NDK_HOME=$PWD/android-ndk-r10e/
-        export PATH=$PWD/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH
-        python3 ./waf configure -T release --prefix=../android_build --android=armeabi-v7a-hard,host,21 --target=../android_build/armeabi-v7a --disable-warns -4 --togles
-
-    - name: Build graphics modules
-      run: |
-        python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
-
-    - name: Install graphics modules
-      run: |
-        python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
-
-    - name: Upload graphics libs
-      uses: actions/upload-artifact@v5
+        scripts/build-android-armv7a.sh
+    - uses: actions/upload-artifact@v5
       with:
         name: android-armv7a-graphics
         path: |
-          android_build/lib/armeabi-v7a/libtogles.so
-          android_build/lib/armeabi-v7a/libmaterialsystem.so
-          android_build/lib/armeabi-v7a/libshaderapidx9.so
-          android_build/lib/armeabi-v7a/libstdshader_dx9.so
+          /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/libtogles.so
+          /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/libmaterialsystem.so
+          /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/libshaderapidx9.so
+          /home/runner/work/source-engine-mod/android_build/lib/armeabi-v7a/libstdshader_dx9.so
         if-no-files-found: warn
