@@ -8,6 +8,7 @@ on:
       - 'materialsystem/**'
       - 'appframework/glmdisplaydb_linuxwin.inl'
       - 'public/togl/linuxwin/glmdisplay.h'
+      - '.github/workflows/build-graphics.yml'
   workflow_dispatch:
 
 jobs:
