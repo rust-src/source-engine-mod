@@ -194,6 +194,10 @@ struct GLMRendererInfoFields
 	//--------------------------- " bads " - known bad drivers
 	bool	m_badDriver1064NV;		// this is the bad NVIDIA driver on 10.6.4 - stutter, tex corruption, black screen issues
 	bool    m_badDriver108Intel;	// this is the bad Intel HD4000 driver on 10.8 - intermittent crash on GLSL compilation.
+
+	bool	m_isQualcomm;
+	bool	m_isARM;
+	int		m_gpuDriverMajorVersion;
 };
 
 

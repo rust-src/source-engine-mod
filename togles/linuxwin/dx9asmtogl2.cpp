@@ -2952,7 +2952,7 @@ void D3DToGL::WriteGLSLSamplerDefinitions()
 			{
 				if( !m_bShadowSampler )
 				{
-					PrintToBuf( *m_pBufHeaderCode, "precision lowp sampler2DShadow;\n", i );
+					PrintToBuf( *m_pBufHeaderCode, "precision highp sampler2DShadow;\n", i );
 					m_bShadowSampler = true;
 				}
 				PrintToBuf( *m_pBufHeaderCode, "uniform sampler2DShadow sampler%d;\n", i );

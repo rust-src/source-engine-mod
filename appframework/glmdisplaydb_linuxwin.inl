@@ -142,6 +142,19 @@ void GLMRendererInfo::Init( GLMRendererInfoFields *info )
         
         // gamma decode impacting shader codegen
         m_info.m_costlyGammaFlips = false;
+
+        m_info.m_isQualcomm = false;
+        m_info.m_isARM = false;
+        m_info.m_gpuDriverMajorVersion = 0;
+
+        if (gGL && gGL->m_nDriverProvider == cGLDriverProviderQualcomm)
+        {
+            m_info.m_isQualcomm = true;
+        }
+        else if (gGL && gGL->m_nDriverProvider == cGLDriverProviderARM)
+        {
+            m_info.m_isARM = true;
+        }
 }
 
 void    GLMRendererInfo::PopulateDisplays()
