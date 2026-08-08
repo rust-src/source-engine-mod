@@ -39,11 +39,11 @@ jobs:
 
     - name: Build graphics modules
       run: |
-        python3 ./waf build --target=togles,materialsystem/materialsystem,materialsystem/shaderapidx9,materialsystem/stdshaders,materialsystem/shaderlib -j4
+        python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
 
     - name: Install graphics modules
       run: |
-        python3 ./waf install --target=togles,materialsystem/materialsystem,materialsystem/shaderapidx9,materialsystem/stdshaders,materialsystem/shaderlib
+        python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
 
     - name: Upload graphics libs
       uses: actions/upload-artifact@v5
@@ -84,11 +84,11 @@ jobs:
 
     - name: Build graphics modules
       run: |
-        python3 ./waf build --target=togles,materialsystem/materialsystem,materialsystem/shaderapidx9,materialsystem/stdshaders,materialsystem/shaderlib -j4
+        python3 ./waf build --target=togl,materialsystem,shaderapidx9,stdshader_dx9 -j12
 
     - name: Install graphics modules
       run: |
-        python3 ./waf install --target=togles,materialsystem/materialsystem,materialsystem/shaderapidx9,materialsystem/stdshaders,materialsystem/shaderlib
+        python3 ./waf install --target=togl,materialsystem,shaderapidx9,stdshader_dx9
 
     - name: Upload graphics libs
       uses: actions/upload-artifact@v5
