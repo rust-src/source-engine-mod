@@ -12,6 +12,10 @@
 #include <vgui/ISurface.h>
 #include <vgui_controls/Panel.h>
 #include "hud_crosshair.h"
+#ifdef LUA_SDK
+#include "luamanager.h"
+#include "lbasecombatweapon_shared.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -95,6 +99,26 @@ void CHudWeapon::Paint( void )
 	
 	if ( pWeapon )
 	{
+#if defined( LUA_SDK )
+		// GMod-compatible SWEP:DrawHUD()  -- let scripted weapons draw their own
+		// per-frame HUD. Guard with lua_isfunction so a SWEP that does not define
+		// DrawHUD is skipped safely (BEGIN_LUA_CALL_WEAPON_HOOK would pcall nil).
+		if ( pWeapon->IsScripted() )
+		{
+			lua_getref( L, pWeapon->m_nTableReference );
+			lua_getfield( L, -1, "DrawHUD" );
+			lua_remove( L, -2 );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_pushweapon( L, pWeapon );
+				luasrc_pcall( L, 1, 0, 0 );
+			}
+			else
+			{
+				lua_pop( L, 1 );
+			}
+		}
+#endif
 		pWeapon->Redraw();
 	}
 	else

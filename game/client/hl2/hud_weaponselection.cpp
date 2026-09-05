@@ -981,6 +981,32 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 	END_LUA_CALL_WEAPON_HOOK( 8, 0 );
 #endif
 
+#if defined ( LUA_SDK )
+	// GMod-compatible SWEP:DrawWeaponSelection(x,y,w,h,sel)  -- let a scripted
+	// weapon fully customise its selection box (icon / name / color).  Guarded
+	// with lua_isfunction so a SWEP that does not define it is skipped.
+	if ( pWeapon->IsScripted() )
+	{
+		lua_getref( L, pWeapon->m_nTableReference );
+		lua_getfield( L, -1, "DrawWeaponSelection" );
+		lua_remove( L, -2 );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushweapon( L, pWeapon );
+			lua_pushinteger( L, xpos );
+			lua_pushinteger( L, ypos );
+			lua_pushinteger( L, boxWide );
+			lua_pushinteger( L, boxTall );
+			lua_pushboolean( L, bSelected );
+			luasrc_pcall( L, 5, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+#endif
+
 	// draw text
 	col = m_TextColor;
 #if !defined ( LUA_SDK )
@@ -1080,6 +1106,39 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 				surface()->DrawUnicodeChar(*pch);
 				charCount--;
 			}
+		}
+	}
+	else
+	{
+		// Non-selected slot: still draw the weapon name so every SWEP shows its
+		// own name (GMod-style), just dimmed and single-line.
+		const char *szName = pWeapon->GetPrintName();
+		if ( szName && szName[0] )
+		{
+			wchar_t text[128];
+			wchar_t *tempString = g_pVGuiLocalize->Find(szName);
+			if ( tempString )
+			{
+#ifdef WIN32
+				_snwprintf(text, sizeof(text)/sizeof(wchar_t) - 1, L"%s", tempString);
+#else
+				_snwprintf(text, sizeof(text)/sizeof(wchar_t) - 1, L"%S", tempString);
+#endif
+			}
+			else
+			{
+				g_pVGuiLocalize->ConvertANSIToUnicode(szName, text, sizeof(text));
+			}
+			text[sizeof(text)/sizeof(wchar_t) - 1] = 0;
+
+			Color dimmed = m_TextColor;
+			dimmed[3] = (int)( dimmed[3] * 0.55f );
+			surface()->DrawSetTextColor( dimmed );
+			surface()->DrawSetTextFont( m_hTextFont );
+			int tx = xpos + ( m_flLargeBoxWide - (int)surface()->GetCharacterWidth( m_hTextFont, text[0] ) * (int)wcslen(text) ) / 2;
+			int ty = ypos + (int)m_flTextYPos;
+			surface()->DrawSetTextPos( tx, ty );
+			surface()->DrawUnicodeString( text );
 		}
 	}
 }
