@@ -2357,8 +2357,17 @@ bool CBaseCombatWeapon::SetIdealActivity( Activity ideal )
 	MDLCACHE_CRITICAL_SECTION();
 	int	idealSequence = SelectWeightedSequence( ideal );
 
+	// Custom SWEP view models (e.g. GMod weapon_base) may lack a sequence for the
+	// requested activity (ACT_VM_PRIMARYATTACK, ACT_VM_DRAW, ...).  Falling back to
+	// ACT_VM_IDLE keeps the view model from being left on a stale sequence (which
+	// visually shows the wrong weapon pose) when the model only ships idle/draw.
 	if ( idealSequence == -1 )
-		return false;
+	{
+		idealSequence = SelectWeightedSequence( ACT_VM_IDLE );
+		if ( idealSequence == -1 )
+			return false;
+		ideal = ACT_VM_IDLE;
+	}
 
 	//Take the new activity
 	m_IdealActivity	 = ideal;

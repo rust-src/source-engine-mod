@@ -12,6 +12,8 @@
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
 #include "items.h"
+#include "eventqueue.h"
+#include "gamestringpool.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -154,6 +156,33 @@ static int CBaseEntity_RemoveDeferred (lua_State *L) {
 static int CBaseEntity_AcceptInput (lua_State *L) {
   variant_t emptyVariant;
   lua_pushboolean(L, luaL_checkentity(L, 1)->AcceptInput(luaL_checkstring(L, 2), lua_toentity(L, 3), lua_toentity(L, 4), emptyVariant, luaL_checkint(L, 5)));
+  return 1;
+}
+
+// GMod-compatible Entity:Fire( input, value, delay )
+// value is always passed to the input handler as a string (GMod semantics).
+static int CBaseEntity_Fire (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *pInput = luaL_checkstring(L, 2);
+
+  variant_t value;
+  if ( !lua_isnoneornil(L, 3) )
+  {
+    const char *pValue = lua_tostring(L, 3);
+    if ( pValue )
+      value.SetString( AllocPooledString(pValue) );
+  }
+
+  float flDelay = (float)luaL_optnumber(L, 4, 0);
+  if ( flDelay > 0.0f )
+  {
+    g_EventQueue.AddEvent( pEntity, pInput, value, flDelay, pEntity, pEntity );
+    lua_pushboolean(L, true);
+  }
+  else
+  {
+    lua_pushboolean(L, pEntity->AcceptInput(pInput, pEntity, pEntity, value, 0));
+  }
   return 1;
 }
 
@@ -672,6 +701,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"MakeDormant", CBaseEntity_MakeDormant},
   {"RemoveDeferred", CBaseEntity_RemoveDeferred},
   {"AcceptInput", CBaseEntity_AcceptInput},
+  {"Fire", CBaseEntity_Fire},
   {"GetInputDispatchEffectPosition", CBaseEntity_GetInputDispatchEffectPosition},
   {"EntityText", CBaseEntity_EntityText},
   {"DrawDebugGeometryOverlays", CBaseEntity_DrawDebugGeometryOverlays},

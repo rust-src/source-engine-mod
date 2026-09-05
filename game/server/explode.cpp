@@ -99,6 +99,11 @@ public:
 	{
 		// Default to invalid.
 		m_sFireballSprite = -1;
+		// Match the native ExplosionCreate() path so the Explode input does NOT set
+		// TE_EXPLFLAG_NOADDITIVE (which suppresses the additive fireball sprite).
+		// Scripted-weapon SWEPs create env_explosion via ents.Create() which leaves
+		// m_nRenderMode at kRenderNormal without this.
+		m_nRenderMode = kRenderTransAdd;
 	};
 
 	void Precache( void );

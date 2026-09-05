@@ -646,7 +646,15 @@ void CHL2MP_Player::FireBullets ( const FireBulletsInfo_t &info )
 
 	if ( pWeapon )
 	{
-		modinfo.m_iPlayerDamage = modinfo.m_flDamage = pWeapon->GetHL2MPWpnData().m_iPlayerDamage;
+		// Only override from weapon data if it actually specifies damage.  GMod-style
+		// SWEPs pass their damage in FireBulletsInfo_t (info.m_flDamage), while the
+		// weapon data's m_iPlayerDamage read by InitScriptedWeapon is 0 for SWEPs
+		// that only set Primary.Damage.  Guarding with >0 keeps the SWEP's own
+		// damage from being clobbered to 0.
+		if ( pWeapon->GetHL2MPWpnData().m_iPlayerDamage > 0 )
+		{
+			modinfo.m_iPlayerDamage = modinfo.m_flDamage = pWeapon->GetHL2MPWpnData().m_iPlayerDamage;
+		}
 	}
 
 	NoteWeaponFired();

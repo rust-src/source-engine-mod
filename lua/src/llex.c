@@ -359,6 +359,30 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           next(ls);
         continue;
       }
+      case '/': {  /* GMod/LuaJIT-style comments: // ... */
+        next(ls);
+        if (ls->current != '/') return '/';
+        /* else is a comment */
+        next(ls);
+        while (!currIsNewline(ls) && ls->current != EOZ)
+          next(ls);
+        continue;
+      }
+      case '!': {  /* GMod: ! not, != ~= */
+        next(ls);
+        if (ls->current != '=') return TK_NOT;
+        else { next(ls); return TK_NE; }
+      }
+      case '&': {  /* GMod: && and */
+        next(ls);
+        if (ls->current != '&') return '&';
+        else { next(ls); return TK_AND; }
+      }
+      case '|': {  /* GMod: || or */
+        next(ls);
+        if (ls->current != '|') return '|';
+        else { next(ls); return TK_OR; }
+      }
       case '[': {
         int sep = skip_sep(ls);
         if (sep >= 0) {

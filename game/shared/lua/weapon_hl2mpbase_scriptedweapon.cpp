@@ -130,6 +130,10 @@ void ResetWeaponFactoryDatabase( void )
 // implemented in Lua.
 acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 #ifdef LUA_SDK
+	// The m_acttable array is never otherwise zeroed; without a Lua m_acttable the
+	// entries are garbage, which makes ActivityOverride() mis-map arbitrary base
+	// activities.  Zero it first so unmapped entries yield ACT_INVALID cleanly.
+	memset( m_acttable, 0, sizeof( m_acttable ) );
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "m_acttable" );
 	lua_remove( L, -2 );
@@ -261,9 +265,18 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	// View model & world model
+	// GMod-style SWEPs only set the capitalized "ViewModel"/"WorldModel" keys,
+	// so fall back to them when the lowercase keys are missing.
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "viewmodel" );
 	lua_remove( L, -2 );
+	if ( !lua_isstring( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "ViewModel" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isstring( L, -1 ) )
 	{
 		Q_strncpy( m_pLuaWeaponInfo->szViewModel, lua_tostring( L, -1 ), MAX_WEAPON_STRING );
@@ -272,6 +285,13 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "playermodel" );
 	lua_remove( L, -2 );
+	if ( !lua_isstring( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "WorldModel" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isstring( L, -1 ) )
 	{
 		Q_strncpy( m_pLuaWeaponInfo->szWorldModel, lua_tostring( L, -1 ), MAX_WEAPON_STRING );

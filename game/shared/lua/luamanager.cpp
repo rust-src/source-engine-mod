@@ -475,6 +475,13 @@ void luasrc_LoadWeapons (const char *path)
 					lua_setfield( L, -2, "__folder" );
 					lua_pushstring( L, LUA_BASE_WEAPON );
 					lua_setfield( L, -2, "__base" );
+					// GMod-compat: preset empty Primary/Secondary tables so that
+					// GMod-style top-level "SWEP.Primary.Sound = ..." does not hit nil
+					// before the base tables are inherited in weapon.get().
+					lua_newtable( L );
+					lua_setfield( L, -2, "Primary" );
+					lua_newtable( L );
+					lua_setfield( L, -2, "Secondary" );
 					lua_setglobal( L, "SWEP" );
 					if ( luasrc_dofile( L, fullpath ) == 0 )
 					{
