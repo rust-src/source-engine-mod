@@ -8,6 +8,7 @@
 
 #if defined( CLIENT_DLL )
 	#include "c_hl2mp_player.h"
+	#include "hud.h"          // CHud / gHUD (client-only weapon icon lookup)
 #else
 	#include "hl2mp_player.h"
 #endif
@@ -562,6 +563,40 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->m_iPlayerDamage = (int)lua_tointeger( L, -1 );
 	}
 	lua_pop( L, 1 );
+
+#ifdef CLIENT_DLL
+	// GMod-compatible SWEP icon support.  Scripted weapons bypass the normal
+	// weapon-script sprite load (gWR.LoadWeaponSprites), so iconActive/iconInactive
+	// stay NULL and the selection menu shows no icon.  Read an explicit
+	// SWEP.IconActive / SWEP.IconInactive material path, else fall back to the
+	// generic "selection" HUD icon.
+	{
+		CHudTexture *pIconActive = NULL;
+		CHudTexture *pIconInactive = NULL;
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "IconActive" );
+		lua_remove( L, -2 );
+		if ( lua_isstring( L, -1 ) )
+		{
+			pIconActive = gHUD.GetIcon( lua_tostring( L, -1 ) );
+		}
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "IconInactive" );
+		lua_remove( L, -2 );
+		if ( lua_isstring( L, -1 ) )
+		{
+			pIconInactive = gHUD.GetIcon( lua_tostring( L, -1 ) );
+		}
+		lua_pop( L, 1 );
+
+		// Fall back to the built-in generic selection icon so SWEPs show *some* icon.
+		if ( !pIconActive ) pIconActive = gHUD.GetIcon( "selection" );
+		if ( !pIconInactive ) pIconInactive = gHUD.GetIcon( "selection" );
+		m_pLuaWeaponInfo->iconActive = pIconActive;
+		m_pLuaWeaponInfo->iconInactive = pIconInactive;
+	}
+#endif
 
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Initialize" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
