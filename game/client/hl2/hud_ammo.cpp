@@ -15,10 +15,6 @@
 #include <vgui/ILocalize.h>
 #include <vgui/ISurface.h>
 #include "ihudlcd.h"
-#ifdef LUA_SDK
-#include "luamanager.h"
-#include "lbasecombatweapon_shared.h"
-#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -161,40 +157,6 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 
 	hudlcd->SetGlobalStat( "(ammo_primary)", VarArgs( "%d", ammo1 ) );
 	hudlcd->SetGlobalStat( "(ammo_secondary)", VarArgs( "%d", ammo2 ) );
-
-#if defined ( LUA_SDK )
-	// GMod-compatible SWEP:DrawAmmo() / SWEP:CustomAmmoDisplay()  -- let scripted
-	// weapons customise the ammo HUD.  Guarded with lua_isfunction so a SWEP that
-	// does not define them is skipped safely.
-	if ( wpn && wpn->IsScripted() )
-	{
-		lua_getref( L, wpn->m_nTableReference );
-		lua_getfield( L, -1, "DrawAmmo" );
-		lua_remove( L, -2 );
-		if ( lua_isfunction( L, -1 ) )
-		{
-			lua_pushweapon( L, wpn );
-			luasrc_pcall( L, 1, 0, 0 );
-		}
-		else
-		{
-			lua_pop( L, 1 );
-		}
-
-		lua_getref( L, wpn->m_nTableReference );
-		lua_getfield( L, -1, "CustomAmmoDisplay" );
-		lua_remove( L, -2 );
-		if ( lua_isfunction( L, -1 ) )
-		{
-			lua_pushweapon( L, wpn );
-			luasrc_pcall( L, 1, 0, 0 );
-		}
-		else
-		{
-			lua_pop( L, 1 );
-		}
-	}
-#endif
 
 	if (wpn == m_hCurrentActiveWeapon)
 	{

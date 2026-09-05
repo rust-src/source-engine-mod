@@ -998,7 +998,7 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 			lua_pushinteger( L, boxWide );
 			lua_pushinteger( L, boxTall );
 			lua_pushboolean( L, bSelected );
-			luasrc_pcall( L, 5, 0, 0 );
+			luasrc_pcall( L, 6, 0, 0 );   // self + x + y + w + h + sel = 6 args
 		}
 		else
 		{

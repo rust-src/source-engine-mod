@@ -9,7 +9,6 @@
 #if defined( CLIENT_DLL )
 	#include "c_hl2mp_player.h"
 	#include "hud.h"          // CHud / gHUD (client-only weapon icon lookup)
-	#include "filesystem.h"   // g_pFullFileSystem (icon material existence check)
 #else
 	#include "hl2mp_player.h"
 #endif
@@ -568,49 +567,13 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 #ifdef CLIENT_DLL
 	// GMod-compatible SWEP icon support.  Scripted weapons bypass the normal
 	// weapon-script sprite load (gWR.LoadWeaponSprites), so iconActive/iconInactive
-	// stay NULL and the selection menu draws no icon.  Load the GMod-style icon
-	// material vgui/entities/<classname> (e.g. vgui/entities/pist_weagon.vmt) as
-	// a full-frame CHudTexture; fall back to the built-in "selection" icon.
-	{
-		CHudTexture tex;
-		Q_memset( &tex, 0, sizeof( tex ) );
-		tex.bRenderUsingFont = false;
-		// Full-frame: GPU clamps texcoords to [0,1] so a rect larger than the
-		// texture draws the whole image.
-		tex.rc.left = 0; tex.rc.top = 0;
-		tex.rc.right = 4096; tex.rc.bottom = 4096;
-
-		char szIconPath[ MAX_PATH ];
-		const char *pszClass = GetScriptedClassname();
-		if ( pszClass && pszClass[0] )
-			Q_snprintf( szIconPath, sizeof( szIconPath ), "vgui/entities/%s", pszClass );
-		else
-			Q_strncpy( szIconPath, "", sizeof( szIconPath ) );
-
-		// Prefer the vgui/entities/<class> icon material, else the built-in one.
-		m_pLuaWeaponInfo->iconActive = NULL;
-		m_pLuaWeaponInfo->iconInactive = NULL;
-
-		CHudTexture *pTex = NULL;
-		if ( szIconPath[0] )
-		{
-			char szVmt[ MAX_PATH ];
-			Q_snprintf( szVmt, sizeof( szVmt ), "materials/%s.vmt", szIconPath );
-			// Only load the full-frame icon if the material actually exists, so a
-			// missing material (e.g. weapon_admin_gun) doesn't produce a bad texture.
-			if ( g_pFullFileSystem->FileExists( szVmt, "GAME" ) )
-			{
-				Q_strncpy( tex.szTextureFile, szIconPath, sizeof( tex.szTextureFile ) );
-				pTex = gHUD.AddUnsearchableHudIconToList( tex );
-			}
-		}
-		if ( !pTex )
-		{
-			pTex = gHUD.GetIcon( "selection" );
-		}
-		m_pLuaWeaponInfo->iconActive = pTex;
-		m_pLuaWeaponInfo->iconInactive = pTex;
-	}
+	// stay NULL and the selection menu draws no icon.  Building a CHudTexture here
+	// requires the vgui surface API, which is not available in this shared entity
+	// file (surface()/vgui::surface() are unresolved).  Leave the icon NULL for now:
+	// it renders as a blank slot (no crash).  A future fix can load the SWEP's
+	// vgui/entities/<class> material through a non-surface path.
+	m_pLuaWeaponInfo->iconActive = NULL;
+	m_pLuaWeaponInfo->iconInactive = NULL;
 #endif
 
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Initialize" );
