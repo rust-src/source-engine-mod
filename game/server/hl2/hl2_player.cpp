@@ -109,7 +109,7 @@ ConVar player_squad_double_tap_time( "player_squad_double_tap_time", "0.25" );
 
 ConVar sv_infinite_aux_power( "sv_infinite_aux_power", "1", FCVAR_NOTIFY );
 // HL2SB: the flashlight is turned on by default on player spawn
-ConVar sv_flashlight_default( "sv_flashlight_default", "1", FCVAR_NOTIFY );
+ConVar sv_flashlight_default( "sv_flashlight_default", "0", FCVAR_NOTIFY );
 
 ConVar autoaim_unlock_target( "autoaim_unlock_target", "0.8666" );
 
