@@ -611,6 +611,15 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 		return;
 	}
 
+	// If the owner's player model isn't resolved yet (e.g. right at respawn,
+	// before the model is networked), don't tear down an existing hands
+	// attachment - that would drop the hands and, since nothing re-triggers
+	// UpdateHandsAttachment after the model arrives, they'd stay lost.
+	if ( !pOwner->GetModel() )
+	{
+		return;
+	}
+
 	// Get player model path
 	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
 
@@ -676,20 +685,20 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 		return;
 	}
 
-	// Same model that already failed to load this session - stay quiet instead
-	// of re-creating and re-warning every frame (resets via cl_hands toggle,
-	// model/cvar change, or viewmodel removal).
-	if ( g_pszFailedHandsModel[0] && !Q_stricmp( g_pszFailedHandsModel, pszHandsModel ) )
-	{
-		return;
-	}
-
 	// g_pszLastHandsModel is global; another viewmodel may own the cached
 	// attachment already. Only skip when *our* attachment is the right model.
 	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) && m_hHandsAttachment.Get() )
 	{
 		return;
 	}
+
+	// Death only HOLSTERS the weapon, so a transient failed-model lookup or
+	// failed-attach inside the death/respawn window could leave the sticky
+	// g_pszFailedHandsModel set and block the hands from reattaching forever.
+	// Give every reattach a clean attempt; a genuinely-bad model just re-fails
+	// (and warns) on the next weapon change instead of silently dropping the
+	// hands.
+	g_pszFailedHandsModel[0] = '\0';
 
 	// Remove our old attachment (if any)
 	ReleaseHandsAttachment();
