@@ -506,49 +506,54 @@ RenderGroup_t C_BaseViewModel::GetRenderGroup()
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Update hands attachment based on player model
+// Purpose: Remove hands attachment (called when no hands are needed)
 //-----------------------------------------------------------------------------
-// Track last successfully attached hands model
-static char g_pszLastHandsModel[MAX_PATH] = "";
+void C_BaseViewModel::RemoveHandsAttachment( void )
+{
+	if ( m_hHandsAttachment.Get() )
+	{
+		m_hHandsAttachment->DetachFromViewmodel();
+		m_hHandsAttachment->Remove();
+		m_hHandsAttachment = NULL;
+		Msg( "[HL2SB-HANDS] Removed hands\n" );
+	}
+	m_szHandsModel[0] = '\0';
+}
 
+//-----------------------------------------------------------------------------
+// Purpose: Update hands attachment based on player model and weapon
+//-----------------------------------------------------------------------------
 void C_BaseViewModel::UpdateHandsAttachment( void )
 {
 	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( !pOwner )
-		return;
-
-	// By default show hands (our system is for adding hands to GMod weapons).
-	// Only hide if a scripted weapon explicitly sets UseHands = false.
-	C_BaseCombatWeapon *pWeapon = GetOwningWeapon();
-	if ( pWeapon )
 	{
-		// If scripted weapon has UseHands = false, skip hands
-		// (scripted weapon class exposes UseHands(); we cannot easily access it here
-		//  without a cast, so we only hide when explicitly requested via the ConVar path)
+		RemoveHandsAttachment();
+		return;
 	}
 
 	// Get player model path
 	const char *pszPlayerModel = modelinfo->GetModelName( pOwner->GetModel() );
 
-	// Get hands model from config system
-	const char *pszHandsModel = HL2SB_GetHandsModelForPlayer( pszPlayerModel );
+	// Unified hands selection: manual cl_hands_model override > config mapping > none
+	const char *pszHandsModel = HL2SB_GetActiveHandsModel( pszPlayerModel );
 
 	// No hands model for this player model - remove attachment
-	if ( !pszHandsModel )
+	if ( !pszHandsModel || !pszHandsModel[0] )
 	{
-		g_pszLastHandsModel[0] = '\0';
+		RemoveHandsAttachment();
 		return;
 	}
 
 	// If we already successfully attached this exact model, do nothing
-	// (prevents repeated creation every frame)
-	if ( !Q_stricmp( g_pszLastHandsModel, pszHandsModel ) )
+	// (per-ViewModel state, no global pollution)
+	if ( m_hHandsAttachment.Get() && !Q_stricmp( m_szHandsModel, pszHandsModel ) )
 	{
 		return;
 	}
 
 	// Remove old attachment
-	m_hHandsAttachment = NULL;
+	RemoveHandsAttachment();
 
 	// Create new hands attachment
 	C_ViewmodelAttachment *pAttach = new C_ViewmodelAttachment;
@@ -556,7 +561,7 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	{
 		pAttach->AttachToViewmodel( this );
 		m_hHandsAttachment = pAttach;
-		Q_strncpy( g_pszLastHandsModel, pszHandsModel, sizeof(g_pszLastHandsModel) );
+		Q_strncpy( m_szHandsModel, pszHandsModel, sizeof(m_szHandsModel) );
 		Msg( "[HL2SB-HANDS] Attached hands model: %s\n", pszHandsModel );
 	}
 	else

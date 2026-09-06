@@ -46,4 +46,8 @@ const HL2SB_ModelConfig_t *HL2SB_FindModelConfigByPath( const char *pszPlayerMod
 // Returns NULL if no hands should be shown
 const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath );
 
+// Get the active hands model, unifying manual override + player model mapping
+// Priority: cl_hands_model manual > player model config mapping > NULL
+const char *HL2SB_GetActiveHandsModel( const char *pszPlayerModelPath );
+
 #endif // HL2SB_MODEL_CONFIG_H

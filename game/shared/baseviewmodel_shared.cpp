@@ -324,6 +324,9 @@ void CBaseViewModel::SetWeaponModel( const char *modelname, CBaseCombatWeapon *w
 
 #if defined( CLIENT_DLL )
 	SetModel( modelname );
+
+	// Update hands attachment when weapon viewmodel changes
+	UpdateHandsAttachment();
 #else
 	string_t str;
 	if ( modelname != NULL )

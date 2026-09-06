@@ -174,6 +174,7 @@ public:
 
 	// Hands attachment system
 	void					UpdateHandsAttachment( void );
+	void					RemoveHandsAttachment( void );
 #endif
 
 private:
@@ -204,6 +205,7 @@ private:
 	// Hands attachment for custom player models
 #if defined( CLIENT_DLL )
 CHandle<class C_ViewmodelAttachment>	m_hHandsAttachment;
+char									m_szHandsModel[MAX_PATH];
 #endif
 
 	typedef CHandle< CBaseCombatWeapon > CBaseCombatWeaponHandle;

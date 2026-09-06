@@ -14,6 +14,9 @@
 HL2SB_ModelConfig_t g_HL2SB_ModelConfigs[HL2SB_MAX_MODELS];
 int g_nHL2SB_ModelConfigCount = 0;
 
+// Global hands model override ConVar (defined here so both client & server see it)
+ConVar cl_hands_model( "cl_hands_model", "auto", FCVAR_ARCHIVE, "Override hands model (auto = use player model mapping)" );
+
 //-----------------------------------------------------------------------------
 // Purpose: Load a single model config from KeyValues file
 //-----------------------------------------------------------------------------
@@ -196,4 +199,22 @@ const char *HL2SB_GetHandsModelForPlayer( const char *pszPlayerModelPath )
 		return pConfig->szHandsModel;
 
 	return NULL;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Get the active hands model, unifying manual override + player mapping
+//-----------------------------------------------------------------------------
+extern ConVar cl_hands_model;
+
+const char *HL2SB_GetActiveHandsModel( const char *pszPlayerModelPath )
+{
+	// Priority 1: manual override (cl_hands_model != "auto")
+	const char *pszOverride = cl_hands_model.GetString();
+	if ( pszOverride && pszOverride[0] != '\0' && Q_strcmp( pszOverride, "auto" ) != 0 )
+	{
+		return pszOverride;
+	}
+
+	// Priority 2: player model config mapping
+	return HL2SB_GetHandsModelForPlayer( pszPlayerModelPath );
 }

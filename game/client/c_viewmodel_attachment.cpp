@@ -1,7 +1,7 @@
 //========= Copyright (c) All rights reserved. ============//
 //
 // Purpose: Client-side viewmodel attachment entity for hands/arms models
-//          Attaches to viewmodels and renders hands alongside weapons
+//          Relies on Source SDK's native EF_BONEMERGE for bone matching.
 //
 //=============================================================================//
 
@@ -15,27 +15,20 @@
 #include "gamestringpool.h"
 #include "tier0/memdbgon.h"
 
-// ConVar for overriding hands model
-// Set to "auto" to use automatic mapping, or a model path to force a specific hands model
-ConVar cl_hands_model( "cl_hands_model", "auto", FCVAR_ARCHIVE, "Override hands model (auto = use player model mapping)" );
+// ConVar for overriding hands model (defined in hl2sb_model_config.cpp)
+extern ConVar cl_hands_model;
 
-// Wrist-local correction values
-ConVar cl_hands_offset_x( "cl_hands_offset_x", "0", FCVAR_ARCHIVE, "Hands model local X offset (wrist space)" );
-ConVar cl_hands_offset_y( "cl_hands_offset_y", "0", FCVAR_ARCHIVE, "Hands model local Y offset (wrist space)" );
-ConVar cl_hands_offset_z( "cl_hands_offset_z", "0", FCVAR_ARCHIVE, "Hands model local Z offset (wrist space)" );
-ConVar cl_hands_angle_pitch( "cl_hands_angle_pitch", "0", FCVAR_ARCHIVE, "Hands model local pitch correction (degrees)" );
-ConVar cl_hands_angle_yaw( "cl_hands_angle_yaw", "0", FCVAR_ARCHIVE, "Hands model local yaw correction (degrees)" );
-ConVar cl_hands_angle_roll( "cl_hands_angle_roll", "0", FCVAR_ARCHIVE, "Hands model local roll correction (degrees)" );
+// ViewModel-space offset (applied AFTER bone merge, as a rigid whole-model translation)
+ConVar cl_hands_offset_x( "cl_hands_offset_x", "0", FCVAR_ARCHIVE, "Hands model ViewModel-space X offset" );
+ConVar cl_hands_offset_y( "cl_hands_offset_y", "0", FCVAR_ARCHIVE, "Hands model ViewModel-space Y offset" );
+ConVar cl_hands_offset_z( "cl_hands_offset_z", "0", FCVAR_ARCHIVE, "Hands model ViewModel-space Z offset" );
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
 C_ViewmodelAttachment::C_ViewmodelAttachment( void ) : 
 	m_hParentViewModel( NULL ),
-	m_bAttached( false ),
-	m_RHandIndex( -1 ),
-	m_LHandIndex( -1 ),
-	m_bBoneChainCached( false )
+	m_bAttached( false )
 {
 }
 
@@ -49,6 +42,7 @@ C_ViewmodelAttachment::~C_ViewmodelAttachment( void )
 
 //-----------------------------------------------------------------------------
 // Purpose: Initialize with a hands model path
+//          Uses InitializeAsClientEntity for proper client entity lifecycle
 // Input  : pszModelName - Path to the hands/arms model
 // Output : Returns true on success, false on failure
 //-----------------------------------------------------------------------------
@@ -57,24 +51,23 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	if ( !pszModelName )
 		return false;
 
-	// Standard SetModel - server should have precached this model
-	SetModelName( AllocPooledString( pszModelName ) );
-	bool bSuccess = SetModel( pszModelName );
+	// Proper client entity initialization
+	bool bSuccess = InitializeAsClientEntity( pszModelName, RENDER_GROUP_VIEW_MODEL_OPAQUE );
 
-	if ( bSuccess )
+	// If init fails, remove this entity
+	if ( !bSuccess )
 	{
-		// Rebuild wrist bone chain cache for the new model
-		RebuildBoneChainCache();
+		Msg( "[HL2SB-HANDS] SetHandsModel FAILED: %s\n", pszModelName );
+		Remove();
+		return false;
 	}
 
-	Msg( "[HL2SB-HANDS] SetHandsModel: %s -> %s (GetModel=%p)\n", 
-		pszModelName, bSuccess ? "OK" : "FAIL", GetModel() );
-
-	return bSuccess;
+	Msg( "[HL2SB-HANDS] SetHandsModel OK: %s\n", pszModelName );
+	return true;
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Attach to a viewmodel entity using standard Source "follow" method
+// Purpose: Attach to a viewmodel entity using standard Source follow/bonemerge
 // Input  : pViewModel - The viewmodel to attach to
 //-----------------------------------------------------------------------------
 void C_ViewmodelAttachment::AttachToViewmodel( C_BaseViewModel *pViewModel )
@@ -85,19 +78,29 @@ void C_ViewmodelAttachment::AttachToViewmodel( C_BaseViewModel *pViewModel )
 	// Store handle to parent
 	m_hParentViewModel = pViewModel;
 
-	// Set as owned by the same entity as the viewmodel
-	SetOwnerEntity( pViewModel->GetOwnerEntity() );
+	// Set owner and initial position from the player
+	C_BaseEntity *pOwner = pViewModel->GetOwner();
+	if ( pOwner )
+	{
+		SetOwnerEntity( pOwner );
+		SetAbsOrigin( pOwner->GetAbsOrigin() );
+	}
+	else
+	{
+		SetAbsOrigin( vec3_origin );
+	}
+	SetAbsAngles( vec3_angle );
 
-	// Standard follow attachment (see CBaseEntity::FollowEntity):
-	// SetParent + no movement + not solid + zero local transforms + EF_BONEMERGE
+	// Standard follow attachment:
+	// SetParent + EF_BONEMERGE + MOVETYPE_NONE
+	// SDK's CBoneMergeCache will copy bone matrices from parent by name.
 	SetParent( pViewModel );
-	SetMoveType( MOVETYPE_NONE );
-	AddSolidFlags( FSOLID_NOT_SOLID );
-	SetLocalOrigin( vec3_origin );
-	SetLocalAngles( vec3_angle );
 	AddEffects( EF_BONEMERGE );
+	SetMoveType( MOVETYPE_NONE );
 
 	m_bAttached = true;
+
+	Msg( "[HL2SB-HANDS] Attached to ViewModel, BoneMerge enabled\n" );
 }
 
 //-----------------------------------------------------------------------------
@@ -119,198 +122,51 @@ void C_ViewmodelAttachment::DetachFromViewmodel( void )
 
 	m_hParentViewModel = NULL;
 	m_bAttached = false;
-	m_bBoneChainCached = false;
-	m_RHandChain.RemoveAll();
-	m_LHandChain.RemoveAll();
-	m_RHandIndex = -1;
-	m_LHandIndex = -1;
+
+	Msg( "[HL2SB-HANDS] Detached from ViewModel\n" );
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Rebuild wrist bone chain caches
-//          Stores hand bone index + all descendant bones in this model's hierarchy
-//-----------------------------------------------------------------------------
-void C_ViewmodelAttachment::RebuildBoneChainCache( void )
-{
-	m_RHandChain.RemoveAll();
-	m_LHandChain.RemoveAll();
-	m_RHandIndex = -1;
-	m_LHandIndex = -1;
-	m_bBoneChainCached = false;
-
-	CStudioHdr *hdr = GetModelPtr();
-	if ( !hdr )
-		return;
-
-	int nBones = hdr->numbones();
-
-	// Find R_Hand and L_Hand bones
-	for ( int i = 0; i < nBones; i++ )
-	{
-		const char *pszBoneName = hdr->pBone( i )->pszName();
-		if ( !pszBoneName )
-			continue;
-
-		if ( !Q_stricmp( pszBoneName, "ValveBiped.Bip01_R_Hand" ) ||
-			 !Q_stricmp( pszBoneName, "VolvoBipod.Bip01_R_Hand" ) )
-		{
-			m_RHandIndex = i;
-		}
-		else if ( !Q_stricmp( pszBoneName, "ValveBiped.Bip01_L_Hand" ) ||
-				  !Q_stricmp( pszBoneName, "VolvoBipod.Bip01_L_Hand" ) )
-		{
-			m_LHandIndex = i;
-		}
-	}
-
-	// Build descendant chains using parent indices
-	// For each bone, find all descendants of the hand bone
-	if ( m_RHandIndex >= 0 )
-	{
-		m_RHandChain.AddToTail( m_RHandIndex );
-		for ( int i = 0; i < nBones; i++ )
-		{
-			int nParent = hdr->pBone( i )->parent;
-			// Walk up parent chain
-			int nCur = nParent;
-			bool bDescendant = false;
-			int nDepth = 0;
-			while ( nCur >= 0 && nDepth < 64 )
-			{
-				if ( nCur == m_RHandIndex )
-				{
-					bDescendant = true;
-					break;
-				}
-				nCur = hdr->pBone( nCur )->parent;
-				nDepth++;
-			}
-			if ( bDescendant )
-			{
-				m_RHandChain.AddToTail( i );
-			}
-		}
-	}
-
-	if ( m_LHandIndex >= 0 )
-	{
-		m_LHandChain.AddToTail( m_LHandIndex );
-		for ( int i = 0; i < nBones; i++ )
-		{
-			int nParent = hdr->pBone( i )->parent;
-			int nCur = nParent;
-			bool bDescendant = false;
-			int nDepth = 0;
-			while ( nCur >= 0 && nDepth < 64 )
-			{
-				if ( nCur == m_LHandIndex )
-				{
-					bDescendant = true;
-					break;
-				}
-				nCur = hdr->pBone( nCur )->parent;
-				nDepth++;
-			}
-			if ( bDescendant )
-			{
-				m_LHandChain.AddToTail( i );
-			}
-		}
-	}
-
-	m_bBoneChainCached = true;
-
-	Msg( "[HL2SB-HANDS] Bone chain cache: R_Hand=%d (chain %d bones), L_Hand=%d (chain %d bones)\n",
-		m_RHandIndex, m_RHandChain.Count(), m_LHandIndex, m_LHandChain.Count() );
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Setup bones - allow native bonemerge first, then apply wrist-local correction
+// Purpose: Setup bones - allow native bonemerge, then apply whole-model offset
+//          Offset is ViewModel-space, applied uniformly to all bones.
 //-----------------------------------------------------------------------------
 bool C_ViewmodelAttachment::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, int boneMask, float currentTime )
 {
 	// First let native bonemerge do its job
 	bool bResult = BaseClass::SetupBones( pBoneToWorldOut, nMaxBones, boneMask, currentTime );
 
-	// If we have cached chains and a parent viewmodel, apply wrist-local correction
-	if ( m_bBoneChainCached && m_hParentViewModel.Get() )
+	// Apply uniform offset in viewmodel space after bone merge
+	C_BaseViewModel *pViewModel = m_hParentViewModel.Get();
+	if ( pViewModel && GetModelPtr() )
 	{
-		ApplyWristCorrection();
+		Vector vecOffset( cl_hands_offset_x.GetFloat(), cl_hands_offset_y.GetFloat(), cl_hands_offset_z.GetFloat() );
+
+		if ( vecOffset != vec3_origin )
+		{
+			int nBones = GetModelPtr()->numbones();
+
+			// Convert offset to world space using the viewmodel's orientation
+			Vector vecWorldOffset;
+			QAngle vecViewAngles = pViewModel->GetAbsAngles();
+			VectorRotate( vecOffset, vecViewAngles, vecWorldOffset );
+
+			for ( int i = 0; i < nBones; i++ )
+			{
+				matrix3x4_t boneToWorld = m_BoneAccessor.GetBone( i );
+				Vector vecPos;
+				MatrixPosition( boneToWorld, vecPos );
+				vecPos += vecWorldOffset;
+				PositionMatrix( vecPos, boneToWorld );
+				m_BoneAccessor.GetBoneForWrite( i ) = boneToWorld;
+			}
+		}
 	}
 
 	return bResult;
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Apply a unified rigid-body correction in each wrist's local space
-//          correctionWorld = pivotOld * localCorrection * Inverse(pivotOld)
-//          newWorld = correctionWorld * oldWorld  (for every bone in the chain)
-//-----------------------------------------------------------------------------
-void C_ViewmodelAttachment::ApplyWristCorrection( void )
-{
-	CStudioHdr *hdr = GetModelPtr();
-	if ( !hdr )
-		return;
-
-	// Build local correction matrix (rotate first, then translate)
-	QAngle correctionAngles( 
-		cl_hands_angle_pitch.GetFloat(), 
-		cl_hands_angle_yaw.GetFloat(), 
-		cl_hands_angle_roll.GetFloat() );
-	Vector correctionOffset( 
-		cl_hands_offset_x.GetFloat(), 
-		cl_hands_offset_y.GetFloat(), 
-		cl_hands_offset_z.GetFloat() );
-
-	matrix3x4_t localCorrection;
-	AngleMatrix( correctionAngles, correctionOffset, localCorrection );
-
-	// Apply to right hand chain
-	if ( m_RHandIndex >= 0 && m_RHandChain.Count() > 0 )
-	{
-		matrix3x4_t pivotOld = m_BoneAccessor.GetBone( m_RHandIndex );
-		matrix3x4_t oldInv;
-		MatrixInvert( pivotOld, oldInv );
-
-		// correctionWorld = pivotOld * localCorrection * Inverse(pivotOld)
-		matrix3x4_t temp, correctionWorld;
-		ConcatTransforms( pivotOld, localCorrection, temp );
-		ConcatTransforms( temp, oldInv, correctionWorld );
-
-		for ( int i = 0; i < m_RHandChain.Count(); i++ )
-		{
-			int iBone = m_RHandChain[i];
-			matrix3x4_t oldWorld = m_BoneAccessor.GetBone( iBone );
-			matrix3x4_t newWorld;
-			ConcatTransforms( correctionWorld, oldWorld, newWorld );
-			m_BoneAccessor.GetBoneForWrite( iBone ) = newWorld;
-		}
-	}
-
-	// Apply to left hand chain
-	if ( m_LHandIndex >= 0 && m_LHandChain.Count() > 0 )
-	{
-		matrix3x4_t pivotOld = m_BoneAccessor.GetBone( m_LHandIndex );
-		matrix3x4_t oldInv;
-		MatrixInvert( pivotOld, oldInv );
-
-		matrix3x4_t temp, correctionWorld;
-		ConcatTransforms( pivotOld, localCorrection, temp );
-		ConcatTransforms( temp, oldInv, correctionWorld );
-
-		for ( int i = 0; i < m_LHandChain.Count(); i++ )
-		{
-			int iBone = m_LHandChain[i];
-			matrix3x4_t oldWorld = m_BoneAccessor.GetBone( iBone );
-			matrix3x4_t newWorld;
-			ConcatTransforms( correctionWorld, oldWorld, newWorld );
-			m_BoneAccessor.GetBoneForWrite( iBone ) = newWorld;
-		}
-	}
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Draw the hands model
+// Purpose: Draw the hands model (inherits viewmodel render state via DrawModel)
 // Input  : flags - Drawing flags
 // Output : Number of bones rendered
 //-----------------------------------------------------------------------------
