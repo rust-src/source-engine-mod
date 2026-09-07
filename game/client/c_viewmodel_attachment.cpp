@@ -42,7 +42,10 @@ ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands de
 // "v_hand" material). Merging an extra pair onto those double-draws the arms
 // (visible on SLAM, grenade, crowbar, ...). MMOD-style replacement viewmodels
 // are gun-only (no v_hand material) and still receive the merged hands.
-ConVar cl_hands_skip_baked_arms( "cl_hands_skip_baked_arms", "1", FCVAR_ARCHIVE, "Don't merge c_hands onto viewmodels that already have their own arms (stock HL2 v_hand models)" );
+// HL2SB: the user runs GMod gun-only c_* viewmodels, which never render their
+// own arms, so force c_hands on by default. Set to 1 only if you go back to a
+// stock HL2 viewmodel that bakes visible arms (v_hand).
+ConVar cl_hands_skip_baked_arms( "cl_hands_skip_baked_arms", "0", FCVAR_ARCHIVE, "Don't merge c_hands onto viewmodels that already have their own arms (stock HL2 v_hand models)" );
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
