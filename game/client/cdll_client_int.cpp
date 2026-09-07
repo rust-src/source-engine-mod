@@ -952,6 +952,12 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 		return false;
 	if ( (gameeventmanager = (IGameEventManager2 *)appSystemFactory(INTERFACEVERSION_GAMEEVENTSMANAGER2,NULL)) == NULL )
 		return false;
+
+	// hl2sb: client must know the mod-specific event schemas (player_death,
+	// entity_killed) before it parses the server's SVC_GameEventList, otherwise
+	// the unknown event's fields are dropped and custom fields read back empty.
+	gameeventmanager->LoadEventsFromFile( "resource/ModEvents.res" );
+
 	if ( (soundemitterbase = (ISoundEmitterSystemBase *)appSystemFactory(SOUNDEMITTERSYSTEM_INTERFACE_VERSION, NULL)) == NULL )
 		return false;
 	if ( (inputsystem = (IInputSystem *)appSystemFactory(INPUTSYSTEM_INTERFACE_VERSION, NULL)) == NULL )
