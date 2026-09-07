@@ -10,6 +10,12 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// GMod-style model switching: when ON (default), a requested player model
+// change only takes effect after the player dies/respawns. When OFF, it applies
+// immediately (the old instant behavior).
+ConVar hl2sb_model_respawn_only( "hl2sb_model_respawn_only", "1", FCVAR_NOTIFY,
+	"When enabled, player model changes (hl2sb_setmodel / cl_playermodel) are applied only on respawn (GMod style); when disabled, they apply immediately" );
+
 //-----------------------------------------------------------------------------
 // Purpose: Initialize model manager
 //-----------------------------------------------------------------------------

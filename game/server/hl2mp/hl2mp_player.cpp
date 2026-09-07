@@ -344,9 +344,14 @@ void CHL2MP_Player::Spawn(void)
 	m_bReady = false;
 
 #ifdef HL2SB
-	// Apply player model on spawn
-	// DISABLED for crash testing - model precache issue
-	// HL2SB_ModelManager_PlayerSpawn( this );
+	// GMod-style: a requested player model change is applied when we (re)spawn.
+	// This runs on every spawn/respawn, so hl2sb_setmodel/cl_playermodel changes
+	// made while alive take effect on the next death/respawn. SetPlayerModel
+	// reads cl_playermodel and applies it (precaching as needed).
+	if ( hl2sb_model_respawn_only.GetBool() )
+	{
+		SetPlayerModel();
+	}
 #endif
 }
 
