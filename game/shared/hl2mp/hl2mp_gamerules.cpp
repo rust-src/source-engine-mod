@@ -50,6 +50,7 @@
 	#include "hl2mp_cvars.h"
 #ifdef HL2SB
 	#include "globalstate.h"
+	#include "hl2sb_player_model_manager.h"
 #endif
 	#include "hl2mp_gameinterface.h"
 	#include "hl2mp_cvars.h"
@@ -1183,6 +1184,19 @@ void CHL2MPRules::ClientSettingsChanged( CBasePlayer *pPlayer )
 
 		if ( HL2MPRules()->IsTeamplay() == false )
 		{
+#ifdef HL2SB
+			// GMod-style model switching: when enabled, a requested model change
+			// is NOT applied now - it is queued and applied on the player's next
+			// respawn (see CHL2MP_Player::Spawn). Tell the player so.
+			if ( hl2sb_model_respawn_only.GetBool() )
+			{
+				char szHint[256];
+				Q_snprintf( szHint, sizeof( szHint ),
+					"Player model change queued - it will take effect on your next respawn (GMod style).\n" );
+				ClientPrint( pHL2Player, HUD_PRINTTALK, szHint );
+				return;
+			}
+#endif
 			pHL2Player->SetPlayerModel();
 
 			const char *pszCurrentModelName = modelinfo->GetModelName( pHL2Player->GetModel() );

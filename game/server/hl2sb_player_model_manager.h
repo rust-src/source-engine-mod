@@ -10,6 +10,9 @@
 
 #include "hl2sb_model_scan.h"
 
+// GMod-style: player model changes apply only after respawn (see .cpp).
+extern ConVar hl2sb_model_respawn_only;
+
 // Forward declaration
 class CBasePlayer;
 

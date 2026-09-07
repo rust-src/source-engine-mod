@@ -62,6 +62,8 @@ void CC_HL2SB_SetModel( const CCommand &args )
 	char szCmd[256];
 	Q_snprintf( szCmd, sizeof(szCmd), "cl_playermodel %s\n", pConfig->szPlayerModel );
 	engine->ClientCmd( szCmd );
+	Msg( "[HL2SB] Model config '%s' set to %s.\n", pConfig->szName, pConfig->szPlayerModel );
+	Msg( "[HL2SB] It will be applied on your next respawn (GMod style - die to switch).\n" );
 #else
 	// Server: apply directly
 	Msg( "[HL2SB] Server-side model change not implemented yet\n" );
