@@ -80,6 +80,10 @@ private:
 
 using namespace vgui;
 
+// GMod-style: fade the notice out to transparent over the last fraction of a
+// second before it is retired, instead of popping to invisible.
+#define	DEATHNOTICE_FADE_OUT	0.6f
+
 DECLARE_HUDELEMENT( CHudDeathNotice );
 
 //-----------------------------------------------------------------------------
@@ -112,6 +116,7 @@ void CHudDeathNotice::ApplySchemeSettings( IScheme *scheme )
 void CHudDeathNotice::Init( void )
 {
 	ListenForGameEvent( "player_death" );	
+	ListenForGameEvent( "entity_killed" );
 }
 
 //-----------------------------------------------------------------------------
@@ -173,6 +178,11 @@ void CHudDeathNotice::Paint()
 			iVictimTeam = g_PR->GetTeam( m_DeathNotices[i].Victim.iEntIndex );
 		}
 
+		// Fade the whole row out over the last DEATHNOTICE_FADE_OUT seconds.
+		float flRemaining = m_DeathNotices[i].flDisplayTime - gpGlobals->curtime;
+		float flAlpha = clamp( flRemaining / DEATHNOTICE_FADE_OUT, 0.0f, 1.0f );
+		int iAlpha = (int)( 255.0f * flAlpha );
+
 		g_pVGuiLocalize->ConvertANSIToUnicode( m_DeathNotices[i].Victim.szName, victim, sizeof( victim ) );
 		g_pVGuiLocalize->ConvertANSIToUnicode( m_DeathNotices[i].Killer.szName, killer, sizeof( killer ) );
 
@@ -217,11 +227,12 @@ void CHudDeathNotice::Paint()
 			// so the name isn't tinted with an arbitrary unassigned-team colour.
 			if ( m_DeathNotices[i].Killer.iEntIndex == 0 )
 			{
-				surface()->DrawSetTextColor( Color( 235, 235, 235, 255 ) );
+				surface()->DrawSetTextColor( Color( 235, 235, 235, iAlpha ) );
 			}
 			else
 			{
-				SetColorForNoticePlayer( iKillerTeam );
+				Color clr = GameResources()->GetTeamColor( iKillerTeam );
+				surface()->DrawSetTextColor( Color( clr.r(), clr.g(), clr.b(), (int)( clr.a() * flAlpha ) ) );
 			}
 
 			// Draw killer's name
@@ -231,14 +242,15 @@ void CHudDeathNotice::Paint()
 			surface()->DrawGetTextPos( x, y );
 		}
 
-		Color iconColor( 255, 80, 0, 255 );
+		Color iconColor( 255, 80, 0, iAlpha );
 
 		// Draw death weapon
 		//If we're using a font char, this will ignore iconTall and iconWide
 		icon->DrawSelf( x, y, iconWide, iconTall, iconColor );
 		x += iconWide;		
 
-		SetColorForNoticePlayer( iVictimTeam );
+		Color clrVictim = GameResources()->GetTeamColor( iVictimTeam );
+		surface()->DrawSetTextColor( Color( clrVictim.r(), clrVictim.g(), clrVictim.b(), (int)( clrVictim.a() * flAlpha ) ) );
 
 		// Draw victims name
 		surface()->DrawSetTextPos( x, y );
@@ -309,6 +321,64 @@ void CHudDeathNotice::FireGameEvent( IGameEvent * event )
 
 	if ( hud_deathnotice_time.GetFloat() == 0 )
 		return;
+
+	// A player killed a non-player entity (NPC / prop). The server ships the
+	// attacker's userid in attacker_uid and the victim's classname in
+	// victimclass. Show it as a "PlayerName <icon> VictimName" killfeed entry the
+	// same way as a player death, so it inherits the correct position/font/fade.
+	if ( !Q_stricmp( event->GetName(), "entity_killed" ) )
+	{
+		int iAttackerUID = event->GetInt( "attacker_uid" );
+		if ( iAttackerUID != 0 )
+		{
+			int iKillerEnt = engine->GetPlayerForUserID( iAttackerUID );
+			if ( iKillerEnt != 0 && iKillerEnt != -1 )
+			{
+				const char *szKillerName = g_PR->GetPlayerName( iKillerEnt );
+				if ( !szKillerName )
+					szKillerName = "";
+
+				// Ignore player-vs-player kills here (those arrive via player_death).
+				const char *szVictimClass = event->GetString( "victimclass", "" );
+				if ( Q_stricmp( szVictimClass, "player" ) != 0 )
+				{
+					// Do we have too many death messages in the queue?
+					if ( m_DeathNotices.Count() > 0 &&
+						m_DeathNotices.Count() >= (int)m_flMaxDeathNotices )
+					{
+						m_DeathNotices.Remove(0);
+					}
+
+					char szVictimName[ MAX_PLAYER_NAME_LENGTH ];
+					GetDisplayNameFromClassname( szVictimClass, szVictimName, sizeof( szVictimName ) );
+
+					char fullkilledwith[128];
+					const char *pszWeapon = event->GetString( "weapon", "" );
+					if ( pszWeapon && *pszWeapon )
+						Q_snprintf( fullkilledwith, sizeof(fullkilledwith), "death_%s", pszWeapon );
+					else
+						fullkilledwith[0] = 0;
+
+					DeathNoticeItem deathMsg;
+					deathMsg.Killer.iEntIndex = iKillerEnt;
+					deathMsg.Victim.iEntIndex = 0;
+					Q_strncpy( deathMsg.Killer.szName, szKillerName, MAX_PLAYER_NAME_LENGTH );
+					Q_strncpy( deathMsg.Victim.szName, szVictimName, MAX_PLAYER_NAME_LENGTH );
+					deathMsg.flDisplayTime = gpGlobals->curtime + hud_deathnotice_time.GetFloat();
+					deathMsg.iSuicide = 0;
+					deathMsg.bHeadshot = false;
+					deathMsg.iconDeath = gHUD.GetIcon( fullkilledwith );
+					if ( !deathMsg.iconDeath )
+						deathMsg.iconDeath = m_iconD_skull;
+
+					m_DeathNotices.AddToTail( deathMsg );
+
+					Msg( "%s killed %s\n", deathMsg.Killer.szName, deathMsg.Victim.szName );
+				}
+			}
+		}
+		return;
+	}
 
 	// the event should be "player_death"
 	int killer = engine->GetPlayerForUserID( event->GetInt("attacker") );
