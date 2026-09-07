@@ -165,8 +165,9 @@ CHudKillFeed::CHudKillFeed( const char *pElementName ) :
 	m_iconD_skull = NULL;
 	m_iKillIconTex = -1;
 
-	// Don't hide this element with the rest of the HUD when we die.
-	SetHiddenBits( HIDEHUD_MISCSTATUS );
+	// Never hide the death notice when the local player dies (the player must
+	// see who killed them), so don't register any HIDEHUD_* bits.
+	SetHiddenBits( 0 );
 }
 
 //-----------------------------------------------------------------------------
@@ -468,26 +469,53 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		int victim = engine->GetPlayerForUserID( event->GetInt("userid") );
 		int iKillerUID = event->GetInt( "attacker" );
 
-		const char *killer_name = ( killer != 0 && killer != -1 ) ? g_PR->GetPlayerName( killer ) : "";
 		const char *victim_name = ( victim != 0 && victim != -1 ) ? g_PR->GetPlayerName( victim ) : "";
-
-		if ( !killer_name )
-			killer_name = "";
 		if ( !victim_name )
 			victim_name = "";
 
 		const char *killedwith = event->GetString( "weapon" );
+		// When the killer is not a real player (an NPC / world), the server
+		// fills "attackername" with the killer's class name (e.g. npc_headcrab).
+		const char *pszAttackerName = event->GetString( "attackername", "" );
 
-		deathMsg.Killer.iEntIndex = killer;
 		deathMsg.Victim.iEntIndex = victim;
-		Q_strncpy( deathMsg.Killer.szName, killer_name, MAX_PLAYER_NAME_LENGTH );
 		Q_strncpy( deathMsg.Victim.szName, victim_name, MAX_PLAYER_NAME_LENGTH );
-
-		deathMsg.bKillerIsPlayer = ( killer != 0 && killer != -1 );
 		deathMsg.bVictimIsNPC = false;
 
-		// Suicide / world kill (attacker is 0 or the killer is the victim).
-		deathMsg.iSuicide = ( !killer || killer == victim || iKillerUID == 0 );
+		bool bKillerIsPlayer = ( killer != 0 && killer != -1 );
+
+		if ( bKillerIsPlayer )
+		{
+			// Player killed the victim.
+			const char *killer_name = g_PR->GetPlayerName( killer );
+			if ( !killer_name )
+				killer_name = "";
+
+			deathMsg.Killer.iEntIndex = killer;
+			Q_strncpy( deathMsg.Killer.szName, killer_name, MAX_PLAYER_NAME_LENGTH );
+			deathMsg.bKillerIsPlayer = true;
+			deathMsg.iSuicide = ( killer == victim );	// killed themselves
+		}
+		else if ( pszAttackerName && pszAttackerName[0] )
+		{
+			// A non-player entity (NPC / world) killed the victim.
+			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
+			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+
+			deathMsg.Killer.iEntIndex = 0;
+			Q_strncpy( deathMsg.Killer.szName, szKillerDisplay, MAX_PLAYER_NAME_LENGTH );
+			deathMsg.bKillerIsPlayer = false;
+			deathMsg.iSuicide = 0;	// an entity killed them, not self/world
+			deathMsg.bVictimIsNPC = false;
+		}
+		else
+		{
+			// No attacker name: world / suicide.
+			deathMsg.Killer.iEntIndex = 0;
+			deathMsg.Killer.szName[0] = 0;
+			deathMsg.bKillerIsPlayer = false;
+			deathMsg.iSuicide = 1;
+		}
 
 		char fullkilledwith[128];
 		if ( killedwith && *killedwith )
