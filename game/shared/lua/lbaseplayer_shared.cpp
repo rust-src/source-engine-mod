@@ -21,6 +21,7 @@
 #include "SoundEmitterSystem/lisoundemittersystembase.h"
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
+#include "lcolor.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -915,6 +916,53 @@ static int CBasePlayer___tostring (lua_State *L) {
 }
 
 
+
+//-----------------------------------------------------------------------------
+// Per-player sleeve colour - GMod player:GetPlayerColor / player:SetPlayerColor.
+// The c_arms "PlayerColor" material proxy (client) reads the LOCAL player's
+// colour via HL2SB_GetPlayerColor and tints the sleeves. Kept keyed by userid in
+// a map so we don't add a member to the shared networked player class.
+//-----------------------------------------------------------------------------
+static CUtlMap<int, Color> s_PlayerColor;
+static bool s_PlayerColorInit = false;
+
+Color HL2SB_GetPlayerColor( int iUserID )
+{
+	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
+	int idx = s_PlayerColor.Find( iUserID );
+	if ( idx == s_PlayerColor.InvalidIndex() )
+		return Color( 62, 88, 106, 255 );	// GMod teal fallback
+	return s_PlayerColor[ idx ];
+}
+
+void HL2SB_SetPlayerColor( int iUserID, const Color &clr )
+{
+	if ( !s_PlayerColorInit ) { s_PlayerColor.SetLessFunc( DefLessFunc( int ) ); s_PlayerColorInit = true; }
+	s_PlayerColor.InsertOrReplace( iUserID, clr );
+}
+
+static int CBasePlayer_GetPlayerColor (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  lua_pushcolor(L, HL2SB_GetPlayerColor( pPlayer->GetUserID() ));
+  return 1;
+}
+
+static int CBasePlayer_SetPlayerColor (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  Color clr = luaL_checkcolor(L, 2);
+  HL2SB_SetPlayerColor( pPlayer->GetUserID(), clr );
+#ifndef CLIENT_DLL
+  // Mirror the colour to the player's client so the PlayerColor material proxy
+  // (client) renders the tint. The colour decision stays in Lua; this only
+  // transports the chosen value.
+  char szCmd[ 64 ];
+  Q_snprintf( szCmd, sizeof( szCmd ), "hl2sb_setplayercolor %d %d %d %d\n",
+              clr.r(), clr.g(), clr.b(), clr.a() );
+  engine->ClientCommand( pPlayer->edict(), szCmd );
+#endif
+  return 0;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"AbortReload", CBasePlayer_AbortReload},
   {"AddToPlayerSimulationList", CBasePlayer_AddToPlayerSimulationList},
@@ -959,6 +1007,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetTracerType", CBasePlayer_GetTracerType},
   {"GetUseEntity", CBasePlayer_GetUseEntity},
   {"GetUserID", CBasePlayer_GetUserID},
+  {"GetPlayerColor", CBasePlayer_GetPlayerColor},
+  {"SetPlayerColor", CBasePlayer_SetPlayerColor},
+
   {"GetViewModel", CBasePlayer_GetViewModel},
   {"GetWaterJumpTime", CBasePlayer_GetWaterJumpTime},
   {"GetWeapon", CBasePlayer_GetWeapon},
