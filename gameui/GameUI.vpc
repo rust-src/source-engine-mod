@@ -16,7 +16,7 @@ $Configuration
 	$Compiler
 	{
 		$AdditionalIncludeDirectories	"$BASE;.\;$SRCDIR\vgui2\include;$SRCDIR\vgui2\controls;$SRCDIR\common\GameUI"
-		$PreprocessorDefinitions		"$BASE;GAMEUI_EXPORTS;VERSION_SAFE_STEAM_API_INTERFACES"
+		$PreprocessorDefinitions		"$BASE;GAMEUI_EXPORTS;VERSION_SAFE_STEAM_API_INTERFACES;HAVE_PNG"
 	}
 
 	$Linker
