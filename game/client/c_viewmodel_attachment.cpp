@@ -17,6 +17,10 @@
 #include "model_types.h"
 #include "cliententitylist.h"
 #include "gamestringpool.h"
+#include "materialsystem/imaterialproxy.h"
+#include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialvar.h"
+#include "c_baseplayer.h"
 #include "tier0/memdbgon.h"
 
 // Master switch for the c_hands system
@@ -36,6 +40,38 @@ ConVar cl_hands_angle_yaw( "cl_hands_angle_yaw", "0", FCVAR_ARCHIVE, "Hands mode
 ConVar cl_hands_angle_roll( "cl_hands_angle_roll", "0", FCVAR_ARCHIVE, "Hands model viewmodel-space roll correction (degrees)" );
 
 ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands debug output" );
+
+//-----------------------------------------------------------------------------
+// Global registry of live hands-attachment entities. A hands entity leaked from
+// a previous session (its owning viewmodel died without releasing it) keeps
+// rendering as a "proliferated" second hand - the exact artifact the player
+// sees after reconnecting. Registering them lets a spawn/level-change clean
+// every leftover at once.
+//-----------------------------------------------------------------------------
+static CUtlVector< CHandle< C_ViewmodelAttachment > > s_HandsAttachments;
+
+void HL2SB_RegisterHandsAttachment( C_ViewmodelAttachment *pAttach )
+{
+	if ( pAttach )
+		s_HandsAttachments.AddToTail( pAttach );
+}
+
+void HL2SB_UnregisterHandsAttachment( C_ViewmodelAttachment *pAttach )
+{
+	if ( pAttach )
+		s_HandsAttachments.FindAndRemove( pAttach );
+}
+
+void HL2SB_DestroyAllHandsAttachments( void )
+{
+	for ( int i = s_HandsAttachments.Count() - 1; i >= 0; --i )
+	{
+		C_ViewmodelAttachment *p = s_HandsAttachments[ i ].Get();
+		if ( p )
+			p->Release();
+	}
+	s_HandsAttachments.RemoveAll();
+}
 
 // When enabled, skip merging hands onto viewmodels that already draw their own
 // arms (stock HL2/EP2/HL2MP weapon viewmodels, which reference the shared
@@ -65,6 +101,7 @@ C_ViewmodelAttachment::C_ViewmodelAttachment( void ) :
 //-----------------------------------------------------------------------------
 C_ViewmodelAttachment::~C_ViewmodelAttachment( void )
 {
+	HL2SB_UnregisterHandsAttachment( this );
 	DetachFromViewmodel();
 }
 
@@ -113,6 +150,9 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	SetMoveType( MOVETYPE_NONE );
 	AddSolidFlags( FSOLID_NOT_SOLID );
 	SetCollisionGroup( COLLISION_GROUP_NONE );
+
+	// Track this entity so a respawn/level-change can destroy any leftovers.
+	HL2SB_RegisterHandsAttachment( this );
 
 	return true;
 }
@@ -188,7 +228,11 @@ CStudioHdr *C_ViewmodelAttachment::OnNewModel( void )
 	int iIdle = LookupSequence( "idle" );
 	int iRef = LookupSequence( "reference" );
 
-	m_iDefaultSequence = ( iProp >= 0 ) ? iProp : ( ( iIdle >= 0 ) ? iIdle : iRef );
+	// Prefer a gripping hold pose ("idle") over "proportions". "proportions" is
+	// an autoplay-build pose with the fingers spread for calibration; a c_arms
+	// rig resting on it looks like the hands are open/floating beside the gun.
+	// "idle" is the relaxed two-handed grip and reads correctly on the weapon.
+	m_iDefaultSequence = ( iIdle >= 0 ) ? iIdle : ( ( iRef >= 0 ) ? iRef : iProp );
 
 	if ( m_iDefaultSequence >= 0 && GetSequence() < 0 )
 	{
@@ -381,3 +425,73 @@ int C_ViewmodelAttachment::ShouldTransmit( const CCheckTransmitInfo *pInfo, cons
 	// Always transmit - it's attached to a viewmodel
 	return FL_EDICT_ALWAYS;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: "PlayerColor" material proxy - tints a material (e.g. the GMod
+//          c_arms sleeves) by the local player's color, so each player's
+//          arms/sleeves render in their own color. This is the proxy the GMod
+//          c_arms_citizen_sleeves.vmt references via:
+//            Proxies { PlayerColor { resultVar $color2 default 0.2 0.4 0.7 } }
+//          HL2SB did not register it, so those materials failed to compile.
+//-----------------------------------------------------------------------------
+class CPlayerColorProxy : public IMaterialProxy
+{
+public:
+	CPlayerColorProxy( void ) : m_pColor( NULL )
+	{
+		m_flDefault[0] = 0.2f; m_flDefault[1] = 0.4f; m_flDefault[2] = 0.7f;
+	}
+	virtual ~CPlayerColorProxy( void ) { }
+
+	virtual bool Init( IMaterial *pMaterial, KeyValues *pKeyValues )
+	{
+		bool found = false;
+		const char *pszResultVar = pKeyValues->GetString( "resultVar", "$color2" );
+		m_pColor = pMaterial->FindVar( pszResultVar, &found, false );
+
+		// Parse the "default" color (e.g. "0.2 0.4 0.7").
+		const char *pszDefault = pKeyValues->GetString( "default", NULL );
+		if ( pszDefault )
+		{
+			sscanf( pszDefault, "%f %f %f", &m_flDefault[0], &m_flDefault[1], &m_flDefault[2] );
+		}
+
+		return m_pColor != NULL;
+	}
+
+	virtual void OnBind( void *pBindable )
+	{
+		if ( !m_pColor )
+			return;
+
+		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
+
+		// Prefer the local player's render color so sleeves match the model tint.
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		if ( pLocal )
+		{
+			color32 c = pLocal->GetRenderColor();
+			// Only use it if the player actually has a non-default color set;
+			// otherwise keep the material's default so it doesn't wash to white.
+			if ( c.r != 255 || c.g != 255 || c.b != 255 )
+			{
+				r = c.r / 255.0f;
+				g = c.g / 255.0f;
+				b = c.b / 255.0f;
+			}
+		}
+
+		m_pColor->SetVecValue( r, g, b );
+	}
+
+	virtual void Release( void ) { }
+
+	virtual IMaterial *GetMaterial( void ) { return NULL; }
+
+private:
+	IMaterialVar	*m_pColor;
+	float			m_flDefault[3];
+};
+
+EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PROXY_INTERFACE_VERSION );
+

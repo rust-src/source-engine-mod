@@ -7,6 +7,7 @@
 //===========================================================================//
 #include "cbase.h"
 #include "c_baseplayer.h"
+#include "hands_model_mapping.h"	// g_pszLastHandsModel / g_pszFailedHandsModel
 #include "flashlighteffect.h"
 #include "weapon_selection.h"
 #include "history_resource.h"
@@ -463,6 +464,17 @@ void C_BasePlayer::Spawn( void )
 	// Clear all flags except for FL_FULLEDICT
 	ClearFlags();
 	AddFlag( FL_CLIENT );
+
+	// The hands cache can carry stale state across a disconnect/reconnect or a
+	// fresh map: a previous session's viewmodel/hands entity lingers and the
+	// stale key makes the respawn skip a clean attach (so the correct hand is
+	// missing while a leftover one renders). Clear it so every spawn attaches
+	// the hands fresh.
+	g_pszLastHandsModel[0] = '\0';
+	g_pszFailedHandsModel[0] = '\0';
+	// Destroy any hands attachments leaked from a previous session before
+	// respawning - otherwise they render as a proliferated second hand.
+	HL2SB_DestroyAllHandsAttachments();
 
 	int effects = GetEffects() & EF_NOSHADOW;
 	SetEffects( effects );

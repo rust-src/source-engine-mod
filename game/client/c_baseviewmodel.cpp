@@ -330,14 +330,38 @@ int C_BaseViewModel::DrawModel( int flags )
 		}
 	}
 
-	// Draw hands attachment if present. The attachment renders via
-	// InternalDrawModel (no EF_BONEMERGE follow re-entrancy), so no guard is
-	// needed here.
+	// Draw hands attachment. NOTE: only ONE render path must draw the arms -
+	// the manual InternalDrawModel below. As an EF_BONEMERGE follower the arms
+	// are NOT auto-rendered by the viewmodel's pass (removed from the leaf
+	// system), so this manual call is the single source of the correct hand.
+	// Do not also let the engine draw it as a child, and always destroy stale
+	// attachments on respawn (C_BasePlayer::Spawn) so a leaked one from a
+	// previous session doesn't render as a second, proliferated hand.
 	if ( m_hHandsAttachment.Get() )
 	{
-		// Sync animation state first so the bone merge reads this frame's bones
-		m_hHandsAttachment->SyncToViewModel( this );
-		m_hHandsAttachment->DrawModel( flags );
+		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		if ( pOwner && pOwner->IsAlive() )
+		{
+			// Only the held weapon's viewmodel draws its arms.
+			C_BaseCombatWeapon *pActive = pOwner->GetActiveWeapon();
+			C_BaseCombatWeapon *pThis = GetOwningWeapon();
+			if ( pActive && pThis && pActive != pThis )
+			{
+				// Not the held weapon - leave it.
+			}
+			else
+			{
+				C_ViewmodelAttachment *pAttach = m_hHandsAttachment.Get();
+				CStudioHdr *pHdr = pAttach ? pAttach->GetModelPtr() : NULL;
+				// Wait until the hands model is loaded (bones present) before
+				// drawing - an unloaded rig renders a degenerate floating hand.
+				if ( pHdr && pHdr->numbones() > 0 )
+				{
+					m_hHandsAttachment->SyncToViewModel( this );
+					m_hHandsAttachment->DrawModel( flags );
+				}
+			}
+		}
 	}
 
 	return ret;
@@ -472,6 +496,22 @@ void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
 	OnLatchInterpolatedVariables( LATCH_ANIMATION_VAR );
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: Re-run the hands decision once the model (and its texture table) is
+//          available. On a fast reconnect the first UpdateHandsAttachment can
+//          run before the viewmodel model data is parsed, so ViewModelHasBakedArms
+//          sees an empty texture table and merges a c_hands pair onto a weapon
+//          that actually draws its own baked arms -> double hands. Refreshing
+//          here re-checks the bake state and releases the merged pair if the
+//          weapon has its own arms.
+//-----------------------------------------------------------------------------
+CStudioHdr *C_BaseViewModel::OnNewModel( void )
+{
+	CStudioHdr *pResult = BaseClass::OnNewModel();
+	UpdateHandsAttachment();
+	return pResult;
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: Add entity to visible view models list
@@ -593,6 +633,18 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
 	if ( !pOwner )
 		return;
+
+	// Player is dead: holster the hands. Without this they stay EF_BONEMERGE'd
+	// to the (dead/holstered) viewmodel and float out into the world, and the
+	// still-set g_pszLastHandsModel cache makes the respawn's UpdateHandsAttachment
+	// early-out on the stale attachment instead of building a fresh one (so the
+	// respawn has no hands). Releasing here clears the cache and detaches the
+	// arms; the respawn's OnDataChanged then re-attaches them cleanly.
+	if ( !pOwner->IsAlive() )
+	{
+		ReleaseHandsAttachment();
+		return;
+	}
 
 	// Master switch off - drop any existing attachment
 	if ( !cl_hands.GetBool() )
