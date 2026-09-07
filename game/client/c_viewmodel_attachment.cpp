@@ -76,16 +76,27 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	if ( !pszModelName || !pszModelName[0] )
 		return false;
 
-	// Client-side CBaseEntity::PrecacheModel is just an index lookup - it loads
-	// nothing. Models referenced by cfg/playermodel are already in the model
-	// pool (the server precaches them at config load), but models coming from
-	// the cl_hands_model override are not. Load them dynamically into the pool.
-	if ( modelinfo->GetModelIndex( pszModelName ) == -1 )
+	// Register the hands model in the client model pool *by name*. Client-side
+	// CBaseEntity::PrecacheModel is just an index lookup, and engine->LoadModel
+	// alone can leave the name unindexed: on a fresh connection (where the
+	// server's precache of these player-only c_arms models hasn't arrived yet)
+	// GetModelIndex returned -1 and InitializeAsClientEntity failed, which
+	// dropped the hands and spammed on every reconnect. RegisterDynamicModel
+	// guarantees a valid index (bClientSide = don't wait for network precache),
+	// and if the model data is still loading asynchronously C_BaseAnimating's
+	// own OnNewModel load-callback completes the bones/skins when it arrives.
+	int iModelIndex = modelinfo->GetModelIndex( pszModelName );
+	if ( iModelIndex == -1 )
 	{
-		engine->LoadModel( pszModelName );
+		iModelIndex = modelinfo->RegisterDynamicModel( pszModelName, true );
+	}
+	if ( iModelIndex == -1 )
+	{
+		Warning( "[HL2SB-HANDS] SetHandsModel: could not register model %s\n", pszModelName );
+		return false;
 	}
 
-	if ( !InitializeAsClientEntity( pszModelName, RENDER_GROUP_OPAQUE_ENTITY ) )
+	if ( !InitializeAsClientEntityByIndex( iModelIndex, RENDER_GROUP_OPAQUE_ENTITY ) )
 	{
 		Warning( "[HL2SB-HANDS] SetHandsModel: InitializeAsClientEntity failed for %s\n", pszModelName );
 		return false;
@@ -103,7 +114,6 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 	AddSolidFlags( FSOLID_NOT_SOLID );
 	SetCollisionGroup( COLLISION_GROUP_NONE );
 
-	Msg( "[HL2SB-HANDS] SetHandsModel: %s OK\n", pszModelName );
 	return true;
 }
 

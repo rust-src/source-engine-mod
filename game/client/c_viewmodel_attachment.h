@@ -31,7 +31,7 @@ public:
 	~C_ViewmodelAttachment( void );
 
 	// Initialize as a proper client entity and load the hands model.
-	// Returns false if the model could not be loaded.
+	// Returns false if the model could not be registered at all.
 	bool SetHandsModel( const char *pszModelName );
 
 	// Attach to a viewmodel entity (SetParent + EF_BONEMERGE follow).
