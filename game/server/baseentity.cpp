@@ -1659,6 +1659,65 @@ void CBaseEntity::SendOnKilledGameEvent( const CTakeDamageInfo &info )
 			event->SetInt( "entindex_inflictor", info.GetInflictor()->entindex() );
 		}		
 		event->SetInt( "damagebits", info.GetDamageType() );
+
+		// hl2sb: enrich the event so the client can render a GMod-style killfeed
+		// entry when a player kills an entity. attacker_uid is set only when a
+		// player is the killer, letting the client tell a player kill apart from
+		// an NPC/world kill.
+		CBaseEntity *pAttacker = info.GetAttacker();
+		if ( pAttacker )
+		{
+			event->SetString( "attackername", pAttacker->GetClassname() );
+
+			CBasePlayer *pPlayer = ToBasePlayer( pAttacker );
+			event->SetInt( "attacker_uid", pPlayer ? pPlayer->GetUserID() : 0 );
+		}
+		else
+		{
+			event->SetString( "attackername", "" );
+			event->SetInt( "attacker_uid", 0 );
+		}
+
+		event->SetString( "victimclass", GetClassname() );
+
+		// The weapon that dealt the damage. Prefer the killer's current weapon
+		// (most accurate for gun/melee kills), then the weapon entity, then the
+		// inflictor. Strip common prefixes so the client can look up a clean
+		// "death_<weapon>" icon, matching the player-death event.
+		const char *szWeapon = "";
+		CBasePlayer *pKiller = ToBasePlayer( info.GetAttacker() );
+		CBaseCombatWeapon *pActiveWeapon = pKiller ? pKiller->GetActiveWeapon() : NULL;
+		CBaseEntity *pWeapon = info.GetWeapon();
+		CBaseEntity *pInflictor = info.GetInflictor();
+		if ( pActiveWeapon && pActiveWeapon->GetClassname() && pActiveWeapon->GetClassname()[0] )
+		{
+			szWeapon = pActiveWeapon->GetClassname();
+		}
+		else if ( pWeapon && pWeapon->GetClassname() && pWeapon->GetClassname()[0] )
+		{
+			szWeapon = pWeapon->GetClassname();
+		}
+		else if ( pInflictor && pInflictor->GetClassname() && pInflictor->GetClassname()[0] )
+		{
+			szWeapon = pInflictor->GetClassname();
+		}
+
+		char szWeaponName[64];
+		Q_strncpy( szWeaponName, szWeapon, sizeof( szWeaponName ) );
+
+		const char *prefixes[] = { "weapon_", "npc_", "func_", "prop_", "item_", "entity_" };
+		for ( int i = 0; i < ARRAYSIZE( prefixes ); i++ )
+		{
+			int nLen = Q_strlen( prefixes[i] );
+			if ( !Q_strnicmp( szWeaponName, prefixes[i], nLen ) )
+			{
+				Q_strncpy( szWeaponName, szWeaponName + nLen, sizeof( szWeaponName ) );
+				break;
+			}
+		}
+
+		event->SetString( "weapon", szWeaponName );
+
 		gameeventmanager->FireEvent( event );
 	}
 }
