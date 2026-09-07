@@ -273,6 +273,14 @@ public:
 		SetMoveable( true );
 		SetVisible( true );
 		SetSizeable( true );
+
+		// GMod-style: the spawn menu must NOT capture keyboard input, otherwise
+		// vgui treats the popup as the key focus and swallows WASD before the
+		// engine can fire +forward/+back/+moveleft/+moveright, so the player
+		// cannot walk while the menu is open. Leave mouse input enabled so the
+		// tabs / items still respond to clicks.
+		SetKeyBoardInputEnabled( false );
+		SetMouseInputEnabled( true );
 	}
 
 	~CSMenu()
