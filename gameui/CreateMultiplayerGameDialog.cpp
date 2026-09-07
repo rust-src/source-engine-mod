@@ -64,7 +64,8 @@ public:
 		m_pClickCatcher = new CMouseMessageForwardingPanel( this, NULL );
 		m_pClickCatcher->SetZPos( 2 );
 
-		SetSize( 180, 132 );
+		// Square-ish card to match the 128x128 map thumbnails (image + name bar)
+		SetSize( 150, 178 );
 		SetPaintBackgroundEnabled( true );
 		m_bSelected = false;
 	}
@@ -91,13 +92,23 @@ public:
 		int w, h;
 		GetSize( w, h );
 
+		// Square thumbnail area (matches the 128x128 source), name bar at bottom
+		int nameBarH = 24;
+		int pad = 6;
+
 		if ( m_pThumb )
 		{
-			m_pThumb->SetBounds( 4, 4, w - 8, h - 30 );
+			// Keep the thumb square, centered horizontally, filling the height above the name bar
+			int thumbArea = h - nameBarH - pad;
+			int size = w - pad * 2;
+			if ( size > thumbArea )
+				size = thumbArea;
+			int x = (w - size) / 2;
+			m_pThumb->SetBounds( x, pad, size, size );
 		}
 		if ( m_pName )
 		{
-			m_pName->SetBounds( 4, h - 24, w - 8, 20 );
+			m_pName->SetBounds( pad, h - nameBarH - 2, w - pad * 2, nameBarH - 2 );
 		}
 	}
 

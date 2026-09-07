@@ -30,6 +30,9 @@ public:
 	void SetImage( const char *pszPath );
 	void SetMapImage( const char *pszMapName );
 
+	// Preserve the image aspect ratio, centered inside the panel rect.
+	void SetPreserveAspectRatio( bool bPreserve ) { m_bPreserveAspect = bPreserve; }
+
 	virtual void Paint( void );
 
 private:
@@ -39,6 +42,7 @@ private:
 	int m_iImageWidth, m_iImageHeight;
 	bool m_bHasValidTexture, m_bLoadedTexture;
 	bool m_bScaleToFit;
+	bool m_bPreserveAspect;
 	char m_szImagePath[256];
 };
 
