@@ -12,6 +12,7 @@
 
 #include "convar.h"
 #include "tier0/platform.h"  // MAX_PATH
+#include "color.h"           // Color (per-player sleeve colour)
 
 // Default hands model when no mapping is found
 #define HANDS_MODEL_DEFAULT "models/arms/hands.mdl"
@@ -33,6 +34,12 @@ const char *HL2SB_GetActiveHandsModel( void );
 // level change so a hands entity leaked from a previous session (one that kept
 // rendering as a "proliferated" second hand) is torn down instead of lingering.
 void HL2SB_DestroyAllHandsAttachments( void );
+
+// Per-player sleeve colour (GMod player:GetPlayerColor/SetPlayerColor). The
+// c_arms "PlayerColor" material proxy reads the local player's colour.
+// Implemented in game/shared/lua/lbaseplayer_shared.cpp.
+Color HL2SB_GetPlayerColor( int iUserID );
+void HL2SB_SetPlayerColor( int iUserID, const Color &clr );
 
 // How many c_hands entities are alive right now. Each weapon viewmodel owns at
 // most one, so this stays bounded by the number of viewmodels in use.

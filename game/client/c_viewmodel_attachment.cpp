@@ -13,6 +13,7 @@
 #include "cbase.h"
 #include "c_viewmodel_attachment.h"
 #include "c_baseviewmodel.h"
+#include "hands_model_mapping.h"
 #include "bone_setup.h"
 #include "model_types.h"
 #include "cliententitylist.h"
@@ -46,6 +47,24 @@ ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands de
 // (62,88,106)/255. Here the local player's sleeve colour is a client convar.
 ConVar hl2sb_player_color( "hl2sb_player_color", "0.243 0.345 0.416", FCVAR_ARCHIVE,
 	"c_arms sleeve tint (PlayerColor proxy). GMod default teal 62/88/106. Format: 'r g b'" );
+
+//-----------------------------------------------------------------------------
+// GMod-style per-player sleeve colour. The server sends "hl2sb_setplayercolor
+// <r> <g> <b> <a>" via ClientCommand to a client when a script calls
+// player:SetPlayerColor; this command stores it for the local player so the
+// PlayerColor proxy renders the tint (the colour decision stays in Lua).
+//-----------------------------------------------------------------------------
+static void CC_HL2SB_SetPlayerColor( const CCommand &args )
+{
+	C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+	if ( !pLocal || args.ArgC() < 4 )
+		return;
+	int r = atoi( args[1] ), g = atoi( args[2] ), b = atoi( args[3] );
+	int a = ( args.ArgC() >= 5 ) ? atoi( args[4] ) : 255;
+	HL2SB_SetPlayerColor( pLocal->GetUserID(), Color( r, g, b, a ) );
+}
+static ConCommand hl2sb_setplayercolor( "hl2sb_setplayercolor", CC_HL2SB_SetPlayerColor,
+	"Set the local player's sleeve colour (server sends this). Usage: hl2sb_setplayercolor <r> <g> <b> <a>" );
 
 //-----------------------------------------------------------------------------
 // Global registry of live hands-attachment entities. Every weapon viewmodel
@@ -628,17 +647,28 @@ public:
 		if ( !m_pColor )
 			return;
 
-		// GMod style: the sleeve colour comes from the player's own colour
-		// (player:GetPlayerColor), defaulting to the teal fallback. Here the
-		// local player's colour is the "hl2sb_player_color" convar.
 		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
-		const char *pszCol = hl2sb_player_color.GetString();
-		if ( pszCol && pszCol[0] )
+
+		// GMod style: the sleeve colour is the player's own colour
+		// (player:GetPlayerColor), defaulting to the teal fallback. The arms are
+		// first-person only, so read the local player.
+		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+		if ( pLocal )
 		{
-			sscanf( pszCol, "%f %f %f", &r, &g, &b );
+			Color c = HL2SB_GetPlayerColor( pLocal->GetUserID() );
+			r = c.r() / 255.0f;
+			g = c.g() / 255.0f;
+			b = c.b() / 255.0f;
 		}
-		// Clamp to the 0.01..1.5 range the sleeve vmt's Clamp proxy expects,
-		// so the tint is never blown out.
+		else
+		{
+			// No player yet - fall back to the hl2sb_player_color convar.
+			const char *pszCol = hl2sb_player_color.GetString();
+			if ( pszCol && pszCol[0] )
+				sscanf( pszCol, "%f %f %f", &r, &g, &b );
+		}
+
+		// Clamp to the 0.01..1.5 range the sleeve vmt's Clamp proxy expects.
 		r = clamp( r, 0.01f, 1.5f );
 		g = clamp( g, 0.01f, 1.5f );
 		b = clamp( b, 0.01f, 1.5f );
