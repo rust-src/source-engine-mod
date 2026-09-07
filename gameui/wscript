@@ -114,7 +114,7 @@ def build(bld):
 		'../thirdparty'
 	]
 
-	defines = []
+	defines = ['HAVE_PNG']
 
 	libs = ['tier0','vgui_controls','tier1','tier2','tier3','vstdlib','vtf','bitmap','mathlib','SDL2','steam_api','matsys_controls','JPEG','PNG','ZLIB']
 

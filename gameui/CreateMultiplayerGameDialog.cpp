@@ -16,6 +16,7 @@
 #include "ModInfo.h"
 #include "GameUI_Interface.h"
 #include "PNGImagePanel.h"
+#include "MouseMessageForwardingPanel.h"
 
 #include <stdio.h>
 
@@ -53,9 +54,15 @@ public:
 		Q_strncpy( m_szMapName, pszMapName, sizeof( m_szMapName ) );
 
 		m_pThumb = new CPNGImagePanel( this, "MapThumb" );
+		m_pThumb->SetMouseInputEnabled( false );
 		m_pThumb->SetMapImage( pszMapName );
 
 		m_pName = new Label( this, "MapName", pszMapName );
+		m_pName->SetMouseInputEnabled( false );
+
+		// transparent panel that fills the card and forwards clicks to us
+		m_pClickCatcher = new CMouseMessageForwardingPanel( this, NULL );
+		m_pClickCatcher->SetZPos( 2 );
 
 		SetSize( 180, 132 );
 		SetPaintBackgroundEnabled( true );
@@ -70,6 +77,17 @@ public:
 	{
 		BaseClass::ApplySchemeSettings( pScheme );
 
+		if ( m_pName )
+		{
+			m_pName->SetContentAlignment( Label::a_center );
+			m_pName->SetTextInset( 0, 0 );
+		}
+	}
+
+	virtual void PerformLayout()
+	{
+		BaseClass::PerformLayout();
+
 		int w, h;
 		GetSize( w, h );
 
@@ -80,11 +98,11 @@ public:
 		if ( m_pName )
 		{
 			m_pName->SetBounds( 4, h - 24, w - 8, 20 );
-			m_pName->SetContentAlignment( Label::a_center );
-			m_pName->SetTextInset( 0, 0 );
 		}
 	}
 
+	// Forwarded from the click-catcher panel (CMouseMessageForwardingPanel ->
+	// CallParentFunction("MousePressed")).
 	virtual void OnMousePressed( vgui::MouseCode code )
 	{
 		BaseClass::OnMousePressed( code );
@@ -114,6 +132,7 @@ public:
 private:
 	CPNGImagePanel *m_pThumb;
 	Label *m_pName;
+	CMouseMessageForwardingPanel *m_pClickCatcher;
 	CCreateMultiplayerGameDialog *m_pOwner;
 	char m_szMapName[256];
 	bool m_bSelected;
