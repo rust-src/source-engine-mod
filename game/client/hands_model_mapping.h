@@ -29,6 +29,11 @@ extern char g_pszFailedHandsModel[MAX_PATH];
 // Returns the currently active hands model path, or NULL if none is attached.
 const char *HL2SB_GetActiveHandsModel( void );
 
+// Destroy every live c_hands attachment entity. Called on player spawn /
+// level change so a hands entity leaked from a previous session (one that kept
+// rendering as a "proliferated" second hand) is torn down instead of lingering.
+void HL2SB_DestroyAllHandsAttachments( void );
+
 // Get the hands model path for a given player model
 // Returns NULL if no hands should be shown
 // Uses hl2sb_model_config system for dynamic configuration

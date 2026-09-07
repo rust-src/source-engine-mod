@@ -124,6 +124,11 @@ public:
 	virtual void			OnDataChanged( DataUpdateType_t updateType );
 	virtual void			PostDataUpdate( DataUpdateType_t updateType );
 
+	// Re-run the hands (baked-arms skip) decision once the viewmodel model's
+	// texture table is actually available, so a weapon that bakes its own arms
+	// never gets an extra merged pair on top (the double-hands on reconnect).
+	virtual CStudioHdr		*OnNewModel( void );
+
 	virtual bool			Interpolate( float currentTime );
 
 	bool					ShouldFlipViewModel();
