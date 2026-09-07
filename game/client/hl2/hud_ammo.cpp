@@ -335,7 +335,9 @@ void CHudAmmo::Paint( void )
 {
 	BaseClass::Paint();
 
-#ifndef HL2MP
+	// HL2SB: also draw the ammo icon in the HL2MP-built client (Valve's
+	// stock HL2MP HUD compiles the icon out with `#ifndef HL2MP`, leaving the
+	// label + numbers and a blank space where the ammo icon belongs).
 	if ( m_hCurrentVehicle == NULL && m_iconPrimaryAmmo )
 	{
 		int nLabelHeight;
@@ -348,7 +350,6 @@ void CHudAmmo::Paint( void )
 		
 		m_iconPrimaryAmmo->DrawSelf( x, y, GetFgColor() );
 	}
-#endif // HL2MP
 }
 
 //-----------------------------------------------------------------------------
