@@ -76,6 +76,7 @@ private:
 	char m_szSelectedMap[256];
 
 	bool m_bBotsEnabled;
+	bool m_bBuilt;
 };
 
 #endif // CREATEMULTIPLAYERGAMEDIALOG_H

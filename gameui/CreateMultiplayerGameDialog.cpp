@@ -125,83 +125,15 @@ private:
 CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) : BaseClass(parent, "CreateMultiplayerGameDialog")
 {
 	m_bBotsEnabled = false;
+	m_bBuilt = false;
 	m_pSavedData = NULL;
-
-	SetDeleteSelfOnClose(true);
-	SetTitle("#GameUI_CreateServer", false);
-
-	// Fullscreen
-	int nScreenW, nScreenH;
-	vgui::surface()->GetScreenSize( nScreenW, nScreenH );
-	SetSize( nScreenW, nScreenH );
-	// no title bar chrome
-	SetMenuButtonVisible( false );
-	SetMinimizeButtonVisible( false );
-	SetMaximizeButtonVisible( false );
-	SetCloseButtonVisible( false );
-	SetTitleBarVisible( false );
-
-	// Fake outline buttons
-	SetMoveable( false );
-	SetSizeable( false );
-
-	if ( ModInfo().UseBots() )
-	{
-		m_bBotsEnabled = true;
-	}
-
 	m_szSelectedMap[0] = 0;
 
-	// game mode list (left column)
-	m_pGameModeList = new vgui::PanelListPanel( this, "GameModeList" );
-	m_pGameModeList->SetFirstColumnWidth( 0 );
+	SetDeleteSelfOnClose(true);
 
-	// map grid (center)
-	m_pMapList = new vgui::PanelListPanel( this, "MapList" );
-	m_pMapList->SetFirstColumnWidth( 0 );
-
-	m_pSelectedMapLabel = new Label( this, "SelectedMapLabel", "" );
-	m_pHostName = new TextEntry( this, "HostName" );
-	m_pPassword = new TextEntry( this, "Password" );
-	m_pMaxPlayers = new ComboBox( this, "MaxPlayers", 8, false );
-
-	m_pTitleLabel = new Label( this, "TitleLabel", "#GameUI_CreateServer" );
-	m_pHostNameLabel = new Label( this, "HostNameLabel", "#GameUI_ServerName" );
-	m_pPasswordLabel = new Label( this, "PasswordLabel", "#GameUI_Password" );
-	m_pMaxPlayersLabel = new Label( this, "MaxPlayersLabel", "#GameUI_MaxPlayers" );
-
-	m_pStartButton = new Button( this, "StartButton", "#GameUI_Start" );
-	m_pStartButton->SetCommand( "CreateGame" );
-	m_pStartButton->SetVisible( true );
-
-	m_pBackButton = new Button( this, "BackButton", "#GameUI_Back" );
-	m_pBackButton->SetCommand( "Close" );
-	m_pBackButton->SetVisible( true );
-
-	// max player options
-	for ( int i = 2; i <= 128; i *= 2 )
-	{
-		char sz[16];
-		Q_snprintf( sz, sizeof( sz ), "%d", i );
-		m_pMaxPlayers->AddItem( sz, new KeyValues( "maxplayers", "val", i ) );
-	}
-	m_pMaxPlayers->ActivateItemByRow( 4 ); // 32
-
-	// load config
-	m_pSavedData = new KeyValues( "ServerConfig" );
-	if ( m_pSavedData )
-	{
-		m_pSavedData->LoadFromFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
-	}
-
-	BuildGameModeList();
-	BuildMapGrid();
-
-	// set hostname default
-	if ( m_pHostName )
-	{
-		m_pHostName->SetText( ModInfo().GetGameName() );
-	}
+	// Content & chrome are built in ApplySchemeSettings() (first call), which
+	// runs after the Frame is fully constructed. Building children or invoking
+	// Frame chome mutators here crashes the Frame's half-built internals.
 }
 
 //-----------------------------------------------------------------------------
@@ -300,12 +232,72 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 {
 	BaseClass::ApplySchemeSettings( pScheme );
 
-	if ( m_pHostName )
-		m_pHostName->SetMultiline( false );
-	if ( m_pPassword )
-		m_pPassword->SetMultiline( false );
-	if ( m_pPassword )
-		m_pPassword->SetText( "" );
+	if ( !m_bBuilt )
+	{
+		m_bBuilt = true;
+
+		SetTitle("#GameUI_CreateServer", false);
+
+		if ( ModInfo().UseBots() )
+		{
+			m_bBotsEnabled = true;
+		}
+
+		m_pGameModeList = new vgui::PanelListPanel( this, "GameModeList" );
+		m_pGameModeList->SetFirstColumnWidth( 0 );
+
+		m_pMapList = new vgui::PanelListPanel( this, "MapList" );
+		m_pMapList->SetFirstColumnWidth( 0 );
+
+		m_pSelectedMapLabel = new Label( this, "SelectedMapLabel", "" );
+		m_pHostName = new TextEntry( this, "HostName" );
+		m_pPassword = new TextEntry( this, "Password" );
+		m_pMaxPlayers = new ComboBox( this, "MaxPlayers", 8, false );
+
+		m_pTitleLabel = new Label( this, "TitleLabel", "#GameUI_CreateServer" );
+		m_pHostNameLabel = new Label( this, "HostNameLabel", "#GameUI_ServerName" );
+		m_pPasswordLabel = new Label( this, "PasswordLabel", "#GameUI_Password" );
+		m_pMaxPlayersLabel = new Label( this, "MaxPlayersLabel", "#GameUI_MaxPlayers" );
+
+		m_pStartButton = new Button( this, "StartButton", "#GameUI_Start" );
+		m_pStartButton->SetCommand( "CreateGame" );
+		m_pStartButton->SetVisible( true );
+
+		m_pBackButton = new Button( this, "BackButton", "#GameUI_Back" );
+		m_pBackButton->SetCommand( "Close" );
+		m_pBackButton->SetVisible( true );
+
+		for ( int i = 2; i <= 128; i *= 2 )
+		{
+			char sz[16];
+			Q_snprintf( sz, sizeof( sz ), "%d", i );
+			m_pMaxPlayers->AddItem( sz, new KeyValues( "maxplayers", "val", i ) );
+		}
+		m_pMaxPlayers->ActivateItemByRow( 4 );
+
+		m_pSavedData = new KeyValues( "ServerConfig" );
+		if ( m_pSavedData )
+		{
+			m_pSavedData->LoadFromFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
+		}
+
+		BuildGameModeList();
+		BuildMapGrid();
+
+		if ( m_pHostName )
+			m_pHostName->SetText( ModInfo().GetGameName() );
+		if ( m_pPassword )
+			m_pPassword->SetText( "" );
+		if ( m_pHostName )
+			m_pHostName->SetMultiline( false );
+		if ( m_pPassword )
+			m_pPassword->SetMultiline( false );
+	}
+
+	int nScreenW, nScreenH;
+	vgui::surface()->GetScreenSize( nScreenW, nScreenH );
+	SetSize( nScreenW, nScreenH );
+	SetPos( 0, 0 );
 }
 
 //-----------------------------------------------------------------------------
