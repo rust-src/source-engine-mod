@@ -591,6 +591,29 @@ extern ConVar cl_hands_skip_baked_arms;
 extern ConVar cl_hands_debug;
 
 //-----------------------------------------------------------------------------
+// "Hands released for a vehicle ride" state, indexed by entity index.
+//
+// This cannot live as a member of CBaseViewModel: the class is shared with the
+// server and growing it re-lays-out every dependent translation unit - an
+// incremental build then mixes old and new offsets and corrupts the heap (it
+// happened). MAX_EDICTS bools cost 20 KB once and can never desync.
+//-----------------------------------------------------------------------------
+static bool s_bHandsHeldForVehicle[MAX_EDICTS];
+
+static bool HL2SB_HandsHeldForVehicle( C_BaseViewModel *pVM )
+{
+	int i = pVM->entindex();
+	return ( i >= 0 && i < MAX_EDICTS ) ? s_bHandsHeldForVehicle[ i ] : false;
+}
+
+static void HL2SB_SetHandsHeldForVehicle( C_BaseViewModel *pVM, bool bHeld )
+{
+	int i = pVM->entindex();
+	if ( i >= 0 && i < MAX_EDICTS )
+		s_bHandsHeldForVehicle[ i ] = bHeld;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Does this viewmodel already draw its own arms?
 //          Stock HL2/EP2/HL2MP weapon viewmodels bake the arm/hand mesh into
 //          the model and texture it with the shared "v_hand" material
@@ -679,6 +702,21 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	// arms; the respawn's OnDataChanged then re-attaches them cleanly.
 	if ( !pOwner->IsAlive() )
 	{
+		ReleaseHandsAttachment();
+		return;
+	}
+
+	// In a vehicle the engine draws the VEHICLE viewmodel instead of the
+	// weapon's, so our arms are not rendered - and while driving, nothing ever
+	// touches this viewmodel's networked state, so leaving the vehicle does not
+	// re-run this function either: the hands stayed gone until a reload or a
+	// respawn. Release them for the ride (they would merge onto bones nobody
+	// refreshes otherwise), and remember that we did: exiting drive mode
+	// repaints the HUD-hide flag on the player, whose OnDataChanged re-runs the
+	// hands decision for every viewmodel and takes the rebuild path below.
+	if ( pOwner->GetVehicle() != NULL )
+	{
+		HL2SB_SetHandsHeldForVehicle( this, true );
 		ReleaseHandsAttachment();
 		return;
 	}
@@ -794,11 +832,15 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	// Already holding exactly this hands model? Nothing to do. This is the hot
 	// path - OnDataChanged runs on every animation parity change, so the
 	// comparison has to be cheap and must be per-viewmodel: each weapon's
-	// viewmodel owns its own single arms entity.
-	if ( m_hHandsAttachment.Get() && !Q_stricmp( m_hHandsAttachment->GetHandsKey(), pszHandsModel ) )
+	// viewmodel owns its own single arms entity. (When we had released for a
+	// vehicle ride the handle is NULL and the flag below forces the rebuild.)
+	if ( m_hHandsAttachment.Get() && !HL2SB_HandsHeldForVehicle( this )
+			&& !Q_stricmp( m_hHandsAttachment->GetHandsKey(), pszHandsModel ) )
 	{
 		return;
 	}
+
+	HL2SB_SetHandsHeldForVehicle( this, false );
 
 	// Death only HOLSTERS the weapon, so a transient failed-model lookup or
 	// failed-attach inside the death/respawn window could leave the sticky
