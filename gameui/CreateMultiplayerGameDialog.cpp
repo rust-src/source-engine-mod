@@ -196,7 +196,7 @@ void CCreateMultiplayerGameDialog::PerformLayout()
 	int sw = nScreenW;
 	int sh = nScreenH;
 
-	// left column (game modes)
+	// left column (map categories)
 	int leftX = (int)(sw * 0.02);
 	int leftW = (int)(sw * 0.14);
 	int topY = (int)(sh * 0.16);
@@ -204,6 +204,19 @@ void CCreateMultiplayerGameDialog::PerformLayout()
 
 	if ( m_pGameModeList )
 		m_pGameModeList->SetBounds( leftX, topY, leftW, bottomY - topY );
+
+	// layout the category buttons vertically in the left column
+	{
+		int y = topY;
+		for ( int i = 0; i < m_CategoryButtons.Count(); ++i )
+		{
+			if ( m_CategoryButtons[i] )
+			{
+				m_CategoryButtons[i]->SetBounds( leftX, y, leftW, 28 );
+				y += 34;
+			}
+		}
+	}
 
 	// center map grid
 	int mapX = (int)(sw * 0.18);
@@ -275,6 +288,9 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 
 		m_pGameModeList = new vgui::PanelListPanel( this, "GameModeList" );
 		m_pGameModeList->SetFirstColumnWidth( 0 );
+		// replaced by directly-owned category buttons; keep the empty list
+		// panel from eating clicks behind them.
+		m_pGameModeList->SetVisible( false );
 
 		m_pMapList = new vgui::PanelListPanel( this, "MapList" );
 		m_pMapList->SetFirstColumnWidth( 0 );
@@ -331,36 +347,191 @@ void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Build the game mode list (left). hl2sb has sandbox/deathmatch/campaign
+// Purpose: Build the game mode / category list (left). Each entry is a Button
+//          owned by the dialog so clicking it filters the map grid.
 //-----------------------------------------------------------------------------
 void CCreateMultiplayerGameDialog::BuildGameModeList()
 {
-	if ( !m_pGameModeList )
+	// Remove any existing category buttons
+	for ( int i = 0; i < m_CategoryButtons.Count(); ++i )
+	{
+		if ( m_CategoryButtons[i] )
+			m_CategoryButtons[i]->MarkForDeletion();
+	}
+	m_CategoryButtons.RemoveAll();
+
+	for ( int i = 0; i < MAPCAT_COUNT; ++i )
+	{
+		Button *pBtn = new Button( this, "GameModeLabel", GetCategoryName( i ) );
+		pBtn->SetContentAlignment( Label::a_west );
+		pBtn->SetTextInset( 8, 0 );
+		pBtn->SetTall( 28 );
+
+		char szCmd[32];
+		Q_snprintf( szCmd, sizeof( szCmd ), "MapCat %d", i );
+		pBtn->SetCommand( szCmd );
+
+		// Highlight the active category WITHOUT using SetSelected(): the
+		// game scheme's ButtonSelected text colour matches the hot list
+		// background, so a selected button's label vanishes. Instead paint
+		// an explicit background + keep a bright label visible.
+		if ( i == m_iSelectedCategory )
+		{
+			pBtn->SetBgColor( Color( 255, 176, 32, 255 ) ); // GMod-tan
+			pBtn->SetFgColor( Color( 20, 20, 20, 255 ) );
+		}
+		else
+		{
+			pBtn->SetBgColor( Color( 40, 42, 46, 255 ) );
+			pBtn->SetFgColor( Color( 200, 200, 200, 255 ) );
+		}
+		pBtn->SetPaintBackgroundEnabled( true );
+		pBtn->SetVisible( true );
+
+		m_CategoryButtons.AddToTail( pBtn );
+	}
+
+	// relayout the buttons
+	PerformLayout();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Human-readable name for a map category
+//-----------------------------------------------------------------------------
+const char *CCreateMultiplayerGameDialog::GetCategoryName( int iCategory )
+{
+	switch ( iCategory )
+	{
+		case MAPCAT_ALL:        return "All Maps";
+		case MAPCAT_HL2:        return "Half-Life 2";
+		case MAPCAT_HL2DM:      return "Half-Life 2: DM";
+		case MAPCAT_SANDBOX:    return "GMod Sandbox";
+		case MAPCAT_OTHER:      return "Other";
+		default:                return "All Maps";
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Detect a map's category from its filesystem MOUNT path, not from a
+//          hard-coded name. g_pFullFileSystem->GetLocalPath resolves the map
+//          to its absolute disk path; which game folder it sits under tells us
+//          which search path it was mounted from. A name-prefix heuristic only
+//          kicks in when the path is indeterminate (e.g. a map supplied by a
+//          custom vpk we can't resolve to a folder here).
+//-----------------------------------------------------------------------------
+int CCreateMultiplayerGameDialog::MapNameToCategory( const char *pszMapName )
+{
+	if ( !pszMapName || !pszMapName[0] )
+		return MAPCAT_OTHER;
+
+	// Resolve to a full disk path so we can see which mount this came from.
+	char szRel[ 300 ];
+	Q_snprintf( szRel, sizeof( szRel ), "maps/%s.bsp", pszMapName );
+
+	char szLocal[ MAX_PATH ];
+	if ( g_pFullFileSystem->GetLocalPath( szRel, szLocal, sizeof( szLocal ) ) )
+	{
+		// Normalise to lowercase for case-insensitive matching.
+		char szLower[ MAX_PATH ];
+		Q_strncpy( szLower, szLocal, sizeof( szLower ) );
+		Q_strlower( szLower );
+
+		// hl2 single-player campaign mount
+		if ( Q_stristr( szLower, "\\hl2\\" ) || Q_stristr( szLower, "/hl2/" ) )
+		{
+			return MAPCAT_HL2;
+		}
+		// hl2mp mount
+		if ( Q_stristr( szLower, "\\hl2mp\\" ) || Q_stristr( szLower, "/hl2mp/" ) )
+		{
+			return MAPCAT_HL2DM;
+		}
+		// our custom GMod maps addon (gm_/sb_/mm_ content we shipped as the
+		// gmod_maps addon) resolves under custom/gmod_maps
+		if ( Q_stristr( szLower, "gmod_maps" ) )
+		{
+			return MAPCAT_SANDBOX;
+		}
+	}
+
+	// Fallback heuristics when the path can't be resolved (vpk-supplied maps).
+	if ( !Q_strnicmp( pszMapName, "gm_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "sb_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "mm_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "rp_", 3 ) )
+	{
+		return MAPCAT_SANDBOX;
+	}
+	if ( !Q_strnicmp( pszMapName, "dm_", 3 ) )
+	{
+		return MAPCAT_HL2DM;
+	}
+	if ( !Q_strnicmp( pszMapName, "d1_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "d2_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "d3_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "ep1_", 3 ) ||
+		 !Q_strnicmp( pszMapName, "ep2_", 3 ) )
+	{
+		return MAPCAT_HL2;
+	}
+
+	return MAPCAT_OTHER;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Rebuild the map grid honouring the currently selected category.
+//          When a category is active, only maps belonging to it are shown.
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::ApplyCategoryFilter()
+{
+	if ( !m_pMapList )
 		return;
 
-	m_pGameModeList->DeleteAllItems();
+	m_pMapList->DeleteAllItems();
+	m_MapNames.RemoveAll();
 
-	struct GameModeInfo_t
+	FileFindHandle_t findHandle = NULL;
+	const char *pszFilename = g_pFullFileSystem->FindFirstEx( "maps/*.bsp", "GAME", &findHandle );
+	while ( pszFilename )
 	{
-		const char *pszName;
-	};
+		char mapname[256];
+		Q_strncpy( mapname, pszFilename, sizeof( mapname ) - 1 );
+		mapname[ sizeof(mapname) - 1 ] = 0;
+		char *ext = Q_strstr( mapname, ".bsp" );
+		if ( ext )
+			*ext = 0;
 
-	// static list of game modes shipped with hl2sb
-	GameModeInfo_t modes[] =
-	{
-		{ "Sandbox" },
-		{ "Deathmatch" },
-		{ "Campaign" },
-	};
+		// apply category filter (skip when "All" is selected)
+		if ( m_iSelectedCategory != MAPCAT_ALL )
+		{
+			if ( MapNameToCategory( mapname ) != m_iSelectedCategory )
+				goto nextFile;
+		}
 
-	for ( int i = 0 ; i < ARRAYSIZE( modes ); ++i )
-	{
-		Label *pLabel = new Label( m_pGameModeList, "GameModeLabel", modes[i].pszName );
-		pLabel->SetContentAlignment( Label::a_west );
-		pLabel->SetTextInset( 8, 0 );
-		pLabel->SetTall( 28 );
-		m_pGameModeList->AddItem( NULL, pLabel );
+		// dedup
+		bool bDup = false;
+		for ( int i = 0; i < m_MapNames.Count(); ++i )
+		{
+			if ( !Q_stricmp( m_MapNames[i], mapname ) )
+				{ bDup = true; break; }
+		}
+		if ( bDup )
+			goto nextFile;
+
+		CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
+		m_pMapList->AddItem( NULL, pCard );
+
+		char *pszCopy = new char[ strlen(mapname) + 1 ];
+		Q_strcpy( pszCopy, mapname );
+		m_MapNames.AddToTail( pszCopy );
+
+	nextFile:
+		pszFilename = g_pFullFileSystem->FindNext( findHandle );
 	}
+	g_pFullFileSystem->FindClose( findHandle );
+
+	m_pMapList->SetNumColumns( 3 );
+	RefreshSelection();
 }
 
 //-----------------------------------------------------------------------------
@@ -371,14 +542,8 @@ void CCreateMultiplayerGameDialog::BuildMapGrid()
 	if ( !m_pMapList )
 		return;
 
-	m_pMapList->DeleteAllItems();
-
-	LoadMapList();
-
-	// 3-column grid
-	m_pMapList->SetNumColumns( 3 );
-
-	RefreshSelection();
+	// Builds the grid honouring the currently selected category.
+	ApplyCategoryFilter();
 }
 
 //-----------------------------------------------------------------------------
@@ -618,6 +783,18 @@ void CCreateMultiplayerGameDialog::OnCommand( const char *command )
 	else if ( !Q_stricmp( command, "Close" ) )
 	{
 		Close();
+		return;
+	}
+	else if ( !Q_strnicmp( command, "MapCat ", 7 ) )
+	{
+		int iCat = atoi( command + 7 );
+		if ( iCat >= 0 && iCat < MAPCAT_COUNT )
+		{
+			m_iSelectedCategory = iCat;
+			// refresh the category list highlight + rebuild the map grid
+			BuildGameModeList();
+			BuildMapGrid();
+		}
 		return;
 	}
 
