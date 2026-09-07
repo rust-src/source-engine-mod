@@ -55,6 +55,33 @@ private:
 
 	void CreateGame();
 
+	// GMod-style map categories. The left list becomes a clickable category
+	// filter; selecting one restricts the map grid to that category.
+	//
+	// Categorisation is by MOUNT, not by hard-coded map name: a map's full
+	// disk path (GetLocalPath) tells us which mounted game it came from
+	// (hl2 / hl2mp / custom gmod_maps), so anything mounted by hl2 lands in
+	// the "Half-Life 2" bucket regardless of its chapter prefix.
+	enum MapCategory_t
+	{
+		MAPCAT_ALL = 0,
+		MAPCAT_HL2,
+		MAPCAT_HL2DM,
+		MAPCAT_SANDBOX,
+		MAPCAT_OTHER,
+		MAPCAT_COUNT,
+	};
+	const char *GetCategoryName( int iCategory );
+	// Detects a category for a map from its filesystem mount path.
+	int MapNameToCategory( const char *pszMapName );
+	// Rebuilds the map grid honouring the selected category.
+	void ApplyCategoryFilter();
+	int m_iSelectedCategory = MAPCAT_ALL;
+
+	// Left-hand category buttons (owned directly by the dialog so their
+	// commands route to our OnCommand without relying on PanelListPanel).
+	CUtlVector< vgui::Button * > m_CategoryButtons;
+
 private:
 	vgui::PanelListPanel *m_pGameModeList;
 	vgui::PanelListPanel *m_pMapList;
