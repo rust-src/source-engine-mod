@@ -176,6 +176,21 @@ private:
 
 ConVar sm_menu("sm_menu", "0", FCVAR_CLIENTDLL, "Spawn Menu");
 
+// GMod-style hold-to-open / release-to-close spawn menu.
+// Binding Q to "+smenu" opens it while held; the engine fires "-smenu"
+// on release, which closes it again.
+static void SMenuDown( const CCommand &args )
+{
+	sm_menu.SetValue( 1 );
+}
+static ConCommand smenu_down_cmd( "+smenu", SMenuDown, "Open SMenu (hold)" );
+
+static void SMenuUp( const CCommand &args )
+{
+	sm_menu.SetValue( 0 );
+}
+static ConCommand smenu_up_cmd( "-smenu", SMenuUp, "Close SMenu (release)" );
+
 class CSMenu : public vgui::PropertyDialog
 {
 	typedef vgui::PropertyDialog BaseClass;
