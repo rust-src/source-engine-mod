@@ -213,7 +213,16 @@ void CHudDeathNotice::Paint()
 				x -= UTIL_ComputeStringWidth( m_hTextFont, killer );
 			}
 
-			SetColorForNoticePlayer( iKillerTeam );
+			// NPC / world / prop killers have no team; draw them in a neutral white
+			// so the name isn't tinted with an arbitrary unassigned-team colour.
+			if ( m_DeathNotices[i].Killer.iEntIndex == 0 )
+			{
+				surface()->DrawSetTextColor( Color( 235, 235, 235, 255 ) );
+			}
+			else
+			{
+				SetColorForNoticePlayer( iKillerTeam );
+			}
 
 			// Draw killer's name
 			surface()->DrawSetTextPos( x, y );
@@ -258,6 +267,39 @@ void CHudDeathNotice::RetireExpiredDeathNotices( void )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: Turn a killfeed entity classname (e.g. "npc_headcrab", "weapon_smg1",
+//			"monster_zombie", "prop_physics") into a readable display name.
+//-----------------------------------------------------------------------------
+static const char *GetDisplayNameFromClassname( const char *szClass, char *szOut, int nOutSize )
+{
+	Q_strncpy( szOut, szClass, nOutSize );
+
+	// Strip the server-side "class " prefix if the field was never overridden.
+	if ( !Q_strnicmp( szOut, "class ", 6 ) )
+	{
+		Q_strncpy( szOut, szClass + 6, nOutSize );
+	}
+
+	// Strip the common entity type prefixes.
+	const char *strip[] = { "npc_", "monster_", "weapon_", "item_", "ammo_", "entity_", "func_" };
+	for ( int i = 0; i < ARRAYSIZE(strip); i++ )
+	{
+		int n = Q_strlen( strip[i] );
+		if ( !Q_strnicmp( szOut, strip[i], n ) )
+		{
+			memmove( szOut, szOut + n, nOutSize - n );
+			break;
+		}
+	}
+
+	// Capitalise the first character.
+	if ( szOut[0] >= 'a' && szOut[0] <= 'z' )
+		szOut[0] -= ('a' - 'A');
+
+	return szOut;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Server's told us that someone's died
 //-----------------------------------------------------------------------------
 void CHudDeathNotice::FireGameEvent( IGameEvent * event )
@@ -272,6 +314,11 @@ void CHudDeathNotice::FireGameEvent( IGameEvent * event )
 	int killer = engine->GetPlayerForUserID( event->GetInt("attacker") );
 	int victim = engine->GetPlayerForUserID( event->GetInt("userid") );
 	const char *killedwith = event->GetString( "weapon" );
+
+	// If the attacker wasn't a player (NPC / world / prop), the server ships the
+	// killer's entity classname in "attackername" so we can show a real name.
+	const char *szAttackerName = event->GetString( "attackername", "" );
+	bool bKillerIsPlayer = ( killer != 0 && killer != -1 );
 
 	char fullkilledwith[128];
 	if ( killedwith && *killedwith )
@@ -302,12 +349,29 @@ void CHudDeathNotice::FireGameEvent( IGameEvent * event )
 
 	// Make a new death notice
 	DeathNoticeItem deathMsg;
-	deathMsg.Killer.iEntIndex = killer;
+	deathMsg.Killer.iEntIndex = ( bKillerIsPlayer ) ? killer : 0;
 	deathMsg.Victim.iEntIndex = victim;
-	Q_strncpy( deathMsg.Killer.szName, killer_name, MAX_PLAYER_NAME_LENGTH );
+
+	// For a player killer use the player name; otherwise fall back to the attacker
+	// entity's classname so NPC kills show something instead of a blank/suicide line.
+	if ( bKillerIsPlayer )
+	{
+		Q_strncpy( deathMsg.Killer.szName, killer_name, MAX_PLAYER_NAME_LENGTH );
+	}
+	else
+	{
+		char szDisplayName[ MAX_PLAYER_NAME_LENGTH ];
+		GetDisplayNameFromClassname( szAttackerName, szDisplayName, sizeof( szDisplayName ) );
+		Q_strncpy( deathMsg.Killer.szName, szDisplayName, MAX_PLAYER_NAME_LENGTH );
+	}
+
 	Q_strncpy( deathMsg.Victim.szName, victim_name, MAX_PLAYER_NAME_LENGTH );
+
 	deathMsg.flDisplayTime = gpGlobals->curtime + hud_deathnotice_time.GetFloat();
-	deathMsg.iSuicide = ( !killer || killer == victim );
+
+	// Treat as a suicide only when the victim killed themselves with a real player
+	// killer. NPC / world / prop deaths are not suicides.
+	deathMsg.iSuicide = ( bKillerIsPlayer && killer == victim );
 
 	// Try and find the death identifier in the icon list
 	deathMsg.iconDeath = gHUD.GetIcon( fullkilledwith );
