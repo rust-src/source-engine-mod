@@ -129,8 +129,10 @@ public:
 	void ChangeConfiguration( int vertexSize, int totalSize ) 
 	{
 		Assert( m_bDynamic && !m_bLocked && vertexSize );
-		m_VertexSize = vertexSize;
-		m_VertexCount = m_nBufferSize / vertexSize;
+		// Guard against a zero vertex size (e.g. an invalid vertex format on some
+		// maps). Clamp to 1 so all the size/stride math below stays safe.
+		m_VertexSize = ( vertexSize > 0 ) ? vertexSize : 1;
+		m_VertexCount = ( m_VertexSize > 0 ) ? ( m_nBufferSize / m_VertexSize ) : 0;
 	}
 
 	// Compute the next offset for the next lock
