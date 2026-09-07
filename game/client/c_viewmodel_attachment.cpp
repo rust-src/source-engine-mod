@@ -42,10 +42,12 @@ ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands de
 // "v_hand" material). Merging an extra pair onto those double-draws the arms
 // (visible on SLAM, grenade, crowbar, ...). MMOD-style replacement viewmodels
 // are gun-only (no v_hand material) and still receive the merged hands.
-// HL2SB: the user runs GMod gun-only c_* viewmodels, which never render their
-// own arms, so force c_hands on by default. Set to 1 only if you go back to a
-// stock HL2 viewmodel that bakes visible arms (v_hand).
-ConVar cl_hands_skip_baked_arms( "cl_hands_skip_baked_arms", "0", FCVAR_ARCHIVE, "Don't merge c_hands onto viewmodels that already have their own arms (stock HL2 v_hand models)" );
+// HL2SB: on by default - baked-arm weapons (detected by scanning the studio
+// texture table for a "v_hand" material, see ViewModelHasBakedArms) get their
+// own arms and must not receive a second, mis-merged c_hands attachment (that
+// shows up as a detached pair of arms floating after death/respawn). Set to 0
+// only if you run gun-only c_* viewmodels with no baked arms everywhere.
+ConVar cl_hands_skip_baked_arms( "cl_hands_skip_baked_arms", "1", FCVAR_ARCHIVE, "Don't merge c_hands onto viewmodels that already have their own arms (stock HL2 v_hand models)" );
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
@@ -325,6 +327,17 @@ int C_ViewmodelAttachment::DrawModel( int flags )
 	// Don't draw if parent viewmodel isn't visible
 	C_BaseViewModel *pViewModel = m_hParentViewModel.Get();
 	if ( !pViewModel )
+		return 0;
+
+	// Only draw when the parent viewmodel is the owner's currently-active
+	// viewmodel. A stale attachment left over from a previous death/respawn or
+	// weapon switch is still parented to an old (non-active or orphaned)
+	// viewmodel; without this gate it lingers and renders as a detached pair
+	// of hands floating in the world after you die.
+	C_BasePlayer *pOwner = ToBasePlayer( pViewModel->GetOwner() );
+	if ( !pOwner )
+		return 0;
+	if ( pViewModel != pOwner->GetViewModel( 0 ) )
 		return 0;
 
 	// Use same render settings as parent viewmodel
