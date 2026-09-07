@@ -28,7 +28,9 @@ int ScreenTransform( const Vector& point, Vector& screen );
 
 #define	HEALTH_WARNING_THRESHOLD	25
 
-static ConVar	hud_quickinfo( "hud_quickinfo", "1", FCVAR_ARCHIVE );
+// HL2SB: the health/ammo brackets that flank the crosshair are off by default.
+// Set `hud_quickinfo 1` to restore them.
+static ConVar	hud_quickinfo( "hud_quickinfo", "0", FCVAR_ARCHIVE );
 
 extern ConVar crosshair;
 
