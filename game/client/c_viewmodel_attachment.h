@@ -51,6 +51,33 @@ public:
 	// Override drawing to use bonemerge from parent
 	virtual int DrawModel( int flags );
 
+	// The arms are drawn MANUALLY by C_BaseViewModel::DrawModel inside the
+	// viewmodel render pass. They must never be picked up by the world
+	// renderer, so this entity always answers "do not draw" to the leaf
+	// system. See the implementation for why the one-shot RemoveFromLeafSystem()
+	// in SetHandsModel() is not enough.
+	virtual bool ShouldDraw( void );
+
+	// Identity check: is this entity currently merged onto pViewModel?
+	// The viewmodel uses this so a stale handle can never draw the arms twice.
+	bool IsAttachedTo( C_BaseViewModel *pViewModel ) const;
+
+	// Verification helper: is the entity still registered in the leaf system?
+	// It must never be - that is exactly what makes the engine draw a second,
+	// ghost pair of arms next to the real viewmodel hands.
+	bool IsInLeafSystem( void ) const;
+
+	// The model path this entity was created for (for status/debug output).
+	const char *GetHandsModelName( void ) const { return m_szHandsModelName; }
+
+	// The hands key ("model|skin|body") this entity implements. Each weapon
+	// viewmodel owns exactly one entity, so the "already attached" cache has to
+	// live on the entity itself - a single global cache let one viewmodel's
+	// release silently change another viewmodel's attach decision and rebuild a
+	// second pair of arms.
+	void SetHandsKey( const char *pszKey );
+	const char *GetHandsKey( void ) const { return m_szHandsKey; }
+
 	// Override SetupBones to apply the cl_hands_offset_* / cl_hands_angle_*
 	// correction (in viewmodel space) after native bonemerge.
 	virtual bool SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, int boneMask, float currentTime );
@@ -70,6 +97,8 @@ private:
 	bool m_bAttached;								// Is currently attached
 	int m_iDefaultSequence;							// "proportions"/"idle"/"reference" fallback
 	float m_flLastOffsetTime;						// Guard so the offset is applied once per frame
+	char m_szHandsModelName[ MAX_PATH ];			// Model this entity was built for (debug)
+	char m_szHandsKey[ MAX_PATH + 64 ];				// "model|skin|body" this entity implements
 };
 
 #endif // C_VIEWMODEL_ATTACHMENT_H

@@ -42,11 +42,11 @@ ConVar cl_hands_angle_roll( "cl_hands_angle_roll", "0", FCVAR_ARCHIVE, "Hands mo
 ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands debug output" );
 
 //-----------------------------------------------------------------------------
-// Global registry of live hands-attachment entities. A hands entity leaked from
-// a previous session (its owning viewmodel died without releasing it) keeps
-// rendering as a "proliferated" second hand - the exact artifact the player
-// sees after reconnecting. Registering them lets a spawn/level-change clean
-// every leftover at once.
+// Global registry of live hands-attachment entities. Every weapon viewmodel
+// owns at most one of these, and they are all destroyed on player spawn / level
+// change so nothing can leak from a previous session. HL2SB_AnyHandsInLeafSystem
+// exists to prove the important invariant: none of them may be registered in the
+// leaf system (that is what made the engine draw a ghost second arm).
 //-----------------------------------------------------------------------------
 static CUtlVector< CHandle< C_ViewmodelAttachment > > s_HandsAttachments;
 
@@ -73,6 +73,84 @@ void HL2SB_DestroyAllHandsAttachments( void )
 	s_HandsAttachments.RemoveAll();
 }
 
+int HL2SB_CountLiveHandsAttachments( void )
+{
+	// Prune dead entries so the count reflects real entities only.
+	for ( int i = s_HandsAttachments.Count() - 1; i >= 0; --i )
+	{
+		if ( !s_HandsAttachments[ i ].Get() )
+			s_HandsAttachments.Remove( i );
+	}
+	return s_HandsAttachments.Count();
+}
+
+bool HL2SB_AnyHandsInLeafSystem( void )
+{
+	for ( int i = 0; i < s_HandsAttachments.Count(); ++i )
+	{
+		C_ViewmodelAttachment *p = s_HandsAttachments[ i ].Get();
+		if ( p && p->IsInLeafSystem() )
+			return true;
+	}
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Verification aid: how many times the arms were really rendered in the most
+// recent client frame (exactly 1 is correct) and how many of those draws came
+// from somewhere other than the viewmodel pass (must stay 0). hl2sb_status
+// reports both, so a regression is observable on demand instead of via console
+// spam.
+//-----------------------------------------------------------------------------
+static int s_iHandsDrawFrame = -1;
+static int s_iHandsDrawCount = 0;
+static int s_iManualHandsDrawDepth = 0;
+static int s_iGhostHandsDraws = 0;
+
+void HL2SB_BeginManualHandsDraw( void )
+{
+	++s_iManualHandsDrawDepth;
+}
+
+void HL2SB_EndManualHandsDraw( void )
+{
+	--s_iManualHandsDrawDepth;
+	if ( s_iManualHandsDrawDepth < 0 )
+		s_iManualHandsDrawDepth = 0;
+}
+
+void HL2SB_NoteHandsDraw( int flags )
+{
+	if ( !( flags & STUDIO_RENDER ) )
+		return;
+
+	if ( s_iHandsDrawFrame != gpGlobals->framecount )
+	{
+		s_iHandsDrawFrame = gpGlobals->framecount;
+		s_iHandsDrawCount = 0;
+	}
+	++s_iHandsDrawCount;
+
+	// A draw that did not come through C_BaseViewModel::DrawModel is the ghost
+	// second arm: ShouldDraw() returning false is what prevents it, so a non-zero
+	// count here means that invariant has been broken again.
+	if ( s_iManualHandsDrawDepth == 0 )
+		++s_iGhostHandsDraws;
+}
+
+int HL2SB_HandsDrawCountLastFrame( void )
+{
+	// The count of the most recent frame that actually rendered hands. Console
+	// commands run before the frame is drawn, so comparing against the current
+	// frame number would always read 0 - report the last real frame instead.
+	return s_iHandsDrawCount;
+}
+
+int HL2SB_GhostHandsDrawCount( void )
+{
+	return s_iGhostHandsDraws;
+}
+
 // When enabled, skip merging hands onto viewmodels that already draw their own
 // arms (stock HL2/EP2/HL2MP weapon viewmodels, which reference the shared
 // "v_hand" material). Merging an extra pair onto those double-draws the arms
@@ -94,6 +172,17 @@ C_ViewmodelAttachment::C_ViewmodelAttachment( void ) :
 	m_iDefaultSequence( -1 ),
 	m_flLastOffsetTime( -1.0f )
 {
+	Q_strncpy( m_szHandsModelName, "", sizeof( m_szHandsModelName ) );
+	Q_strncpy( m_szHandsKey, "", sizeof( m_szHandsKey ) );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Record the "model|skin|body" key this entity implements, so the
+//          owning viewmodel can tell whether it already has the right hands.
+//-----------------------------------------------------------------------------
+void C_ViewmodelAttachment::SetHandsKey( const char *pszKey )
+{
+	Q_strncpy( m_szHandsKey, pszKey ? pszKey : "", sizeof( m_szHandsKey ) );
 }
 
 //-----------------------------------------------------------------------------
@@ -139,8 +228,23 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 		return false;
 	}
 
+	Q_strncpy( m_szHandsModelName, pszModelName, sizeof( m_szHandsModelName ) );
+
 	// We are drawn manually from C_BaseViewModel::DrawModel inside the
-	// viewmodel render pass - remove us from the normal leaf-system draws.
+	// viewmodel render pass, so take us out of the normal leaf-system draws.
+	//
+	// IMPORTANT: this call alone is NOT sufficient - it is a one-shot removal
+	// and the base class re-adds the renderable whenever it recomputes
+	// visibility (C_BaseEntity::SetModelPointer, C_BaseAnimating::
+	// OnModelLoadComplete -> UpdateVisibility, SetDormant, ...). That is the
+	// actual reason the arms "proliferated" from the second map onwards: on the
+	// first load the arms .mdl was already resident so the entity was built
+	// synchronously and stayed removed, but on later loads the model arrives
+	// asynchronously, OnModelLoadComplete() runs UpdateVisibility() and the
+	// arms get re-added to the *world* leaf list. The engine then draws a
+	// second, stale-transform copy of the merged arms next to the real
+	// viewmodel hands - the extra floating hand. ShouldDraw() below is the
+	// authoritative gate that keeps us out of the leaf system permanently.
 	RemoveFromLeafSystem();
 
 	// c_arms rigs merge across rig name conventions (ValveBiped. prefix).
@@ -158,12 +262,58 @@ bool C_ViewmodelAttachment::SetHandsModel( const char *pszModelName )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: Never let the world renderer draw us.
+//
+// The arms exist only to be bone-merged onto a weapon viewmodel and are drawn
+// explicitly by C_BaseViewModel::DrawModel during the viewmodel pass, which is
+// the only pass that gets the viewmodel's transform, depth range and blending
+// right. If this entity is in the leaf system the world pass draws it a second
+// time at the raw viewmodel origin (in front of the camera, unclipped), which
+// is what looks like an extra arm growing out of nowhere.
+//
+// C_BaseEntity::UpdateVisibility() is the single funnel that adds or removes a
+// renderable, and it keys off ShouldDraw(); returning false here therefore
+// makes the removal stick no matter how often the engine re-evaluates us.
+//-----------------------------------------------------------------------------
+bool C_ViewmodelAttachment::ShouldDraw( void )
+{
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Are we currently merged onto this exact viewmodel?
+//-----------------------------------------------------------------------------
+bool C_ViewmodelAttachment::IsAttachedTo( C_BaseViewModel *pViewModel ) const
+{
+	return ( m_bAttached && m_hParentViewModel.Get() == pViewModel );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Debug/verification - must always be false (see ShouldDraw).
+//-----------------------------------------------------------------------------
+bool C_ViewmodelAttachment::IsInLeafSystem( void ) const
+{
+	return GetRenderHandle() != INVALID_CLIENT_RENDER_HANDLE;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Attach to a viewmodel entity using standard Source "follow" method
 //-----------------------------------------------------------------------------
 void C_ViewmodelAttachment::AttachToViewmodel( C_BaseViewModel *pViewModel )
 {
 	if ( !pViewModel )
 		return;
+
+	// Idempotent: re-attaching to the same viewmodel must not churn the
+	// transform/effects (this runs from the hands update path, which fires on
+	// every viewmodel data change).
+	if ( IsAttachedTo( pViewModel ) )
+		return;
+
+	// Moving to a different viewmodel: drop the old parentage first so we are
+	// never merged onto an entity we no longer belong to.
+	if ( m_bAttached )
+		DetachFromViewmodel();
 
 	// Store handle to parent
 	m_hParentViewModel = pViewModel;
@@ -383,15 +533,22 @@ int C_ViewmodelAttachment::DrawModel( int flags )
 	if ( !pViewModel )
 		return 0;
 
-	// Only draw when the parent viewmodel is the owner's currently-active
-	// viewmodel. A stale attachment left over from a previous death/respawn or
-	// weapon switch is still parented to an old (non-active or orphaned)
-	// viewmodel; without this gate it lingers and renders as a detached pair
-	// of hands floating in the world after you die.
+	// Only draw when the parent viewmodel is the one the owner is actually
+	// holding out front. A stale attachment left over from a previous
+	// death/respawn or weapon switch is still parented to an old (non-active or
+	// orphaned) viewmodel; without this gate it lingers and renders as a
+	// detached pair of hands floating in the world after you die.
+	//
+	// NOTE: this deliberately does NOT compare against GetViewModel(0).
+	// MAX_VIEWMODELS is 2 and weapons are spread across those slots, so that
+	// test silently killed the arms for every weapon not living in slot 0.
 	C_BasePlayer *pOwner = ToBasePlayer( pViewModel->GetOwner() );
-	if ( !pOwner )
+	if ( !pOwner || !pOwner->IsAlive() )
 		return 0;
-	if ( pViewModel != pOwner->GetViewModel( 0 ) )
+
+	C_BaseCombatWeapon *pActive = pOwner->GetActiveWeapon();
+	C_BaseCombatWeapon *pVmWeapon = pViewModel->GetOwningWeapon();
+	if ( pActive && pVmWeapon && pActive != pVmWeapon )
 		return 0;
 
 	// Use same render settings as parent viewmodel
@@ -412,6 +569,7 @@ int C_ViewmodelAttachment::DrawModel( int flags )
 	// flags, that reentrant master draw returns 0 (no STUDIO_RENDER) so our arms
 	// would never render. InternalDrawModel runs SetupBones (which does the
 	// bonemerge) and draws directly - matching the old visible path.
+	HL2SB_NoteHandsDraw( flags );
 	int ret = InternalDrawModel( flags );
 
 	return ret;

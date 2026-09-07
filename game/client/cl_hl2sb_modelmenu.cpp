@@ -62,6 +62,15 @@ void CC_HL2SB_Status( const CCommand &args )
 		Msg( "  Active Hands: none / %s\n", pszWhy );
 	}
 
+	// c_hands health check. Each weapon viewmodel owns at most one arms entity,
+	// none of them may sit in the leaf system, exactly one render per frame is
+	// correct, and the ghost counter must stay at zero - if it does not,
+	// something is drawing the duplicate arm again.
+	Msg( "  Hands entities: %d\n", HL2SB_CountLiveHandsAttachments() );
+	Msg( "  In leaf system: %s\n", HL2SB_AnyHandsInLeafSystem() ? "YES (bug)" : "no" );
+	Msg( "  Draws/frame   : %d (expect 1)\n", HL2SB_HandsDrawCountLastFrame() );
+	Msg( "  Ghost draws   : %d (expect 0)\n", HL2SB_GhostHandsDrawCount() );
+
 	Msg( "\n" );
 }
 
