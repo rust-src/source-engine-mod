@@ -31,6 +31,7 @@ def build(bld):
 		'Sys_Utils.cpp',
 		'TextEntryBox.cpp',
 		'TGAImagePanel.cpp',
+		'PNGImagePanel.cpp',
 		'../public/vgui_controls/vgui_controls.cpp',
 		'VGuiSystemModuleLoader.cpp',
 		'BonusMapsDatabase.cpp',

@@ -1,11 +1,13 @@
 //========= Copyright Valve Corporation, All rights reserved. ============//
 //
-// Purpose: 
+// Purpose: GMod-style fullscreen "create server" dialog
 //
 // $NoKeywords: $
 //=============================================================================//
 
 #include "CreateMultiplayerGameDialog.h"
+
+// include original page classes so we can still read cvars / bot settings
 #include "CreateMultiplayerGameServerPage.h"
 #include "CreateMultiplayerGameGameplayPage.h"
 #include "CreateMultiplayerGameBotPage.h"
@@ -13,75 +15,192 @@
 #include "EngineInterface.h"
 #include "ModInfo.h"
 #include "GameUI_Interface.h"
+#include "PNGImagePanel.h"
 
 #include <stdio.h>
 
 using namespace vgui;
 
 #include "vgui_controls/ComboBox.h"
+#include "vgui_controls/TextEntry.h"
+#include "vgui_controls/Button.h"
+#include "vgui_controls/Label.h"
+#include "vgui_controls/PanelListPanel.h"
+#include "vgui_controls/ImagePanel.h"
+#include "vgui_controls/CheckButton.h"
 #include <vgui/ILocalize.h>
+#include <vgui/ISurface.h>
+#include <vgui/IScheme.h>
 
 #include "filesystem.h"
 #include <KeyValues.h>
-
-// memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
+
+#define RANDOM_MAP "#GameUI_RandomMap"
+#define MAX_PLAYERS_DEFAULT 32
+
+//-----------------------------------------------------------------------------
+// Purpose: A single selectable map card (thumbnail + name)
+//-----------------------------------------------------------------------------
+class CMapCardPanel : public vgui::EditablePanel
+{
+	DECLARE_CLASS_SIMPLE( CMapCardPanel, vgui::EditablePanel );
+public:
+	CMapCardPanel( PanelListPanel *parent, const char *name, CCreateMultiplayerGameDialog *pOwner, const char *pszMapName )
+		: BaseClass( parent, name )
+	{
+		m_pOwner = pOwner;
+		Q_strncpy( m_szMapName, pszMapName, sizeof( m_szMapName ) );
+
+		m_pThumb = new CPNGImagePanel( this, "MapThumb" );
+		m_pThumb->SetMapImage( pszMapName );
+
+		m_pName = new Label( this, "MapName", pszMapName );
+
+		SetSize( 180, 132 );
+		SetPaintBackgroundEnabled( true );
+		m_bSelected = false;
+	}
+
+	~CMapCardPanel() {}
+
+	const char *GetMapName() const { return m_szMapName; }
+
+	virtual void ApplySchemeSettings( vgui::IScheme *pScheme )
+	{
+		BaseClass::ApplySchemeSettings( pScheme );
+
+		int w, h;
+		GetSize( w, h );
+
+		if ( m_pThumb )
+		{
+			m_pThumb->SetBounds( 4, 4, w - 8, h - 30 );
+		}
+		if ( m_pName )
+		{
+			m_pName->SetBounds( 4, h - 24, w - 8, 20 );
+			m_pName->SetContentAlignment( Label::a_center );
+			m_pName->SetTextInset( 0, 0 );
+		}
+	}
+
+	virtual void OnMousePressed( vgui::MouseCode code )
+	{
+		BaseClass::OnMousePressed( code );
+		if ( m_pOwner )
+		{
+			m_pOwner->OnMapSelected( m_szMapName );
+		}
+	}
+
+	virtual void PaintBackground()
+	{
+		// selected highlight
+		if ( m_bSelected )
+		{
+			vgui::surface()->DrawSetColor( 255, 200, 0, 90 );
+			vgui::surface()->DrawFilledRect( 0, 0, GetWide(), GetTall() );
+		}
+		else
+		{
+			vgui::surface()->DrawSetColor( 0, 0, 0, 120 );
+			vgui::surface()->DrawFilledRect( 0, 0, GetWide(), GetTall() );
+		}
+	}
+
+	void SetSelected( bool b ) { m_bSelected = b; }
+
+private:
+	CPNGImagePanel *m_pThumb;
+	Label *m_pName;
+	CCreateMultiplayerGameDialog *m_pOwner;
+	char m_szMapName[256];
+	bool m_bSelected;
+};
 
 //-----------------------------------------------------------------------------
 // Purpose: Constructor
 //-----------------------------------------------------------------------------
-CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) : PropertyDialog(parent, "CreateMultiplayerGameDialog")
+CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) : BaseClass(parent, "CreateMultiplayerGameDialog")
 {
 	m_bBotsEnabled = false;
+	m_pSavedData = NULL;
+
 	SetDeleteSelfOnClose(true);
+	SetTitle("#GameUI_CreateServer", false);
 
-	int w = 348;
-	int h = 460;
-	if (IsProportional())
-	{
-		w = scheme()->GetProportionalScaledValueEx(GetScheme(), w);
-		h = scheme()->GetProportionalScaledValueEx(GetScheme(), h);
-	}
+	// Fullscreen
+	int nScreenW, nScreenH;
+	vgui::surface()->GetScreenSize( nScreenW, nScreenH );
+	SetSize( nScreenW, nScreenH );
+	// no title bar chrome
+	SetMenuButtonVisible( false );
+	SetMinimizeButtonVisible( false );
+	SetMaximizeButtonVisible( false );
+	SetCloseButtonVisible( false );
+	SetTitleBarVisible( false );
 
-	SetSize(w, h);
-	
-	SetTitle("#GameUI_CreateServer", true);
-	SetOKButtonText("#GameUI_Start");
+	// Fake outline buttons
+	SetMoveable( false );
+	SetSizeable( false );
 
 	if ( ModInfo().UseBots() )
 	{
 		m_bBotsEnabled = true;
 	}
 
-	m_pServerPage = new CCreateMultiplayerGameServerPage(this, "ServerPage");
-	m_pGameplayPage = new CCreateMultiplayerGameGameplayPage(this, "GameplayPage");
-	m_pBotPage = NULL;
+	m_szSelectedMap[0] = 0;
 
-	AddPage(m_pServerPage, "#GameUI_Server");
-	AddPage(m_pGameplayPage, "#GameUI_Game");
+	// game mode list (left column)
+	m_pGameModeList = new vgui::PanelListPanel( this, "GameModeList" );
+	m_pGameModeList->SetFirstColumnWidth( 0 );
 
-	// create KeyValues object to load/save config options
-	m_pSavedData = new KeyValues( "ServerConfig" );
+	// map grid (center)
+	m_pMapList = new vgui::PanelListPanel( this, "MapList" );
+	m_pMapList->SetFirstColumnWidth( 0 );
 
-	// load the config data
-	if (m_pSavedData)
+	m_pSelectedMapLabel = new Label( this, "SelectedMapLabel", "" );
+	m_pHostName = new TextEntry( this, "HostName" );
+	m_pPassword = new TextEntry( this, "Password" );
+	m_pMaxPlayers = new ComboBox( this, "MaxPlayers", 8, false );
+
+	m_pTitleLabel = new Label( this, "TitleLabel", "#GameUI_CreateServer" );
+	m_pHostNameLabel = new Label( this, "HostNameLabel", "#GameUI_ServerName" );
+	m_pPasswordLabel = new Label( this, "PasswordLabel", "#GameUI_Password" );
+	m_pMaxPlayersLabel = new Label( this, "MaxPlayersLabel", "#GameUI_MaxPlayers" );
+
+	m_pStartButton = new Button( this, "StartButton", "#GameUI_Start" );
+	m_pStartButton->SetCommand( "CreateGame" );
+	m_pStartButton->SetVisible( true );
+
+	m_pBackButton = new Button( this, "BackButton", "#GameUI_Back" );
+	m_pBackButton->SetCommand( "Close" );
+	m_pBackButton->SetVisible( true );
+
+	// max player options
+	for ( int i = 2; i <= 128; i *= 2 )
 	{
-		m_pSavedData->LoadFromFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" ); // this is game-specific data, so it should live in GAME, not CONFIG
+		char sz[16];
+		Q_snprintf( sz, sizeof( sz ), "%d", i );
+		m_pMaxPlayers->AddItem( sz, new KeyValues( "maxplayers", "val", i ) );
+	}
+	m_pMaxPlayers->ActivateItemByRow( 4 ); // 32
 
-		const char *startMap = m_pSavedData->GetString("map", "");
-		if (startMap[0])
-		{
-			m_pServerPage->SetMap(startMap);
-		}
+	// load config
+	m_pSavedData = new KeyValues( "ServerConfig" );
+	if ( m_pSavedData )
+	{
+		m_pSavedData->LoadFromFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
 	}
 
-	if ( m_bBotsEnabled )
+	BuildGameModeList();
+	BuildMapGrid();
+
+	// set hostname default
+	if ( m_pHostName )
 	{
-		// add a page of advanced bot controls
-		// NOTE: These controls will use the bot keys to initialize their values
-		m_pBotPage = new CCreateMultiplayerGameBotPage( this, "BotPage", m_pSavedData );
-		AddPage( m_pBotPage, "#GameUI_CPUPlayerOptions" );
-		m_pServerPage->EnableBots( m_pSavedData );
+		m_pHostName->SetText( ModInfo().GetGameName() );
 	}
 }
 
@@ -90,110 +209,413 @@ CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) 
 //-----------------------------------------------------------------------------
 CCreateMultiplayerGameDialog::~CCreateMultiplayerGameDialog()
 {
-	if (m_pSavedData)
+	if ( m_pSavedData )
 	{
 		m_pSavedData->deleteThis();
 		m_pSavedData = NULL;
 	}
+
+	for ( int i = 0; i < m_MapNames.Count(); ++i )
+	{
+		delete[] m_MapNames[i];
+	}
+	m_MapNames.RemoveAll();
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: runs the server when the OK button is pressed
+// Purpose: Layout everything
 //-----------------------------------------------------------------------------
-bool CCreateMultiplayerGameDialog::OnOK(bool applyOnly)
+void CCreateMultiplayerGameDialog::PerformLayout()
 {
-	// reset server enforced cvars
-	g_pCVar->RevertFlaggedConVars( FCVAR_REPLICATED );	
+	BaseClass::PerformLayout();
 
-	// Cheats were disabled; revert all cheat cvars to their default values.
-	// This must be done heading into multiplayer games because people can play
-	// demos etc and set cheat cvars with sv_cheats 0.
-	g_pCVar->RevertFlaggedConVars( FCVAR_CHEAT );
+	int nScreenW, nScreenH;
+	vgui::surface()->GetScreenSize( nScreenW, nScreenH );
+	int sw = nScreenW;
+	int sh = nScreenH;
 
-	DevMsg( "FCVAR_CHEAT cvars reverted to defaults.\n" );
+	// left column (game modes)
+	int leftX = (int)(sw * 0.02);
+	int leftW = (int)(sw * 0.14);
+	int topY = (int)(sh * 0.16);
+	int bottomY = (int)(sh * 0.92);
 
-	BaseClass::OnOK(applyOnly);
+	if ( m_pGameModeList )
+		m_pGameModeList->SetBounds( leftX, topY, leftW, bottomY - topY );
 
-	// get these values from m_pServerPage and store them temporarily
-	char szMapName[64], szHostName[64], szPassword[64];
-	strncpy(szMapName, m_pServerPage->GetMapName(), sizeof( szMapName ));
-	strncpy(szHostName, m_pGameplayPage->GetHostName(), sizeof( szHostName ));
-	strncpy(szPassword, m_pGameplayPage->GetPassword(), sizeof( szPassword ));
+	// center map grid
+	int mapX = (int)(sw * 0.18);
+	int mapW = (int)(sw * 0.52);
+	if ( m_pMapList )
+		m_pMapList->SetBounds( mapX, topY, mapW, bottomY - topY );
 
-	// save the config data
-	if (m_pSavedData)
+	// right settings panel
+	int rightX = (int)(sw * 0.72);
+	int rightW = sw - rightX - (int)(sw * 0.02);
+
+	if ( m_pTitleLabel )
+		m_pTitleLabel->SetBounds( (int)(sw * 0.18), (int)(sh * 0.05), (int)(sw * 0.5), 40 );
+
+	if ( m_pSelectedMapLabel )
+		m_pSelectedMapLabel->SetBounds( rightX, topY, rightW, 24 );
+
+	if ( m_pHostNameLabel )
+		m_pHostNameLabel->SetBounds( rightX, topY + 34, rightW, 20 );
+	if ( m_pHostName )
+		m_pHostName->SetBounds( rightX, topY + 54, rightW, 26 );
+
+	if ( m_pPasswordLabel )
+		m_pPasswordLabel->SetBounds( rightX, topY + 90, rightW, 20 );
+	if ( m_pPassword )
+		m_pPassword->SetBounds( rightX, topY + 110, rightW, 26 );
+
+	if ( m_pMaxPlayersLabel )
+		m_pMaxPlayersLabel->SetBounds( rightX, topY + 146, rightW, 20 );
+	if ( m_pMaxPlayers )
+		m_pMaxPlayers->SetBounds( rightX, topY + 166, rightW, 26 );
+
+	// start / back buttons at bottom
+	int btnH = (int)(sh * 0.05);
+	int btnY = sh - btnH - (int)(sh * 0.02);
+
+	if ( m_pStartButton )
 	{
-		if (m_pServerPage->IsRandomMapSelected())
-		{
-			// it's set to random map, just save an
-			m_pSavedData->SetString("map", "");
-		}
-		else
-		{
-			m_pSavedData->SetString("map", szMapName);
-		}
-
-		// save config to a file
-		m_pSavedData->SaveToFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
+		m_pStartButton->SetBounds( rightX, btnY, (int)(rightW * 0.55), btnH );
+		const wchar_t *pwsz = g_pVGuiLocalize->Find( "#GameUI_StartGame" );
+		m_pStartButton->SetText( pwsz ? pwsz : L"Start Game" );
 	}
 
-	char szMapCommand[1024];
+	if ( m_pBackButton )
+	{
+		m_pBackButton->SetBounds( (int)(sw * 0.02), btnY, (int)(rightW * 0.3), btnH );
+		const wchar_t *pwsz = g_pVGuiLocalize->Find( "#GameUI_Back" );
+		m_pBackButton->SetText( pwsz ? pwsz : L"Back" );
+	}
+}
 
-	// create the command to execute
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::ApplySchemeSettings( vgui::IScheme *pScheme )
+{
+	BaseClass::ApplySchemeSettings( pScheme );
+
+	if ( m_pHostName )
+		m_pHostName->SetMultiline( false );
+	if ( m_pPassword )
+		m_pPassword->SetMultiline( false );
+	if ( m_pPassword )
+		m_pPassword->SetText( "" );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Build the game mode list (left). hl2sb has sandbox/deathmatch/campaign
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::BuildGameModeList()
+{
+	if ( !m_pGameModeList )
+		return;
+
+	m_pGameModeList->DeleteAllItems();
+
+	struct GameModeInfo_t
+	{
+		const char *pszName;
+	};
+
+	// static list of game modes shipped with hl2sb
+	GameModeInfo_t modes[] =
+	{
+		{ "Sandbox" },
+		{ "Deathmatch" },
+		{ "Campaign" },
+	};
+
+	for ( int i = 0 ; i < ARRAYSIZE( modes ); ++i )
+	{
+		Label *pLabel = new Label( m_pGameModeList, "GameModeLabel", modes[i].pszName );
+		pLabel->SetContentAlignment( Label::a_west );
+		pLabel->SetTextInset( 8, 0 );
+		pLabel->SetTall( 28 );
+		m_pGameModeList->AddItem( NULL, pLabel );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Build the map grid
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::BuildMapGrid()
+{
+	if ( !m_pMapList )
+		return;
+
+	m_pMapList->DeleteAllItems();
+
+	LoadMapList();
+
+	// 3-column grid
+	m_pMapList->SetNumColumns( 3 );
+
+	RefreshSelection();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Loads the list of available maps into the map list
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// Purpose: Scan one search path for maps and add them to the grid (deduped)
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::LoadMaps( const char *pszPathID )
+{
+	FileFindHandle_t findHandle = NULL;
+
+	KeyValues *hiddenMaps = ModInfo().GetHiddenMaps();
+
+	const char *pszFilename = g_pFullFileSystem->FindFirstEx( "maps/*.bsp", pszPathID, &findHandle );
+	while ( pszFilename )
+	{
+		char mapname[256];
+		char *ext;
+
+		Q_strncpy( mapname, pszFilename, sizeof( mapname ) - 1 );
+		mapname[ sizeof(mapname) - 1 ] = 0;
+
+		ext = Q_strstr( mapname, ".bsp" );
+		if ( ext )
+		{
+			*ext = 0;
+		}
+
+		// skip hidden maps
+		if ( hiddenMaps )
+		{
+			if ( hiddenMaps->GetInt( mapname, 0 ) )
+			{
+				goto nextFile;
+			}
+		}
+
+		// skip duplicates
+		bool bDup = false;
+		for ( int i = 0; i < m_MapNames.Count(); ++i )
+		{
+			if ( !Q_stricmp( m_MapNames[i], mapname ) )
+			{
+				bDup = true;
+				break;
+			}
+		}
+		if ( bDup )
+		{
+			goto nextFile;
+		}
+
+		// add a card to the grid
+		CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
+		m_pMapList->AddItem( NULL, pCard );
+
+		// store map name for retrieval
+		char *pszCopy = new char[ strlen(mapname) + 1 ];
+		Q_strcpy( pszCopy, mapname );
+		m_MapNames.AddToTail( pszCopy );
+
+	nextFile:
+		pszFilename = g_pFullFileSystem->FindNext( findHandle );
+	}
+	g_pFullFileSystem->FindClose( findHandle );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Load all available maps into the grid
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::LoadMapList()
+{
+	// GAME search path covers the mod dir + mounted custom dirs
+	LoadMaps( "GAME" );
+
+	// fall back to MOD in case the mod dir doesn't resolve through GAME
+	if ( m_MapNames.Count() == 0 )
+	{
+		LoadMaps( "MOD" );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Called when a map card is clicked
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::OnMapSelected( const char *pszMapName )
+{
+	Q_strncpy( m_szSelectedMap, pszMapName, sizeof( m_szSelectedMap ) );
+
+	// highlight the matching card
+	RefreshSelection();
+
+	// reflect the selection on the label
+	if ( m_pSelectedMapLabel )
+	{
+		char szLabel[512];
+		Q_snprintf( szLabel, sizeof( szLabel ), "Map: %s", m_szSelectedMap );
+		m_pSelectedMapLabel->SetText( szLabel );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: highlight the selected map card
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::RefreshSelection()
+{
+	if ( !m_pMapList )
+		return;
+
+	for ( int nItemID = m_pMapList->FirstItem(); nItemID != m_pMapList->InvalidItemID(); nItemID = m_pMapList->NextItem( nItemID ) )
+	{
+		CMapCardPanel *pCard = dynamic_cast< CMapCardPanel * >( m_pMapList->GetItemPanel( nItemID ) );
+		if ( pCard )
+		{
+			bool bSelected = ( m_szSelectedMap[0] != 0 && !Q_stricmp( pCard->GetMapName(), m_szSelectedMap ) );
+			pCard->SetSelected( bSelected );
+		}
+	}
+
+	// default selection
+	if ( m_szSelectedMap[0] == 0 )
+	{
+		const char *startMap = m_pSavedData ? m_pSavedData->GetString("map", "") : "";
+		if ( startMap[0] )
+		{
+			OnMapSelected( startMap );
+		}
+		else if ( m_MapNames.Count() )
+		{
+			OnMapSelected( m_MapNames[0] );
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Returns true if randomly selected map
+//-----------------------------------------------------------------------------
+bool CCreateMultiplayerGameDialog::IsRandomMapSelected()
+{
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Returns currently selected map
+//-----------------------------------------------------------------------------
+const char *CCreateMultiplayerGameDialog::GetMapName()
+{
+	if ( m_szSelectedMap[0] == 0 && m_MapNames.Count() )
+		return m_MapNames[0];
+	return m_szSelectedMap;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: getters for server settings
+//-----------------------------------------------------------------------------
+const char *CCreateMultiplayerGameDialog::GetHostName()
+{
+	static char szValue[256];
+	if ( m_pHostName )
+		m_pHostName->GetText( szValue, sizeof( szValue ) );
+	else
+		szValue[0] = 0;
+	return szValue;
+}
+
+const char *CCreateMultiplayerGameDialog::GetPassword()
+{
+	static char szValue[256];
+	if ( m_pPassword )
+		m_pPassword->GetText( szValue, sizeof( szValue ) );
+	else
+		szValue[0] = 0;
+	return szValue;
+}
+
+int CCreateMultiplayerGameDialog::GetMaxPlayers()
+{
+	if ( m_pMaxPlayers )
+	{
+		KeyValues *kv = m_pMaxPlayers->GetActiveItemUserData();
+		if ( kv )
+			return kv->GetInt( "val", MAX_PLAYERS_DEFAULT );
+	}
+	return MAX_PLAYERS_DEFAULT;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Save the config to disk
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::SaveConfig()
+{
+	if ( m_pSavedData )
+	{
+		m_pSavedData->SetString( "map", GetMapName() );
+		m_pSavedData->SaveToFile( g_pFullFileSystem, "ServerConfig.vdf", "GAME" );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: runs the server when the Start button is pressed
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::CreateGame()
+{
+	// reset server enforced cvars
+	g_pCVar->RevertFlaggedConVars( FCVAR_REPLICATED );
+	g_pCVar->RevertFlaggedConVars( FCVAR_CHEAT );
+
+	char szMapName[64], szHostName[64], szPassword[64];
+	Q_strncpy( szMapName, GetMapName(), sizeof( szMapName ) );
+	Q_strncpy( szHostName, GetHostName(), sizeof( szHostName ) );
+	Q_strncpy( szPassword, GetPassword(), sizeof( szPassword ) );
+
+	SaveConfig();
+
+	char szMapCommand[1024];
 	Q_snprintf(szMapCommand, sizeof( szMapCommand ), "disconnect\nwait\nwait\nsv_lan 1\nsetmaster enable\nmaxplayers %i\nsv_password \"%s\"\nhostname \"%s\"\nprogress_enable\nmap %s\n",
-		m_pGameplayPage->GetMaxPlayers(),
+		GetMaxPlayers(),
 		szPassword,
 		szHostName,
 		szMapName
 	);
 
-	// exec
 	engine->ClientCmd_Unrestricted(szMapCommand);
+}
 
-	return true;
+//-----------------------------------------------------------------------------
+// Purpose: command handler
+//-----------------------------------------------------------------------------
+void CCreateMultiplayerGameDialog::OnCommand( const char *command )
+{
+	if ( !Q_stricmp( command, "CreateGame" ) )
+	{
+		CreateGame();
+		return;
+	}
+	else if ( !Q_stricmp( command, "Close" ) )
+	{
+		Close();
+		return;
+	}
+
+	BaseClass::OnCommand( command );
 }
 
 void CCreateMultiplayerGameDialog::OnKeyCodePressed( vgui::KeyCode code )
 {
-	// Handle close here, CBasePanel parent doesn't support "DialogClosing" command
 	ButtonCode_t nButtonCode = GetBaseButtonCode( code );
 
 	if ( nButtonCode == KEY_XBUTTON_B || nButtonCode == STEAMCONTROLLER_B )
 	{
-		OnCommand( "Close" );
+		Close();
+		return;
 	}
-	else if ( nButtonCode == KEY_XBUTTON_A || nButtonCode == STEAMCONTROLLER_A )
+	else if ( nButtonCode == KEY_ENTER || nButtonCode == KEY_XBUTTON_A || nButtonCode == STEAMCONTROLLER_A )
 	{
-		OnOK( false );
+		CreateGame();
+		return;
 	}
-	else if ( nButtonCode == KEY_XBUTTON_UP || 
-			  nButtonCode == KEY_XSTICK1_UP ||
-			  nButtonCode == KEY_XSTICK2_UP ||
-			  nButtonCode == STEAMCONTROLLER_DPAD_UP ||
-			  nButtonCode == KEY_UP )
-	{
-		int nItem = m_pServerPage->GetMapList()->GetActiveItem() - 1;
-		if ( nItem < 0 )
-		{
-			nItem = m_pServerPage->GetMapList()->GetItemCount() - 1;
-		}
-		m_pServerPage->GetMapList()->ActivateItem( nItem );
-	}
-	else if ( nButtonCode == KEY_XBUTTON_DOWN || 
-			  nButtonCode == KEY_XSTICK1_DOWN ||
-			  nButtonCode == KEY_XSTICK2_DOWN || 
-			  nButtonCode == STEAMCONTROLLER_DPAD_DOWN ||
-			  nButtonCode == KEY_DOWN )
-	{
-		int nItem = m_pServerPage->GetMapList()->GetActiveItem() + 1;
-		if ( nItem >= m_pServerPage->GetMapList()->GetItemCount() )
-		{
-			nItem = 0;
-		}
-		m_pServerPage->GetMapList()->ActivateItem( nItem );
-	}
-	else
-	{
-		BaseClass::OnKeyCodePressed( code );
-	}
+
+	BaseClass::OnKeyCodePressed( code );
 }
