@@ -1012,6 +1012,20 @@ void C_BasePlayer::OnDataChanged( DataUpdateType_t updateType )
 		{
 			FogControllerChanged( updateType == DATA_UPDATE_CREATED );
 		}
+
+		// Entering or leaving a vehicle swaps the weapon viewmodel for the
+		// vehicle's drive viewmodel; the c_hands were released for the ride and
+		// have to be rebuilt once we are back out. This OnDataChanged fires on
+		// the exit state change (the hide-HUD flag is part of it), which is the
+		// only moment that knows about it - weapon viewmodels receive no update
+		// of their own when the player stops driving. Cheap: each viewmodel
+		// early-outs unless its hands really need re-attaching.
+		for ( int i = 0; i < MAX_VIEWMODELS; ++i )
+		{
+			C_BaseViewModel *pViewModel = GetViewModel( i, false );
+			if ( pViewModel )
+				pViewModel->UpdateHandsAttachment();
+		}
 	}
 }
 
