@@ -41,6 +41,12 @@ ConVar cl_hands_angle_roll( "cl_hands_angle_roll", "0", FCVAR_ARCHIVE, "Hands mo
 
 ConVar cl_hands_debug( "cl_hands_debug", "0", FCVAR_ARCHIVE, "Verbose c_hands debug output" );
 
+// GMod "PlayerColor"?-style player sleeve color. GMod tints the c_arms sleeves
+// with each player's own colour (player:GetPlayerColor), defaulting to a teal
+// (62,88,106)/255. Here the local player's sleeve colour is a client convar.
+ConVar hl2sb_player_color( "hl2sb_player_color", "0.243 0.345 0.416", FCVAR_ARCHIVE,
+	"c_arms sleeve tint (PlayerColor proxy). GMod default teal 62/88/106. Format: 'r g b'" );
+
 //-----------------------------------------------------------------------------
 // Global registry of live hands-attachment entities. Every weapon viewmodel
 // owns at most one of these, and they are all destroyed on player spawn / level
@@ -622,22 +628,20 @@ public:
 		if ( !m_pColor )
 			return;
 
+		// GMod style: the sleeve colour comes from the player's own colour
+		// (player:GetPlayerColor), defaulting to the teal fallback. Here the
+		// local player's colour is the "hl2sb_player_color" convar.
 		float r = m_flDefault[0], g = m_flDefault[1], b = m_flDefault[2];
-
-		// Prefer the local player's render color so sleeves match the model tint.
-		C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
-		if ( pLocal )
+		const char *pszCol = hl2sb_player_color.GetString();
+		if ( pszCol && pszCol[0] )
 		{
-			color32 c = pLocal->GetRenderColor();
-			// Only use it if the player actually has a non-default color set;
-			// otherwise keep the material's default so it doesn't wash to white.
-			if ( c.r != 255 || c.g != 255 || c.b != 255 )
-			{
-				r = c.r / 255.0f;
-				g = c.g / 255.0f;
-				b = c.b / 255.0f;
-			}
+			sscanf( pszCol, "%f %f %f", &r, &g, &b );
 		}
+		// Clamp to the 0.01..1.5 range the sleeve vmt's Clamp proxy expects,
+		// so the tint is never blown out.
+		r = clamp( r, 0.01f, 1.5f );
+		g = clamp( g, 0.01f, 1.5f );
+		b = clamp( b, 0.01f, 1.5f );
 
 		m_pColor->SetVecValue( r, g, b );
 	}

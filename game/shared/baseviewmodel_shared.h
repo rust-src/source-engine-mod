@@ -207,7 +207,9 @@ private:
 	int						m_nOldAnimationParity;
 #endif
 
-	// Hands attachment for custom player models
+	// Hands attachment for custom player models. The "held for vehicle" flag is
+	// a plain client bool - it deliberately does NOT change the class layout
+	// (a member added here before caused mixed-offset heap corruption).
 #if defined( CLIENT_DLL )
 	CHandle<class C_ViewmodelAttachment>	m_hHandsAttachment;
 #endif
