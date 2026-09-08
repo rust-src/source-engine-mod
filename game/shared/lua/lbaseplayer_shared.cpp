@@ -21,7 +21,7 @@
 #include "SoundEmitterSystem/lisoundemittersystembase.h"
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
-#include "lcolor.h"
+#include "lColor.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
