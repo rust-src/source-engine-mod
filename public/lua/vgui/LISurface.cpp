@@ -28,11 +28,12 @@ static int surface_AddBitmapFontFile (lua_State *L) {
   return 1;
 }
 
-/*static int surface_AddCustomFontFile (lua_State *L) {
-  lua_pushboolean(L, surface()->AddCustomFontFile(luaL_checkstring(L, 1)));
+// HL2SB: enabled - the sandbox gamemode's CreateDefaultPanels() registers its
+// DIN-Light ttf through this, and without it that hook aborts.
+static int surface_AddCustomFontFile (lua_State *L) {
+  lua_pushboolean(L, surface()->AddCustomFontFile(luaL_checkstring(L, 1), luaL_checkstring(L, 2)));
   return 1;
 }
-*/
 
 static int surface_AddPanel (lua_State *L) {
   surface()->AddPanel(luaL_checkvpanel(L, 1));
@@ -304,6 +305,11 @@ static int surface_GetTextSize (lua_State *L) {
   wchar_t *wbuf = static_cast<wchar_t *>( _alloca( bufSize ) );
   if ( wbuf )
   {
+	  // HL2SB: this conversion was missing, so GetTextSize measured an
+	  // uninitialised stack buffer and returned a garbage width.  Every Lua
+	  // layout that measures text (the kill feed especially) was positioned
+	  // from those bogus values.
+	  g_pVGuiLocalize->ConvertANSIToUnicode( sz, wbuf, bufSize );
 	  surface()->GetTextSize(luaL_checkfont(L, 1), wbuf, wide, tall);
   }
   lua_pushinteger(L, wide);
@@ -490,7 +496,7 @@ static int surface_UnlockCursor (lua_State *L) {
 
 static const luaL_Reg surfacelib[] = {
   {"AddBitmapFontFile",   surface_AddBitmapFontFile},
-//  {"AddCustomFontFile",   surface_AddCustomFontFile},
+  {"AddCustomFontFile",   surface_AddCustomFontFile},
   {"AddPanel",   surface_AddPanel},
   {"ApplyChanges",   surface_ApplyChanges},
   {"BringToFront",   surface_BringToFront},
