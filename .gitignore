@@ -40,3 +40,6 @@ source-engine.sln
 tyabus-diffs/
 
 shots/
+
+# --- local agent notes (kept on disk, never committed) ---
+AGENTS.md
