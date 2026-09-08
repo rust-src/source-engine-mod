@@ -627,7 +627,23 @@ void RecvProxy_SequenceNum( const CRecvProxyData *pData, void *pStruct, void *pO
 	{
 		MDLCACHE_CRITICAL_SECTION();
 
-		model->SetSequence(pData->m_Value.m_Int);
+		// HL2SB: clamp to a valid sequence for the *currently loaded* client
+		// model. The server picks sequences on its own viewmodel model, which
+		// is not guaranteed to be the same .mdl the client resolved from the
+		// search path (GMod c_* replacements). An out-of-range value here used
+		// to feed C_BaseAnimating::FrameAdvance an invalid index and spam
+		// "Bad sequence (N out of M max) in GetSequenceLinearMotion()".
+		int nSeq = pData->m_Value.m_Int;
+		CStudioHdr *pHdr = model->GetModelPtr();
+		if ( pHdr && pHdr->GetNumSeq() > 0 )
+		{
+			if ( nSeq < 0 || nSeq >= pHdr->GetNumSeq() )
+			{
+				nSeq = 0;
+			}
+		}
+
+		model->SetSequence(nSeq);
 		model->m_flAnimTime = gpGlobals->curtime;
 		model->SetCycle(0);
 	}
