@@ -283,6 +283,7 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	Q_snprintf( searchPath, sizeof( searchPath ), "%s/*.lua", path );
 
 	char const *fn = g_pFullFileSystem->FindFirstEx( searchPath, "MOD", &fh );
+	int nLoaded = 0;
 	while ( fn )
 	{
 		if ( fn[0] != '.' )
@@ -296,13 +297,17 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 				char loadname[ 512 ];
 				Q_snprintf( relative, sizeof( relative ), "%s/%s", path, fn );
 				filesystem->RelativePathToFullPath( relative, "MOD", loadname, sizeof( loadname ) );
+				// HL2SB: load diagnostics - "which client Lua files actually ran".
+				Msg( "[Lua]   %s\n", relative );
 				luasrc_dofile( L, loadname );
+				++nLoaded;
 			}
 		}
 
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
+	Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
 }
 
 LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
