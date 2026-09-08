@@ -389,8 +389,12 @@ static const char *s_pLegsModel = "models/gibs/fast_zombie_legs.mdl";
 void CFastZombie::Precache( void )
 {
 	PrecacheModel("models/zombie/fast.mdl");
-#ifdef HL2_EPISODIC
+	// SetZombieModel() picks this model for the torso variant unconditionally
+	// (it is not behind HL2_EPISODIC), so it must always be precached. Without
+	// this, npc_fastzombie_torso hits "UTIL_SetModel: not precached" and the
+	// engine drops out with an error dialog.
 	PrecacheModel("models/zombie/fast_torso.mdl");
+#ifdef HL2_EPISODIC
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter1" );
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter2" );
 	PrecacheScriptSound( "NPC_FastZombie.CarEnter3" );
