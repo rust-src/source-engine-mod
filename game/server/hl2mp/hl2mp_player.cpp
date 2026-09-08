@@ -29,6 +29,7 @@
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "lbaseentity_shared.h"
+#include "lbaseplayer_shared.h"
 #include "lhl2mp_player_shared.h"
 #include "ltakedamageinfo.h"
 #endif
@@ -221,7 +222,18 @@ void CHL2MP_Player::GiveAllItems( void )
 
 void CHL2MP_Player::GiveDefaultItems( void )
 {
-	// If we in coop mode, we must spawn without weapons in first maps of HL2 
+#if defined( LUA_SDK )
+	// HL2SB: let Lua gamemode handle weapon loadout if defined.
+	// Lua returns false = "I handled it, skip C++ default".
+	// Lua returns nil (undefined) = fall through to C++ fallback.
+	BEGIN_LUA_CALL_HOOK( "GiveDefaultItems" );
+		lua_pushplayer( L, this );
+	END_LUA_CALL_HOOK( 1, 1 );
+
+	RETURN_LUA_NONE();
+#endif
+
+	// If we in coop mode, we must spawn without weapons in first maps of HL2
 	if ( FStrEq(mode.GetString(), "coop") )
 	{
 		// Зачем я вообще это сделал? Ведь на картах уже разбросали оружие :P
