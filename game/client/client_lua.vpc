@@ -24,6 +24,7 @@ $Project "Client (HL2SB)"
 	$Folder "Client Lua"
 	{
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
+		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
 		$File "lua/lc_baseanimating.cpp"
 		$File "lua/lc_baseentity.cpp"
@@ -40,6 +41,7 @@ $Project "Client (HL2SB)"
 		$File "lua/scripted_controls/scriptedclientluapanel.cpp"
 		$File "lua/scripted_controls/scriptedhudviewport.cpp"
 		$File "lua/scripted_controls/lPanel.cpp"
+			$File "lua/scripted_controls/lModelPanel.cpp"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
 		$File "$SRCDIR/game/shared/lua/ltakedamageinfo.cpp"

@@ -54,6 +54,7 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_ENTLISTLIBNAME, luaopen_gEntList},
 #endif
   {LUA_GLOBALSLIBNAME, luaopen_gpGlobals},
+  {LUA_HL2SBLIBNAME, luaopen_hl2sb},
 #ifdef CLIENT_DLL
   {LUA_CLIENTSHADOWMGRLIBNAME, luaopen_g_pClientShadowMgr},
   {LUA_FONTLIBNAME, luaopen_HFont},

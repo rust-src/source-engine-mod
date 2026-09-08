@@ -82,6 +82,9 @@ LUALIB_API int (luaopen_FCVAR) (lua_State *L);
 #define LUA_FILESYSTEMLIBNAME			"filesystem"
 LUALIB_API int (luaopen_filesystem) (lua_State *L);
 
+#define LUA_HL2SBLIBNAME				"hl2sb"
+LUALIB_API int (luaopen_hl2sb) (lua_State *L);
+
 #define LUA_FONTFLAGLIBNAME				"FONTFLAG"
 LUALIB_API int (luaopen_FONTFLAG) (lua_State *L);
 

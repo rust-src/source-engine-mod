@@ -25,6 +25,7 @@ $Project "Server (HL2MP)"
 	$Folder "Server Lua"
 	{
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
+		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
 		$File "lua/lbaseanimating.cpp"
 		$File "lua/lbaseentity.cpp"
