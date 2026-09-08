@@ -1680,26 +1680,42 @@ void CBaseEntity::SendOnKilledGameEvent( const CTakeDamageInfo &info )
 
 		event->SetString( "victimclass", GetClassname() );
 
-		// The weapon that dealt the damage. Prefer the killer's current weapon
-		// (most accurate for gun/melee kills), then the weapon entity, then the
-		// inflictor. Strip common prefixes so the client can look up a clean
-		// "death_<weapon>" icon, matching the player-death event.
+		// The weapon that dealt the damage. Mirror the player_death logic in
+		// hl2mp_gamerules.cpp so the client's death_<weapon> icon matches:
+		//  - If the inflictor is a distinct damage-dealing entity (a grenade,
+		//    projectile, gun, etc.) and not the killer's own body, prefer the
+		//    inflictor's classname — this is the actual weapon that killed them
+		//    (e.g. a frag grenade, NOT whatever gun the player is holding).
+		//  - Only when the inflictor IS the killer (melee / direct contact) fall
+		//    back to the killer's active weapon. As a last resort use the weapon
+		//    entity.
 		const char *szWeapon = "";
-		CBasePlayer *pKiller = ToBasePlayer( info.GetAttacker() );
-		CBaseCombatWeapon *pActiveWeapon = pKiller ? pKiller->GetActiveWeapon() : NULL;
-		CBaseEntity *pWeapon = info.GetWeapon();
 		CBaseEntity *pInflictor = info.GetInflictor();
-		if ( pActiveWeapon && pActiveWeapon->GetClassname() && pActiveWeapon->GetClassname()[0] )
+		CBasePlayer *pKiller = ToBasePlayer( info.GetAttacker() );
+		CBaseEntity *pWeapon = info.GetWeapon();
+
+		if ( pInflictor && pInflictor->GetClassname() && pInflictor->GetClassname()[0] )
 		{
-			szWeapon = pActiveWeapon->GetClassname();
+			if ( pKiller && pInflictor == pKiller && pKiller->GetActiveWeapon() &&
+				 pKiller->GetActiveWeapon()->GetClassname()[0] )
+			{
+				// Melee / own-body inflictor: use the weapon in the killer's hand.
+				szWeapon = pKiller->GetActiveWeapon()->GetClassname();
+			}
+			else
+			{
+				// Grenade / projectile / gun: the inflictor is the weapon.
+				szWeapon = pInflictor->GetClassname();
+			}
+		}
+		else if ( pKiller && pKiller->GetActiveWeapon() &&
+				  pKiller->GetActiveWeapon()->GetClassname()[0] )
+		{
+			szWeapon = pKiller->GetActiveWeapon()->GetClassname();
 		}
 		else if ( pWeapon && pWeapon->GetClassname() && pWeapon->GetClassname()[0] )
 		{
 			szWeapon = pWeapon->GetClassname();
-		}
-		else if ( pInflictor && pInflictor->GetClassname() && pInflictor->GetClassname()[0] )
-		{
-			szWeapon = pInflictor->GetClassname();
 		}
 
 		char szWeaponName[64];
@@ -1714,6 +1730,21 @@ void CBaseEntity::SendOnKilledGameEvent( const CTakeDamageInfo &info )
 				Q_strncpy( szWeaponName, szWeaponName + nLen, sizeof( szWeaponName ) );
 				break;
 			}
+		}
+
+		// Same special-case renames as the player_death event, so the client
+		// can look up the matching death_<weapon> glyph.
+		if ( !Q_strcmp( szWeaponName, "prop_combine_ball" ) )
+		{
+			Q_strncpy( szWeaponName, "combine_ball", sizeof( szWeaponName ) );
+		}
+		else if ( !Q_strcmp( szWeaponName, "grenade_ar2" ) )
+		{
+			Q_strncpy( szWeaponName, "smg1_grenade", sizeof( szWeaponName ) );
+		}
+		else if ( !Q_strcmp( szWeaponName, "satchel" ) || !Q_strcmp( szWeaponName, "tripmine" ) )
+		{
+			Q_strncpy( szWeaponName, "slam", sizeof( szWeaponName ) );
 		}
 
 		event->SetString( "weapon", szWeaponName );
