@@ -226,8 +226,12 @@ void CHL2MP_Player::GiveDefaultItems( void )
 	// HL2SB: let Lua gamemode handle weapon loadout if defined.
 	// Lua returns false = "I handled it, skip C++ default".
 	// Lua returns nil (undefined) = fall through to C++ fallback.
+	//
+	// Push the full CHL2MP_Player, not CBasePlayer: CHL2MP_Player's __index
+	// walks CHL2MP_Player -> CBasePlayer -> CBaseAnimating -> CBaseEntity, so
+	// gamemode loadouts can use HL2MP-only methods such as GetPlayerModelType().
 	BEGIN_LUA_CALL_HOOK( "GiveDefaultItems" );
-		lua_pushplayer( L, this );
+		lua_pushhl2mpplayer( L, this );
 	END_LUA_CALL_HOOK( 1, 1 );
 
 	RETURN_LUA_NONE();
