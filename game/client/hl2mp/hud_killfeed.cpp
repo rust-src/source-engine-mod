@@ -44,12 +44,20 @@
 #include "c_team.h"
 #include "filesystem.h"
 
+#ifdef LUA_SDK
+#include "luamanager.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 static ConVar hud_deathnotice_time( "hud_deathnotice_time", "6", FCVAR_ARCHIVE, "How long each death notice stays on screen (seconds)." );
 static ConVar cl_drawdeathnotice( "cl_drawdeathnotice", "1", FCVAR_ARCHIVE, "Toggle the death notice / kill feed HUD on and off." );
 static ConVar hud_killfeed_iconscale( "hud_killfeed_iconscale", "0.9", FCVAR_ARCHIVE, "Kill feed icon height as a fraction of the text height." );
+static ConVar hud_killfeed_max( "hud_killfeed_max", "4", FCVAR_ARCHIVE,
+	"Maximum number of kill feed lines shown at once. 0 = unlimited (GMod behaviour), -1 = use the panel's res MaxDeathNotices." );
+static ConVar cl_killfeed_lua( "cl_killfeed_lua", "1", FCVAR_ARCHIVE,
+	"Let the Lua script own the kill feed drawing (events are forwarded to the AddDeathNotice hook)." );
 
 // Name colours: players are always gold, NPCs and world/environment are always
 // red, regardless of team.
@@ -618,9 +626,46 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		return;
 	}
 
-	// Do we have too many death messages in the queue?
-	if ( m_DeathNotices.Count() > 0 &&
-		m_DeathNotices.Count() >= (int)m_flMaxDeathNotices )
+	// Hand the parsed notice to Lua when a script owns the drawing.  The C++
+	// panel stays alive (it is what receives the game events) but draws nothing.
+#ifdef LUA_SDK
+	if ( cl_killfeed_lua.GetBool() )
+	{
+		int iKillerTeam = 0;
+		int iVictimTeam = 0;
+		if ( g_PR )
+		{
+			if ( deathMsg.Killer.iEntIndex > 0 )
+				iKillerTeam = g_PR->GetTeam( deathMsg.Killer.iEntIndex );
+			if ( deathMsg.Victim.iEntIndex > 0 )
+				iVictimTeam = g_PR->GetTeam( deathMsg.Victim.iEntIndex );
+		}
+
+		BEGIN_LUA_CALL_HOOK( "AddDeathNotice" );
+			lua_pushstring( L, deathMsg.Killer.szName );
+			lua_pushinteger( L, iKillerTeam );
+			lua_pushstring( L, deathMsg.iconDeath && deathMsg.iconDeath->szShortName[0]
+								? deathMsg.iconDeath->szShortName : "" );
+			lua_pushstring( L, deathMsg.Victim.szName );
+			lua_pushinteger( L, iVictimTeam );
+			lua_pushboolean( L, deathMsg.iSuicide != 0 );
+			lua_pushboolean( L, deathMsg.bVictimIsNPC );
+			lua_pushboolean( L, deathMsg.bKillerIsPlayer );
+		END_LUA_CALL_HOOK( 8, 0 );
+
+		return;
+	}
+#endif
+
+	// Trim the queue.  hud_killfeed_max wins when positive; 0 means unlimited,
+	// which is what GMod does (its Deaths table is never capped - it just draws
+	// every notice still inside hud_deathnotice_time); -1 falls back to the
+	// panel's res-defined MaxDeathNotices.
+	int iMaxNotices = hud_killfeed_max.GetInt();
+	if ( iMaxNotices < 0 )
+		iMaxNotices = (int)m_flMaxDeathNotices;
+
+	if ( iMaxNotices > 0 && m_DeathNotices.Count() >= iMaxNotices )
 	{
 		// Remove the oldest one, which will always be the first.
 		m_DeathNotices.Remove(0);
