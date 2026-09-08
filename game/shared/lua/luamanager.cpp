@@ -249,6 +249,12 @@ void luasrc_shutdown (void) {
 
 //  lcf_close(L);
   lua_close(L);
+
+  // Clear the global state pointer: entities are destroyed after Lua shuts
+  // down (C_World / C_BaseEntity destructors run from CHLClient::Shutdown),
+  // and their lua_unref( L, m_nTableReference ) would otherwise dereference
+  // a freed lua_State and crash on exit.
+  L = NULL;
 }
 
 LUA_API int luasrc_dostring (lua_State *L, const char *string) {

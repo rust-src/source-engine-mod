@@ -21,6 +21,7 @@
 #ifdef LUA_SDK
 	#include "takedamageinfo.h"
 	#include "luamanager.h"
+	#include "tier0/threadtools.h"
 	#include "lbasecombatweapon_shared.h"
 	#include "lbaseentity_shared.h"
 	#include "lbaseplayer_shared.h"
@@ -1370,12 +1371,23 @@ void CHL2MPRules::Precache( void )
 bool CHL2MPRules::ShouldCollide( int collisionGroup0, int collisionGroup1 )
 {
 #if defined ( LUA_SDK )
-	BEGIN_LUA_CALL_HOOK( "ShouldCollide" );
-		lua_pushinteger( L, collisionGroup0 );
-		lua_pushinteger( L, collisionGroup1 );
-	END_LUA_CALL_HOOK( 2, 1 );
+	// The particle system simulates collections on worker job threads and its
+	// WorldTraceConstraint traces world geometry, which reaches ShouldCollide
+	// through CTraceFilterSimple::ShouldHitEntity. The Lua state is main-thread
+	// only: calling into it from a job thread leaves luaD_throw with no
+	// protection frame (the pcall's errorJmp lives on the main thread's stack),
+	// so any Lua error escalates to common_exit() and takes the process down
+	// ("PANIC: unprotected error in call to Lua API"). Only invoke the hook
+	// from the main thread and fall through to the native rules otherwise.
+	if ( ThreadInMainThread() )
+	{
+		BEGIN_LUA_CALL_HOOK( "ShouldCollide" );
+			lua_pushinteger( L, collisionGroup0 );
+			lua_pushinteger( L, collisionGroup1 );
+		END_LUA_CALL_HOOK( 2, 1 );
 
-	RETURN_LUA_BOOLEAN();
+		RETURN_LUA_BOOLEAN();
+	}
 #endif
 
 	if ( collisionGroup0 > collisionGroup1 )
