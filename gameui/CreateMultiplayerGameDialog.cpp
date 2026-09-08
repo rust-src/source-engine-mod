@@ -159,6 +159,24 @@ CCreateMultiplayerGameDialog::CCreateMultiplayerGameDialog(vgui::Panel *parent) 
 	m_pSavedData = NULL;
 	m_szSelectedMap[0] = 0;
 
+	// Zero every child pointer up front. The children are only created inside
+	// ApplySchemeSettings() (guarded by m_bBuilt), but OnMapSelected() ->
+	// RefreshSelection() can run from that same path, and any reentrant or
+	// early call would otherwise read an uninitialised garbage pointer
+	// (observed: 0xffeeffee -> access violation in m_pSelectedMapLabel->SetText).
+	m_pGameModeList = NULL;
+	m_pMapList = NULL;
+	m_pHostName = NULL;
+	m_pPassword = NULL;
+	m_pMaxPlayers = NULL;
+	m_pSelectedMapLabel = NULL;
+	m_pStartButton = NULL;
+	m_pBackButton = NULL;
+	m_pTitleLabel = NULL;
+	m_pHostNameLabel = NULL;
+	m_pPasswordLabel = NULL;
+	m_pMaxPlayersLabel = NULL;
+
 	SetDeleteSelfOnClose(true);
 
 	// Content & chrome are built in ApplySchemeSettings() (first call), which
@@ -654,6 +672,13 @@ void CCreateMultiplayerGameDialog::RefreshSelection()
 	if ( !m_pMapList )
 		return;
 
+	// OnMapSelected() calls back into RefreshSelection(); the default-selection
+	// block below calls OnMapSelected(). Guard against re-entering here (e.g. an
+	// empty default map name would otherwise loop forever).
+	if ( m_bInRefreshSelection )
+		return;
+	m_bInRefreshSelection = true;
+
 	for ( int nItemID = m_pMapList->FirstItem(); nItemID != m_pMapList->InvalidItemID(); nItemID = m_pMapList->NextItem( nItemID ) )
 	{
 		CMapCardPanel *pCard = dynamic_cast< CMapCardPanel * >( m_pMapList->GetItemPanel( nItemID ) );
@@ -677,6 +702,8 @@ void CCreateMultiplayerGameDialog::RefreshSelection()
 			OnMapSelected( m_MapNames[0] );
 		}
 	}
+
+	m_bInRefreshSelection = false;
 }
 
 //-----------------------------------------------------------------------------

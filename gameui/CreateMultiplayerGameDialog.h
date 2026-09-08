@@ -104,6 +104,7 @@ private:
 
 	bool m_bBotsEnabled;
 	bool m_bBuilt;
+	bool m_bInRefreshSelection = false;
 };
 
 #endif // CREATEMULTIPLAYERGAMEDIALOG_H
