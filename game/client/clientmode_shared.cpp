@@ -995,6 +995,13 @@ void ClientModeShared::Enable()
 	if( pRoot != 0 )
 	{
 		m_pViewport->SetParent( pRoot );
+#ifdef LUA_SDK
+		// The scripted viewport is what drives the "HudViewportPaint" Lua hook.
+		// It was never parented, sized or shown, so that hook never fired and
+		// Lua HUD code had no place to draw.
+		if ( m_pScriptedViewport )
+			m_pScriptedViewport->SetParent( pRoot );
+#endif
 	}
 
 	// All hud elements should be proportional
@@ -1007,6 +1014,11 @@ void ClientModeShared::Enable()
 	vgui::surface()->SetCursor( m_CursorNone );
 
 	m_pViewport->SetVisible( true );
+
+#ifdef LUA_SDK
+	if ( m_pScriptedViewport )
+		m_pScriptedViewport->SetVisible( true );
+#endif
 
 	if ( m_pViewport->IsKeyBoardInputEnabled() )
 	{
@@ -1058,7 +1070,10 @@ void ClientModeShared::Layout()
 		m_nRootSize[ 1 ] = tall;
 
 #ifdef LUA_SDK
-		//m_pScriptedViewport->SetBounds(0, 0, wide, tall);
+		// Keep the Lua HUD surface full-screen so "HudViewportPaint" covers the
+		// whole viewport.
+		if ( m_pScriptedViewport )
+			m_pScriptedViewport->SetBounds( 0, 0, wide, tall );
 #endif
 		m_pViewport->SetBounds(0, 0, wide, tall);
 #ifdef LUA_SDK
