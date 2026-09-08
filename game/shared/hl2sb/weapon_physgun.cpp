@@ -1030,6 +1030,8 @@ void CWeaponGravityGun::SecondaryAttack( void )
 }
 
 #ifdef CLIENT_DLL
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
+
 //-----------------------------------------------------------------------------
 // Purpose: Third-person function call to render world model
 //-----------------------------------------------------------------------------
@@ -1044,6 +1046,12 @@ int CWeaponGravityGun::DrawModel( int flags )
 		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
 		if ( !pOwner )
+			return 0;
+
+		// HL2SB: the local player's world weapon stays in the render lists for
+		// mirror reflections, so skip the first-person copy of the beam/glow;
+		// ViewModelDrawn draws it at the viewmodel attachment.
+		if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawUsingViewModel() )
 			return 0;
 
 		Vector points[3];
