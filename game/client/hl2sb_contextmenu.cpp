@@ -27,6 +27,7 @@
 #include "cdll_int.h"
 #include "iclientmode.h"
 #include "engine/ivmodelinfo.h"
+#include "istudiorender.h"
 #include "studio.h"
 
 #include <vgui/IScheme.h>
@@ -48,7 +49,7 @@ static CHL2SBContextMenu *g_pHL2SBContextMenu = NULL;
 CHL2SBContextMenu *HL2SB_GetContextMenu() { return g_pHL2SBContextMenu; }
 
 //-----------------------------------------------------------------------------
-// Tunables — defined in cfg/hl2sb_config.cfg (exec'd from autoexec.cfg).
+// Tunables - defined in cfg/hl2sb_config.cfg (exec'd from autoexec.cfg).
 // No FCVAR_ARCHIVE so the cfg file stays authoritative every launch.
 //-----------------------------------------------------------------------------
 static ConVar hl2sb_ctx_window_width ( "hl2sb_ctx_window_width",  "1200", 0, "Context menu window width in pixels" );
@@ -102,7 +103,7 @@ static void SetLocalizedLabel( vgui::Label *pLabel, const char *pszToken, const 
 	wchar_t *pwszFormat = g_pVGuiLocalize ? g_pVGuiLocalize->Find( pszToken ) : NULL;
 	if ( !pwszFormat )
 	{
-		// Missing token — show the token itself so the gap is obvious.
+		// Missing token - show the token itself so the gap is obvious.
 		pLabel->SetText( pszToken );
 		return;
 	}
@@ -401,6 +402,36 @@ void CHL2SBModelPreview::OnMouseWheeled( int delta )
 	Msg( "[HL2SB] Preview zoom: %.2f (dist %.1f)\n", m_flZoomMul, m_flBaseDist * m_flZoomMul );
 }
 
+//-----------------------------------------------------------------------------
+// CModelPanel::Paint() binds the default cubemap and then restores it to NULL
+// instead of to whatever the world pass had bound, it leaves the colour
+// modulation / blend set, and when "spotlight" is enabled it hands
+// g_pStudioRender the address of a *stack local* LightDesc_t.  In-game (unlike
+// the main menu) all of that leaks into the world render, which is what turns
+// every model and brush into the purple ERROR material / NaN dither noise
+// after the overlay closes.  Save and restore everything we can, and clear the
+// studio local lights so the dangling pointer is never read.
+//-----------------------------------------------------------------------------
+void CHL2SBModelPreview::Paint()
+{
+	CMatRenderContextPtr pRenderContext( materials );
+
+	ITexture *pPrevCubemap = pRenderContext->GetLocalCubemap();
+
+	float flPrevColor[3] = { 1.0f, 1.0f, 1.0f };
+	render->GetColorModulation( flPrevColor );
+	float flPrevBlend = render->GetBlend();
+
+	BaseClass::Paint();
+
+	pRenderContext->BindLocalCubemap( pPrevCubemap );
+	render->SetColorModulation( flPrevColor );
+	render->SetBlend( flPrevBlend );
+
+	// CModelPanel::Paint() only ever sets this from a stack local; drop it.
+	g_pStudioRender->SetLocalLights( 0, NULL );
+}
+
 //=============================================================================
 // CHL2SBContextMenu
 //=============================================================================
@@ -464,7 +495,7 @@ CHL2SBContextMenu::CHL2SBContextMenu( IViewPort *pViewPort )
 	m_pModelPreview->SetProportional( false );
 	m_pModelPreview->SetPaintBackgroundEnabled( false );
 
-	// Synthetic "model" block — without it m_pModelInfo stays NULL and
+	// Synthetic "model" block - without it m_pModelInfo stays NULL and
 	// SwapModel() does nothing at all.
 	{
 		KeyValues *pKV = new KeyValues( "ModelPreview" );
@@ -794,6 +825,17 @@ void CHL2SBContextMenu::OnClose()
 	SetMouseInputEnabled( false );
 	m_nLastSelectedID = -1;
 	m_nLastAnimID = -1;
+
+	// Tear the preview entity down instead of leaving it in the client entity
+	// list.  A lingering CModelPanelModel has no business affecting the world
+	// lighting or render lists once the overlay is gone.
+	if ( m_pModelPreview )
+		m_pModelPreview->DeleteModelData();
+
+	m_bPreviewReady = false;
+	m_bAnimApplied = false;
+	m_bAnimListBuilt = false;
+	if ( m_pAnimList ) m_pAnimList->RemoveAll();
 }
 
 void CHL2SBContextMenu::Update() { UpdateCurrentInfo(); }
@@ -876,12 +918,17 @@ void CHL2SBContextMenu::LoadPreviewModel( const char *pszPath )
 		return;
 	}
 
-	// The client must know the model or InitializeAsClientEntity() fails
-	// silently and the panel stays black.
+	// Only preview models the client already knows about.  IVEngineClient's
+	// LoadModel() is documented as a model-*hooking* entry point; calling it
+	// for arbitrary paths here was suspected of disturbing the model/material
+	// caches (world models came back as the purple ERROR material), and the
+	// server already precaches every cfg/playermodel entry in
+	// CHL2MPRules::Precache(), so it is not needed.
 	if ( modelinfo->GetModelIndex( pszPath ) == -1 )
 	{
-		Msg( "[HL2SB] Preview: loading model '%s'\n", pszPath );
-		engine->LoadModel( pszPath, false );
+		Msg( "[HL2SB] Preview: model '%s' is not precached - skipping preview\n", pszPath );
+		SetLocalizedLabel( m_pStatusLabel, "#HL2SB_ContextMenu_NotPrecached", pszPath );
+		return;
 	}
 
 	m_pModelPreview->ResetState();
@@ -914,7 +961,7 @@ void CHL2SBContextMenu::OnKeyCodePressed( KeyCode code )
 }
 
 //=============================================================================
-// +context_menu / -context_menu — direct show/hide
+// +context_menu / -context_menu - direct show/hide
 //=============================================================================
 static void IN_ContextMenuDown( const CCommand &args )
 {
