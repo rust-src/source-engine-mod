@@ -6149,6 +6149,9 @@ void CReflectiveGlassView::PopView( )
 //-----------------------------------------------------------------------------
 // Renders reflective or refractive parts of glass
 //-----------------------------------------------------------------------------
+// HL2SB: global flag so ShouldDrawLocalPlayer() returns true during mirror reflection
+bool g_bRenderingReflection = false;
+
 void CReflectiveGlassView::Draw()
 {
 	VPROF( "CReflectiveGlassView::Draw" );
@@ -6159,8 +6162,13 @@ void CReflectiveGlassView::Draw()
 	// Disable occlusion visualization in reflection
 	bool bVisOcclusion = r_visocclusion.GetInt();
 	r_visocclusion.SetValue( 0 );
-				   
+
+	// HL2SB: force local player model to render in mirror reflection
+	g_bRenderingReflection = true;
+
 	BaseClass::Draw();
+
+	g_bRenderingReflection = false;
 
 	r_visocclusion.SetValue( bVisOcclusion );
 

@@ -71,6 +71,7 @@ int g_nKillCamTarget1 = 0;
 int g_nKillCamTarget2 = 0;
 
 extern ConVar mp_forcecamera; // in gamevars_shared.h
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
 
 #define FLASHLIGHT_DISTANCE		1000
 #define MAX_VGUI_INPUT_MODE_SPEED 30
@@ -1292,7 +1293,9 @@ void C_BasePlayer::AddEntity( void )
 
 	// If set to invisible, skip. Do this before resetting the entity pointer so it has 
 	// valid data to decide whether it's visible.
-	if ( !IsVisible() || !g_pClientMode->ShouldDrawLocalPlayer( this ) )
+	// HL2SB: always add local player to entity list regardless of visibility.
+	// ShouldDraw()/DrawModel() with g_bRenderingReflection handle actual rendering.
+	if ( !IsLocalPlayer() && ( !IsVisible() || !g_pClientMode->ShouldDrawLocalPlayer( this ) ) )
 	{
 		return;
 	}
@@ -1411,12 +1414,21 @@ bool C_BasePlayer::ShouldInterpolate()
 
 bool C_BasePlayer::ShouldDraw()
 {
+	// HL2SB: always return true for local player so engine includes it in render lists.
+	// Actual rendering is controlled by DrawModel() using g_bRenderingReflection.
+	if ( IsLocalPlayer() )
+		return true;
+
 	return ShouldDrawThisPlayer() && BaseClass::ShouldDraw();
 }
 
 int C_BasePlayer::DrawModel( int flags )
 {
 #ifndef PORTAL
+	// HL2SB: force local player model to render during mirror reflection
+	if ( IsLocalPlayer() && g_bRenderingReflection )
+		return BaseClass::DrawModel( flags );
+
 	// In Portal this check is already performed as part of
 	// C_Portal_Player::DrawModel()
 	if ( !ShouldDrawThisPlayer() )
@@ -1910,6 +1922,11 @@ void C_BasePlayer::ThirdPersonSwitch( bool bThirdperson )
 //-----------------------------------------------------------------------------
 /*static*/ bool C_BasePlayer::ShouldDrawLocalPlayer()
 {
+	// HL2SB: force local player into render lists for mirror reflection.
+	// DrawModel() with g_bRenderingReflection controls actual rendering.
+	if ( g_bRenderingReflection )
+		return true;
+
 	if ( !UseVR() )
 	{
 		return !LocalPlayerInFirstPersonView() || cl_first_person_uses_world_model.GetBool();

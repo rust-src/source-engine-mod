@@ -32,6 +32,8 @@
 #include "haptics/ihaptics.h"
 
 
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -255,6 +257,10 @@ void C_BaseViewModel::ApplyBoneMatrixTransform( matrix3x4_t& transform )
 //-----------------------------------------------------------------------------
 bool C_BaseViewModel::ShouldDraw()
 {
+	// HL2SB: don't draw first-person weapon model in mirror reflection
+	if ( g_bRenderingReflection )
+		return false;
+
 	if ( engine->IsHLTV() )
 	{
 		return ( HLTVCamera()->GetMode() == OBS_MODE_IN_EYE &&

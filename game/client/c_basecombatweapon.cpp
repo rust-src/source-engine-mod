@@ -428,12 +428,9 @@ bool C_BaseCombatWeapon::ShouldDraw( void )
 			return false;
 		}
 
-		// 3rd person mode?
-		if ( !ShouldDrawLocalPlayerViewModel() )
-			return true;
-
-		// don't draw active weapon if not in some kind of 3rd person mode, the viewmodel will do that
-		return false;
+		// HL2SB: always return true so weapon is in render list for mirror reflection.
+		// DrawModel() controls actual visibility.
+		return true;
 	}
 
 	// If it's a player, then only show active weapons
@@ -466,6 +463,8 @@ bool C_BaseCombatWeapon::ShouldDrawPickup( void )
 // Purpose: Render the weapon. Draw the Viewmodel if the weapon's being carried
 //			by this player, otherwise draw the worldmodel.
 //-----------------------------------------------------------------------------
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
+
 int C_BaseCombatWeapon::DrawModel( int flags )
 {
 	VPROF_BUDGET( "C_BaseCombatWeapon::DrawModel", VPROF_BUDGETGROUP_MODEL_RENDERING );
@@ -482,12 +481,17 @@ int C_BaseCombatWeapon::DrawModel( int flags )
 	{
 		// don't draw weapon if chasing this guy as spectator
 		// we don't check that in ShouldDraw() since this may change
-		// without notification 
-		
+		// without notification
+
 		if ( localplayer->GetObserverMode() == OBS_MODE_IN_EYE &&
-			 localplayer->GetObserverTarget() == GetOwner() ) 
+			 localplayer->GetObserverTarget() == GetOwner() )
 			return false;
 	}
+
+	// HL2SB: skip world weapon model in first person (viewmodel handles it).
+	// Only draw in reflection or third person.
+	if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawLocalPlayerViewModel() )
+		return 0;
 
 	return BaseClass::DrawModel( flags );
 }
