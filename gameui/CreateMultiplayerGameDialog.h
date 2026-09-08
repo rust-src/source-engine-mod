@@ -51,6 +51,15 @@ private:
 	const char *GetHostName();
 	const char *GetPassword();
 	int GetMaxPlayers();
+	// Current value of mp_falldamage (1 = on).  The cvar is registered by the
+	// server DLL, so while the main menu is up it is usually not visible and
+	// this falls back to the sandbox default (off).
+	bool GetFallDamage();
+	// Writes cfg/listenserver.cfg.  The engine execs that file at
+	// SV_ActivateServer, which is the first moment a server-DLL cvar such as
+	// mp_falldamage can be set at all - it cannot go on the command line
+	// before "map".
+	void WriteListenServerConfig( bool bFallDamage );
 	void SaveConfig();
 
 	void CreateGame();
@@ -95,6 +104,7 @@ private:
 	vgui::Label *m_pHostNameLabel;
 	vgui::Label *m_pPasswordLabel;
 	vgui::Label *m_pMaxPlayersLabel;
+	vgui::CheckButton *m_pFallDamageCheck;
 
 	CUtlVector<char*> m_MapNames; // own the strings
 
