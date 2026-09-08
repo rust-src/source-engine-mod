@@ -23,7 +23,9 @@
 //
 //			Events:
 //			  - player_death    : killer vs victim (players), or suicide
-//			  - entity_killed   : player put down a non-player entity (NPC)
+//			  - entity_killed   : an NPC (or entity) was killed. The killer may
+//			                     be a player, another NPC, or the world, so
+//			                     NPC-vs-NPC scraps also show up in the feed.
 //
 // $NoKeywords: $
 //=============================================================================//
@@ -63,10 +65,12 @@ struct KillFeedItem
 {
 	KillFeedPlayer	Killer;			// may be empty (suicide / world)
 	KillFeedPlayer	Victim;
-	CHudTexture		*iconDeath;		// death_<weapon> or skull
+	CHudTexture		*iconDeath;		// death_<weapon> glyph, or the skull
 	int				iSuicide;		// 1 = no killer (world / self)
 	bool			bKillerIsPlayer;
 	bool			bVictimIsNPC;	// victim is a non-player entity
+	bool			bUseSkull;		// draw the textured skull (suicide / world /
+									// NPC-vs-NPC): no weapon glyph to show
 	float			flAddTime;		// server time when this entry was added
 	float			flDisplayTime;	// server time when it should be removed
 };
@@ -337,15 +341,43 @@ void CHudKillFeed::Paint()
 		int iKillerW = UTIL_ComputeStringWidth( m_hTextFont, killer );
 		bool bShowKiller = ( !e.iSuicide && e.Killer.szName[0] );
 
-		// Icon size: text height * scale, roughly square.
-		int iconTall = (int)( (float)iTextTall * flIconScale );
-		int iconWide = (int)( (float)iconTall * 1.0f );
+		// Size the icon from the object that is actually drawn. A weapon glyph
+		// (or the font skull) is a font character: it CANNOT be scaled, so we
+		// must use its real character width/height and draw it on the same
+		// baseline as the names — otherwise it overflows its layout box and
+		// overlaps the victim name. A skull texture we draw ourselves can be
+		// sized freely and centred in the text height.
+		bool bDrawTexSkull = e.bUseSkull && ( m_iKillIconTex != -1 );
+		int iconWide = 0;
+		int iconTall = 0;
+		if ( bDrawTexSkull )
+		{
+			iconTall = (int)( (float)iTextTall * flIconScale );
+			iconWide = (int)( (float)iconTall * 1.0f );
+		}
+		else if ( icon->bRenderUsingFont )
+		{
+			iconWide = surface()->GetCharacterWidth( icon->hFont, icon->cCharacterInFont );
+			iconTall = surface()->GetFontTall( icon->hFont );
+		}
+		else
+		{
+			iconWide = icon->Width();
+			iconTall = icon->Height();
+		}
+		if ( iconWide <= 0 ) iconWide = iTextTall;
+		if ( iconTall <= 0 ) iconTall = iTextTall;
 
-		// Row vertical metrics: centre the names against the icon's height.
-		int iRowTall = max( iTextTall, iconTall );
-		int iRowY = yStart + ( i * ( (int)m_flLineGap + iRowTall ) );
-		int iTextY = iRowY + ( iRowTall - iTextTall ) / 2;
-		int iIconY = iTextY + ( iTextTall - iconTall ) / 2;
+		// Row vertical metrics. Use a CONSISTENT per-row stride (text height +
+		// line gap) so consecutive rows never overlap even when a row's icon is
+		// fatter/taller than another's — the original HL2MP deathnotice does the
+		// same (yStart + m_flLineHeight * i). Within the row, a font glyph sits on
+		// the name baseline (iTextY); only the freely-scaled skull texture gets
+		// vertically centred against the text height.
+		int iRowStride = iTextTall + (int)m_flLineGap;
+		int iRowY = yStart + ( i * iRowStride );
+		int iTextY = iRowY;
+		int iIconY = bDrawTexSkull ? ( iTextY + ( iTextTall - iconTall ) / 2 ) : iTextY;
 
 		// Layout, right-justified: victim name rightmost, icon to its left,
 		// killer name further left, each separated by its own res-defined gap.
@@ -365,10 +397,12 @@ void CHudKillFeed::Paint()
 			surface()->DrawUnicodeString( killer );
 		}
 
-		// Icon (middle): draw the killicon texture, scaled and centred exactly.
+		// Icon (middle). A weapon glyph is a font character and renders at its
+		// own size via DrawSelf (which ignores the w/h we pass here). Only the
+		// skull texture fills the box we set above.
 		Color iconColor = GetIconColour( e );
 		iconColor[3] = nAlpha;
-		if ( m_iKillIconTex != -1 )
+		if ( bDrawTexSkull )
 		{
 			surface()->DrawSetTexture( m_iKillIconTex );
 			surface()->DrawSetColor( iconColor );
@@ -431,36 +465,70 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 	deathMsg.iSuicide = 0;
 	deathMsg.bKillerIsPlayer = false;
 	deathMsg.bVictimIsNPC = false;
+	deathMsg.bUseSkull = false;
 
 	if ( !Q_stricmp( pszName, "entity_killed" ) )
 	{
-		// Player killed a non-player entity (NPC / prop).
-		int iAttackerUID = event->GetInt( "attacker_uid" );
-		if ( iAttackerUID == 0 )
-			return;
-
-		int killer = engine->GetPlayerForUserID( iAttackerUID );
-		if ( killer == 0 || killer == -1 )
-			return;
-
+		// A non-player entity (NPC / combat character) was killed. The victim is
+		// always an entity here (player-vs-player goes through player_death).
+		// The killer may be a player, another NPC, or the world/env.
 		const char *pszVictimClass = event->GetString( "victimclass", "" );
-		if ( !Q_stricmp( pszVictimClass, "player" ) )
+		if ( !Q_strnicmp( pszVictimClass, "player", 6 ) )
 			return;		// player-vs-player handled via player_death
 
-		Q_strncpy( deathMsg.Killer.szName, g_PR->GetPlayerName( killer ), MAX_PLAYER_NAME_LENGTH );
 		KillFeed_DisplayName( pszVictimClass, deathMsg.Victim.szName, sizeof( deathMsg.Victim.szName ) );
-
-		deathMsg.Killer.iEntIndex = killer;
 		deathMsg.Victim.iEntIndex = 0;
-		deathMsg.bKillerIsPlayer = true;
 		deathMsg.bVictimIsNPC = true;
+
+		int iAttackerUID = event->GetInt( "attacker_uid" );
+		int killer = ( iAttackerUID != 0 ) ? engine->GetPlayerForUserID( iAttackerUID ) : 0;
+
+		// A non-empty "attackername" means the killer is an entity (an NPC),
+		// empty means the world / environmental kill.
+		const char *pszAttackerName = event->GetString( "attackername", "" );
+
+		if ( killer != 0 && killer != -1 )
+		{
+			// A real player did the killing.
+			const char *killer_name = g_PR->GetPlayerName( killer );
+			if ( !killer_name )
+				killer_name = "";
+
+			deathMsg.Killer.iEntIndex = killer;
+			Q_strncpy( deathMsg.Killer.szName, killer_name, MAX_PLAYER_NAME_LENGTH );
+			deathMsg.bKillerIsPlayer = true;
+			deathMsg.iSuicide = 0;
+		}
+		else if ( pszAttackerName && pszAttackerName[0] )
+		{
+			// An NPC killed the entity (NPC-vs-NPC scrapping).
+			char szKillerDisplay[MAX_PLAYER_NAME_LENGTH];
+			KillFeed_DisplayName( pszAttackerName, szKillerDisplay, sizeof( szKillerDisplay ) );
+
+			deathMsg.Killer.iEntIndex = 0;
+			Q_strncpy( deathMsg.Killer.szName, szKillerDisplay, MAX_PLAYER_NAME_LENGTH );
+			deathMsg.bKillerIsPlayer = false;
+			deathMsg.iSuicide = 0;
+		}
+		else
+		{
+			// World / environmental kill (e.g. an NPC died to a hazard). Show
+			// the victim with a skull and no killer name.
+			deathMsg.Killer.iEntIndex = 0;
+			deathMsg.Killer.szName[0] = 0;
+			deathMsg.bKillerIsPlayer = false;
+			deathMsg.iSuicide = 1;
+		}
 
 		const char *pszWeapon = event->GetString( "weapon", "" );
 		deathMsg.iconDeath = gHUD.GetIcon( VarArgs( "death_%s", pszWeapon ) );
-		if ( !deathMsg.iconDeath )
+		if ( !deathMsg.iconDeath || deathMsg.iSuicide )
 		{
-			// No weapon death icon found; fall back to the skull.
+			// No weapon death icon found (or it's a world/NPC kill); fall back to
+			// the skull. Remember that so Paint draws the textured skull, not a
+			// bogus weapon glyph.
 			deathMsg.iconDeath = m_iconD_skull;
+			deathMsg.bUseSkull = true;
 		}
 	}
 	else if ( !Q_stricmp( pszName, "player_death" ) )
@@ -530,7 +598,9 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		deathMsg.iconDeath = gHUD.GetIcon( fullkilledwith );
 		if ( !deathMsg.iconDeath || deathMsg.iSuicide )
 		{
+			// No weapon glyph (or suicide); use the textured skull.
 			deathMsg.iconDeath = m_iconD_skull;
+			deathMsg.bUseSkull = true;
 		}
 	}
 	else
