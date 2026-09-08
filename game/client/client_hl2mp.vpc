@@ -15,6 +15,7 @@ $Configuration
 	$Compiler
 	{
 		$AdditionalIncludeDirectories		"$BASE;hl2mp\ui,.\hl2mp,$SRCDIR\game\shared\hl2mp,.\hl2,.\hl2\elements,$SRCDIR\game\shared\hl2"
+		$AdditionalIncludeDirectories		"$BASE;$SRCDIR\game\shared\episodic,.\episodic"
 		$PreprocessorDefinitions			"$BASE;HL2MP;HL2_CLIENT_DLL;HL2SB;ARGG;LUA_SDK"
 	}
 }
@@ -37,7 +38,9 @@ $Project "Client (HL2MP)"
 
 		$Folder	"HL2 DLL"
 		{
- 			$File	"episodic\c_vort_charge_token.cpp"
+ 			$File	"episodic\c_npc_advisor.cpp"
+			$File	"episodic\c_npc_puppet.cpp"
+			$File	"episodic\c_vort_charge_token.cpp"
 			$File	"$SRCDIR\game\shared\hl2\basehlcombatweapon_shared.cpp"
 			$File	"hl2\c_antlion_dust.cpp"
 			$File	"hl2\c_ar2_explosion.cpp"
