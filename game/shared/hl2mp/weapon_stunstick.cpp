@@ -518,6 +518,8 @@ bool CWeaponStunStick::GetStunState( void )
 
 #ifdef CLIENT_DLL
 
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
+
 //-----------------------------------------------------------------------------
 // Purpose: Get the attachment point on a viewmodel that a base weapon is using
 //-----------------------------------------------------------------------------
@@ -596,6 +598,12 @@ int C_WeaponStunStick::DrawModel( int flags )
 	// Only render these on the transparent pass
 	if ( flags & STUDIO_TRANSPARENCY )
 	{
+		// HL2SB: same as the physcannon - the local player's world weapon stays
+		// in the render lists for mirror reflections, so skip the first-person
+		// effects here; they are drawn at the viewmodel attachments instead.
+		if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawUsingViewModel() )
+			return 0;
+
 		DrawEffects();
 		return 1;
 	}

@@ -3491,6 +3491,7 @@ const char *CWeaponPhysCannon::GetShootSound( int iIndex ) const
 #ifdef CLIENT_DLL
 
 extern void FormatViewModelAttachment( Vector &vOrigin, bool bInverse );
+extern bool g_bRenderingReflection; // HL2SB: mirror reflection flag in viewrender.cpp
 
 //-----------------------------------------------------------------------------
 // Purpose: Gets the complete list of values needed to render an effect from an
@@ -3603,6 +3604,16 @@ int CWeaponPhysCannon::DrawModel( int flags )
 	// Only render these on the transparent pass
 	if ( flags & STUDIO_TRANSPARENCY )
 	{
+		// HL2SB: the local player's world weapon is kept in the render lists so
+		// it shows up in mirror reflections, which means this pass also runs in
+		// first person. The first-person sprites belong to ViewModelDrawn: they
+		// are positioned at the viewmodel attachments and squashed by
+		// FormatViewModelAttachment for the viewmodel projection, so drawing
+		// them here would put them at the wrong screen position (a floating
+		// glow next to the gun).
+		if ( IsCarriedByLocalPlayer() && !g_bRenderingReflection && ShouldDrawUsingViewModel() )
+			return 0;
+
 		DrawEffects();
 		return 1;
 	}
