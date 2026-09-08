@@ -150,12 +150,34 @@ static int hl2sb_GetCurrentPlayerModel( lua_State *L )
 	return 1;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: hl2sb.IsModelPrecached( path )
+//
+// The server precaches every cfg/playermodel entry during
+// CHL2MPRules::Precache(), but a model the client has not received cannot be
+// rendered by vgui.ModelPanel.  The menu uses this to mark unusable entries
+// instead of showing a blank preview.
+//-----------------------------------------------------------------------------
+static int hl2sb_IsModelPrecached( lua_State *L )
+{
+	const char *pszModel = luaL_checkstring( L, 1 );
+
+#ifdef CLIENT_DLL
+	lua_pushboolean( L, modelinfo->GetModelIndex( pszModel ) != -1 );
+#else
+	lua_pushboolean( L, true );
+#endif
+
+	return 1;
+}
+
 static const luaL_Reg hl2sblib[] = {
 	{"GetPlayerModels",			hl2sb_GetPlayerModels},
 	{"GetPlayerModelCount",		hl2sb_GetPlayerModelCount},
 	{"FindPlayerModel",			hl2sb_FindPlayerModel},
 	{"SetPlayerModel",			hl2sb_SetPlayerModel},
 	{"GetCurrentPlayerModel",	hl2sb_GetCurrentPlayerModel},
+	{"IsModelPrecached",		hl2sb_IsModelPrecached},
 	{NULL, NULL}
 };
 
