@@ -38,6 +38,7 @@ LUALIB_API int luaopen_vgui_MenuBar(lua_State *L);
 LUALIB_API int luaopen_vgui_MenuButton(lua_State *L);
 LUALIB_API int luaopen_vgui_MenuItem(lua_State *L);
 LUALIB_API int luaopen_vgui_MessageBox(lua_State *L);
+LUALIB_API int luaopen_vgui_ModelPanel(lua_State *L);
 LUALIB_API int luaopen_vgui_Panel(lua_State *L);
 LUALIB_API int luaopen_vgui_PanelListPanel(lua_State *L);
 LUALIB_API int luaopen_vgui_ProgressBar(lua_State *L);
