@@ -35,6 +35,7 @@ using namespace vgui;
 
 #include "filesystem.h"
 #include <KeyValues.h>
+#include "tier1/convar.h"
 #include <tier0/memdbgon.h>
 
 #define RANDOM_MAP "#GameUI_RandomMap"
@@ -430,6 +431,21 @@ const char *CCreateMultiplayerGameDialog::GetCategoryName( int iCategory )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: The gamemode a map category implies, or NULL for the catch-all
+//          categories, which must leave the user's current gamemode alone.
+//-----------------------------------------------------------------------------
+const char *CCreateMultiplayerGameDialog::GamemodeForCategory( int iCategory )
+{
+	switch ( iCategory )
+	{
+		case MAPCAT_HL2:        return "campaign";
+		case MAPCAT_HL2DM:      return "deathmatch";
+		case MAPCAT_SANDBOX:    return "sandbox";
+		default:                return NULL;
+	}
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Detect a map's category from its filesystem MOUNT path, not from a
 //          hard-coded name. g_pFullFileSystem->GetLocalPath resolves the map
 //          to its absolute disk path; which game folder it sits under tells us
@@ -775,6 +791,23 @@ void CCreateMultiplayerGameDialog::SaveConfig()
 //-----------------------------------------------------------------------------
 void CCreateMultiplayerGameDialog::CreateGame()
 {
+	// "gamemode" carries FCVAR_REPLICATED, so the RevertFlaggedConVars() calls
+	// below would silently reset it to its default (sandbox) and the player
+	// would be dropped back into sandbox no matter what they picked. Remember
+	// the choice first, then hand it back to the server with the map command.
+	ConVarRef gamemodeVar( "gamemode", true );
+	char szGamemode[32];
+	Q_strncpy( szGamemode, gamemodeVar.IsValid() ? gamemodeVar.GetString() : "sandbox", sizeof( szGamemode ) );
+
+	// A map category implies a gamemode (HL2 -> campaign, HL2:DM -> deathmatch,
+	// GMod Sandbox -> sandbox). The catch-all categories leave the current
+	// gamemode alone.
+	const char *pszCategoryGamemode = GamemodeForCategory( m_iSelectedCategory );
+	if ( pszCategoryGamemode )
+	{
+		Q_strncpy( szGamemode, pszCategoryGamemode, sizeof( szGamemode ) );
+	}
+
 	// reset server enforced cvars
 	g_pCVar->RevertFlaggedConVars( FCVAR_REPLICATED );
 	g_pCVar->RevertFlaggedConVars( FCVAR_CHEAT );
@@ -787,7 +820,8 @@ void CCreateMultiplayerGameDialog::CreateGame()
 	SaveConfig();
 
 	char szMapCommand[1024];
-	Q_snprintf(szMapCommand, sizeof( szMapCommand ), "disconnect\nwait\nwait\nsv_lan 1\nsetmaster enable\nmaxplayers %i\nsv_password \"%s\"\nhostname \"%s\"\nprogress_enable\nmap %s\n",
+	Q_snprintf(szMapCommand, sizeof( szMapCommand ), "disconnect\nwait\nwait\nsv_lan 1\nsetmaster enable\ngamemode \"%s\"\nmaxplayers %i\nsv_password \"%s\"\nhostname \"%s\"\nprogress_enable\nmap %s\n",
+		szGamemode,
 		GetMaxPlayers(),
 		szPassword,
 		szHostName,
