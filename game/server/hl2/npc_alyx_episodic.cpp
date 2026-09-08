@@ -258,6 +258,7 @@ void CNPC_Alyx::HandleAnimEvent( animevent_t *pEvent )
 	}
 	else if (pEvent->event == AE_ALYX_EMPTOOL_USE)
 	{
+#ifdef HL2_EPISODIC
 		if( m_OperatorBehavior.IsGoalReady() )
 		{
 			if( m_OperatorBehavior.m_hContextTarget.Get() != NULL )
@@ -265,6 +266,7 @@ void CNPC_Alyx::HandleAnimEvent( animevent_t *pEvent )
 				EmpZapTarget( m_OperatorBehavior.m_hContextTarget );
 			}
 		}
+#endif
 		return;
 	}
 	else if ( pEvent->event == COMBINE_AE_BEGIN_ALTFIRE )
@@ -610,7 +612,9 @@ void CNPC_Alyx::PrescheduleThink( void )
 	if ( GetMoveType() == MOVETYPE_NONE && !GetMoveParent() )
 	{
 		// Don't confuse the passenger behavior with just removing Alyx's parent!
+#ifdef HL2_EPISODIC
 		if ( m_PassengerBehavior.IsEnabled() == false )
+#endif
 		{
 			SetupAlyxWithoutParent();
 			SetupVPhysicsHull();
@@ -840,7 +844,11 @@ void CNPC_Alyx::GatherConditions()
 
 	// ROBIN: This was here to solve a problem in a playtest. We've since found what we think was the cause.
 	// It's a useful piece of debug to have lying there, so I've left it in.
-	if ( (GetFlags() & FL_FLY) && m_NPCState != NPC_STATE_SCRIPT && !m_ActBusyBehavior.IsActive() && !m_PassengerBehavior.IsEnabled() )
+	if ( (GetFlags() & FL_FLY) && m_NPCState != NPC_STATE_SCRIPT && !m_ActBusyBehavior.IsActive()
+#ifdef HL2_EPISODIC
+		&& !m_PassengerBehavior.IsEnabled()
+#endif
+		)
 	{
 		Warning( "Removed FL_FLY from Alyx, who wasn't running a script or actbusy. Time %.2f, map %s.\n", gpGlobals->curtime, STRING(gpGlobals->mapname) );
 		RemoveFlag( FL_FLY );
@@ -1065,9 +1073,11 @@ void CNPC_Alyx::CombineBallSocketed( int iNumBounces )
 //-----------------------------------------------------------------------------
 bool CNPC_Alyx::RunningPassengerBehavior( void )
 {
+#ifdef HL2_EPISODIC
 	// Must be active and not outside the vehicle
 	if ( m_PassengerBehavior.IsRunning() && m_PassengerBehavior.GetPassengerState() != PASSENGER_STATE_OUTSIDE )
 		return true;
+#endif
 
 	return false;
 }
@@ -2712,8 +2722,10 @@ bool CNPC_Alyx::CanBeBlindedByFlashlight( bool bCheckLightSources )
 	// Not during an actbusy
 	if ( m_ActBusyBehavior.IsActive() )
 		return false;
+#ifdef HL2_EPISODIC
 	if ( m_OperatorBehavior.IsRunning() )
 		return false;
+#endif
 
 	// Can't be blinded if I've been in combat recently, to fix anim snaps
 	if ( GetLastEnemyTime() != 0.0 )
@@ -2895,11 +2907,13 @@ void CNPC_Alyx::AimGun( void )
 	}
 
 	// Always allow the passenger behavior to handle this
+#ifdef HL2_EPISODIC
 	if ( m_PassengerBehavior.IsEnabled() )
 	{
 		m_PassengerBehavior.AimGun();
 		return;
 	}
+#endif
 
 	if( !GetEnemy() )
 	{
@@ -3182,21 +3196,25 @@ void CNPC_Alyx::BarnacleDeathSound( void )
 // Purpose: 
 // Output : PassengerState_e
 //-----------------------------------------------------------------------------
+#ifdef HL2_EPISODIC
 PassengerState_e CNPC_Alyx::GetPassengerState( void )
 {
 	return m_PassengerBehavior.GetPassengerState();
 }
+#endif
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 void CNPC_Alyx::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
 	// if I'm in the vehicle, the player is probably trying to use the vehicle
+#ifdef HL2_EPISODIC
 	if ( GetPassengerState() == PASSENGER_STATE_INSIDE && pActivator->IsPlayer() && GetParent() )
 	{
 		GetParent()->Use( pActivator, pCaller, useType, value );
 		return;
 	}
+#endif
 	m_bDontUseSemaphore = true;
 	SpeakIfAllowed( TLK_USE );
 	m_bDontUseSemaphore = false;
@@ -3294,7 +3312,11 @@ void CNPC_Alyx::SpeakAttacking( void )
 //-----------------------------------------------------------------------------
 bool CNPC_Alyx::ForceVehicleInteraction( const char *lpszInteractionName, CBaseCombatCharacter *pOther )
 {
+#ifdef HL2_EPISODIC
 	return m_PassengerBehavior.ForceVehicleInteraction( lpszInteractionName, pOther );
+#else
+	return false;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -3364,7 +3386,9 @@ void CNPC_Alyx::InputOutsideTransition( inputdata_t &inputdata )
 			return;
 
 		// Enter immediately
+#ifdef HL2_EPISODIC
 		EnterVehicle( pPlayer->GetVehicleEntity(), true );
+#endif
 		return;
 	}
 

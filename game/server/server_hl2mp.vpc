@@ -16,6 +16,7 @@ $Configuration
 	$Compiler
 	{
 		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\hl2,.\hl2,.\hl2mp,$SRCDIR\game\shared\hl2mp"
+		$AdditionalIncludeDirectories	"$BASE;$SRCDIR\game\shared\episodic,.\episodic"
 		$PreprocessorDefinitions		"$BASE;HL2MP;HL2_DLL;HL2SB;ARGG;LUA_SDK"
 	}
 }
@@ -138,8 +139,12 @@ $Project "Server (HL2MP)"
 			$File	"hl2\item_healthkit.cpp"
 			$File	"hl2\item_itemcrate.cpp"
 			$File	"hl2\item_suit.cpp"
+			$File	"hl2\info_darknessmode_lightsource.cpp"
+			$File	"hl2\info_darknessmode_lightsource.h"
 			$File	"hl2\look_door.cpp"
 			$File	"hl2\monster_dummy.cpp"
+			$File	"hl2\npc_alyx_episodic.cpp"
+			$File	"hl2\npc_alyx_episodic.h"
 			$File	"hl2\npc_antlion.cpp"
 			$File	"hl2\npc_antlion.h"
 			$File	"hl2\npc_antlionguard.cpp"
@@ -171,6 +176,7 @@ $Project "Server (HL2MP)"
 			$File	"hl2\npc_dog.cpp"
 			$File	"hl2\npc_eli.cpp"
 			$File	"hl2\npc_enemyfinder.cpp"
+			$File	"hl2\npc_fastzombie.cpp"
 			$File	"hl2\npc_fisherman.cpp"
 			$File	"hl2\npc_gman.cpp"
 			$File	"hl2\npc_headcrab.cpp"
@@ -301,6 +307,18 @@ $Project "Server (HL2MP)"
 				$File	"$SRCDIR\game\shared\hl2mp\weapon_smg1.cpp"
 				$File	"$SRCDIR\game\shared\hl2mp\weapon_stunstick.cpp"
 			}
+		}
+
+		$Folder	"Episodic"
+		{
+			$File	"episodic\npc_advisor.cpp"
+			$File	"episodic\npc_combine_cannon.cpp"
+			$File	"episodic\npc_hunter.cpp"
+			$File	"episodic\npc_hunter.h"
+			$File	"episodic\npc_magnusson.cpp"
+			$File	"episodic\npc_puppet.cpp"
+			$File	"episodic\weapon_striderbuster.cpp"
+			$File	"episodic\weapon_striderbuster.h"
 		}
 	}
 }

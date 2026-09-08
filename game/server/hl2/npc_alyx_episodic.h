@@ -169,7 +169,9 @@ public:
 
 	virtual const char *GetDeathMessageText( void ) { return "GAMEOVER_ALYXDEAD"; }
 
+#ifdef HL2_EPISODIC
 	PassengerState_e	GetPassengerState( void );
+#endif
 
 	void				Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	bool				PlayerInSpread( const Vector &sourcePos, const Vector &targetPos, float flSpread, float maxDistOffCenter, bool ignoreHatedPlayers );
