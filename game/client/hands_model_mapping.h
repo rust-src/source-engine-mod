@@ -12,7 +12,7 @@
 
 #include "convar.h"
 #include "tier0/platform.h"  // MAX_PATH
-#include "color.h"           // Color (per-player sleeve colour)
+#include "Color.h"           // Color (per-player sleeve colour)
 
 // Default hands model when no mapping is found
 #define HANDS_MODEL_DEFAULT "models/arms/hands.mdl"
