@@ -13,6 +13,14 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// HL2SB: global ammo cap override.
+// Same convar Garry's Mod ships (server + replicated). When above 0 it
+// replaces the per-ammo-type max carry for every type; when 0 (the default)
+// the per-type values win, and those come from the active gamemode's
+// gamemodes/<name>/gamemode/ammo.lua.
+ConVar gmod_maxammo( "gmod_maxammo", "0", FCVAR_REPLICATED | FCVAR_NOTIFY,
+	"If set to above 0, overrides max ammo carried per player of all ammo types." );
+
 //-----------------------------------------------------------------------------
 // Purpose: Return a pointer to the Ammo at the Index passed in
 //-----------------------------------------------------------------------------
@@ -104,6 +112,10 @@ int	CAmmoDef::MaxCarry(int nAmmoIndex)
 {
 	if ( nAmmoIndex < 1 || nAmmoIndex >= m_nAmmoIndex )
 		return 0;
+
+	// HL2SB: gmod_maxammo overrides every ammo type when above 0 (GMod behaviour).
+	if ( gmod_maxammo.GetInt() > 0 )
+		return gmod_maxammo.GetInt();
 
 	if ( m_AmmoType[nAmmoIndex].pMaxCarry == USE_CVAR )
 	{

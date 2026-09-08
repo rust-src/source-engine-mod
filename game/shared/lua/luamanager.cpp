@@ -16,6 +16,7 @@
 #endif
 #include "basescripted.h"
 #include "weapon_hl2mpbase_scriptedweapon.h"
+#include "ammodef.h"
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "luacachefile.h"
@@ -591,6 +592,12 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  // luasrc_LoadEffects( loadPath );
 	  BEGIN_LUA_CALL_HOOK("Initialize");
 	  END_LUA_CALL_HOOK(0,0);
+
+	  // HL2SB: the gamemode Lua has now registered its ammo types
+	  // (gamemodes/<name>/gamemode/ammo.lua, pulled in by shared.lua),
+	  // so push them into the engine every map load.
+	  luasrc_ApplyAmmoTypes( GetAmmoDef() );
+
 	  return true;
 	}
 	else
@@ -831,3 +838,185 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 #endif
 #endif
 #endif
+
+//-----------------------------------------------------------------------------
+// HL2SB: the Lua side owns the ammo type definitions.
+//
+// The engine registers its built-in HL2MP ammo types first, then calls this
+// once (from GetAmmoDef) so lua/game/shared/hl2sb_ammo.lua can override any
+// field of those types, or add brand new ones.
+//
+// Only the fields a Lua entry actually supplies are touched; everything else
+// keeps the value the engine registered.
+//-----------------------------------------------------------------------------
+static bool luasrc_AmmoFieldInt (lua_State *L, const char *pszKey, int &iOut)
+{
+  bool bFound = false;
+
+  lua_getfield(L, -1, pszKey);
+
+  if (lua_isnumber(L, -1))
+  {
+    iOut = luaL_checkint(L, -1);
+    bFound = true;
+  }
+
+  lua_pop(L, 1);
+
+  return bFound;
+}
+
+static bool luasrc_AmmoFieldFloat (lua_State *L, const char *pszKey, float &flOut)
+{
+  bool bFound = false;
+
+  lua_getfield(L, -1, pszKey);
+
+  if (lua_isnumber(L, -1))
+  {
+    flOut = (float)luaL_checknumber(L, -1);
+    bFound = true;
+  }
+
+  lua_pop(L, 1);
+
+  return bFound;
+}
+
+void luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef)
+{
+  if (!pAmmoDef || !L || !g_bLuaInitialized)
+    return;
+
+  lua_getglobal(L, "ammo");
+
+  if (!lua_istable(L, -1))
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  lua_getfield(L, -1, "getammotypes");
+  lua_remove(L, -2);  /* drop the ammo table, keep the function */
+
+  if (!lua_isfunction(L, -1))
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  if (luasrc_pcall(L, 0, 1, 0) != 0)
+    return;
+
+  if (!lua_istable(L, -1))
+  {
+    lua_pop(L, 1);
+    return;
+  }
+
+  int iCount = (int)lua_objlen(L, -1);
+  int iApplied = 0;
+
+  for (int i = 1; i <= iCount; ++i)
+  {
+    lua_rawgeti(L, -1, i);
+
+    if (lua_istable(L, -1))
+    {
+      lua_getfield(L, -1, "name");
+      const char *pszName = lua_isstring(L, -1) ? lua_tostring(L, -1) : NULL;
+      lua_pop(L, 1);
+
+      if (pszName && pszName[0])
+      {
+        int iIndex = pAmmoDef->Index(pszName);
+
+        if (iIndex <= 0)
+        {
+          /* A type the engine does not know about - create it. */
+          int iDmgType = DMG_BULLET, iTracer = TRACER_NONE;
+          int iPlrDmg = 0, iNpcDmg = 0, iCarry = 0, iFlags = 0;
+          int iMinSplash = 4, iMaxSplash = 8;
+          float flForce = 0.0f;
+
+          luasrc_AmmoFieldInt(L, "dmgtype",   iDmgType);
+          luasrc_AmmoFieldInt(L, "tracer",    iTracer);
+          luasrc_AmmoFieldInt(L, "plydmg",    iPlrDmg);
+          luasrc_AmmoFieldInt(L, "npcdmg",    iNpcDmg);
+          luasrc_AmmoFieldInt(L, "maxcarry",  iCarry);
+          luasrc_AmmoFieldFloat(L, "force",   flForce);
+          luasrc_AmmoFieldInt(L, "flags",     iFlags);
+          luasrc_AmmoFieldInt(L, "minsplash", iMinSplash);
+          luasrc_AmmoFieldInt(L, "maxsplash", iMaxSplash);
+
+          pAmmoDef->AddAmmoType( pszName, iDmgType, iTracer, iPlrDmg, iNpcDmg,
+                                 iCarry, flForce, iFlags, iMinSplash, iMaxSplash );
+
+          iIndex = pAmmoDef->Index(pszName);
+
+          if (iIndex > 0)
+          {
+            Msg( "[Ammo] Lua added ammo type '%s'\n", pszName );
+            ++iApplied;
+          }
+          else
+          {
+            Warning( "[Ammo] Lua could not add ammo type '%s' (ammo table full?)\n", pszName );
+          }
+        }
+        else
+        {
+          Ammo_t *pAmmo = &pAmmoDef->m_AmmoType[iIndex];
+          int iValue = 0;
+          float flValue = 0.0f;
+
+          if (luasrc_AmmoFieldInt(L, "dmgtype", iValue))
+            pAmmo->nDamageType = iValue;
+
+          if (luasrc_AmmoFieldInt(L, "tracer", iValue))
+            pAmmo->eTracerType = iValue;
+
+          /* Clearing the cvar pointer makes the integer value win. */
+          if (luasrc_AmmoFieldInt(L, "plydmg", iValue))
+          {
+            pAmmo->pPlrDmg = iValue;
+            pAmmo->pPlrDmgCVar = NULL;
+          }
+
+          if (luasrc_AmmoFieldInt(L, "npcdmg", iValue))
+          {
+            pAmmo->pNPCDmg = iValue;
+            pAmmo->pNPCDmgCVar = NULL;
+          }
+
+          if (luasrc_AmmoFieldInt(L, "maxcarry", iValue))
+          {
+            pAmmo->pMaxCarry = iValue;
+            pAmmo->pMaxCarryCVar = NULL;
+          }
+
+          if (luasrc_AmmoFieldFloat(L, "force", flValue))
+            pAmmo->physicsForceImpulse = flValue;
+
+          if (luasrc_AmmoFieldInt(L, "flags", iValue))
+            pAmmo->nFlags = iValue;
+
+          if (luasrc_AmmoFieldInt(L, "minsplash", iValue))
+            pAmmo->nMinSplashSize = iValue;
+
+          if (luasrc_AmmoFieldInt(L, "maxsplash", iValue))
+            pAmmo->nMaxSplashSize = iValue;
+
+          ++iApplied;
+        }
+      }
+    }
+
+    lua_pop(L, 1);  /* pop the ammo entry */
+  }
+
+  lua_pop(L, 1);    /* pop the table */
+
+  if (iApplied > 0)
+    Msg( "[Ammo] applied %d Lua ammo definition(s)\n", iApplied );
+}

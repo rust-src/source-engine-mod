@@ -1509,6 +1509,14 @@ CAmmoDef *GetAmmoDef()
 		def.AddAmmoType( "BuckshotHL1",		DMG_BULLET | DMG_BUCKSHOT,	TRACER_LINE, "sk_plr_dmg_buckshot",		NULL,					"sk_max_buckshot",		BULLET_IMPULSE(200, 1200), 0 );
 		def.AddAmmoType( "XBowBoltHL1",		DMG_BULLET | DMG_NEVERGIB,	TRACER_LINE, "sk_plr_dmg_xbow_bolt_plr",NULL,					"sk_max_xbow_bolt",		BULLET_IMPULSE( 200, 1200), 0 );
 		def.AddAmmoType( "GrenadeHL1",		DMG_BURN | DMG_BLAST,		TRACER_NONE, "sk_plr_dmg_grenade",		NULL,					"sk_max_grenade",		0, 0 );
+
+#ifdef LUA_SDK
+		// HL2SB: the Lua side owns the ammo definitions.
+		// Each gamemode registers its own in gamemodes/<name>/gamemode/ammo.lua;
+		// this call is the fallback for when the ammo table is built before the
+		// gamemode is loaded. See luasrc_ApplyAmmoTypes().
+		luasrc_ApplyAmmoTypes( &def );
+#endif
 	}
 
 	return &def;
