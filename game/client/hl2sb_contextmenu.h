@@ -30,6 +30,12 @@ public:
 	virtual void OnCursorMoved( int x, int y );
 	virtual void OnMouseWheeled( int delta );
 
+	// CModelPanel::Paint() leaves the local cubemap bound to NULL and the
+	// colour modulation / blend clobbered, which corrupts world materials
+	// (everything turns into the purple ERROR material) after the overlay
+	// closes.  Save and restore them around the base implementation.
+	virtual void Paint();
+
 	// Fit the whole model into the viewport using its render bounds.
 	// Preserves the user's zoom multiplier.
 	void FitCameraToModel();
