@@ -3317,10 +3317,20 @@ void C_BaseAnimating::ProcessMuzzleFlashEvent()
 		{
 			Vector vAttachment;
 			QAngle dummyAngles;
-			GetAttachment( 1, vAttachment, dummyAngles );
+
+			// HL2SB: the return value used to be ignored, so a model without
+			// attachment 1 (custom/ported weapons) left vAttachment holding
+			// uninitialised stack data.  The elight was then placed at garbage
+			// coordinates, which corrupted the light cache - the whole scene
+			// washed out into NaN dither noise a frame or two after firing.
+			if ( !GetAttachment( 1, vAttachment, dummyAngles ) )
+				return;
 
 			// Make an elight
 			dlight_t *el = effects->CL_AllocElight( LIGHT_INDEX_MUZZLEFLASH + index );
+			if ( !el )
+				return;
+
 			el->origin = vAttachment;
 			el->radius = random->RandomInt( 32, 64 ); 
 			el->decay = el->radius / 0.05f;
@@ -3879,6 +3889,29 @@ void C_BaseAnimating::FireEvent( const Vector& origin, const QAngle& angles, int
 
 	case AE_MUZZLEFLASH:
 		{
+#if defined ( HL2SB )
+			// The local player's *world* weapon (and the world player model it
+			// hangs off) carry the same AE_MUZZLEFLASH in their fire
+			// animations.  In first person that spawned a second flame on the
+			// world model - hip height, below the viewmodel's own flash - so
+			// skip it here.  The viewmodel still dispatches its own flash, and
+			// third person still needs the world model's.
+			if ( !IsViewModel() && !::input->CAM_IsThirdPerson() )
+			{
+				C_BasePlayer *pLocal = C_BasePlayer::GetLocalPlayer();
+				bool bIsLocalEntity = ( pLocal && pLocal == this );
+
+				if ( !bIsLocalEntity )
+				{
+					C_BaseCombatWeapon *pWeapon = dynamic_cast< C_BaseCombatWeapon *>( this );
+					if ( pWeapon && pWeapon->GetOwner() == pLocal )
+						bIsLocalEntity = true;
+				}
+
+				if ( bIsLocalEntity )
+					break;
+			}
+#endif
 			// Send out the effect for a player
 			DispatchMuzzleEffect( options, true );
 			break;
