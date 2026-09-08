@@ -1001,6 +1001,14 @@ void ClientModeShared::Enable()
 		// Lua HUD code had no place to draw.
 		if ( m_pScriptedViewport )
 			m_pScriptedViewport->SetParent( pRoot );
+
+		// The Lua root panel is the default parent for every panel a script
+		// creates with vgui.Panel / vgui.Frame / vgui.ModelPanel.  Disable()
+		// unparents and hides it, but Enable() never put it back, so any Lua
+		// panel created afterwards was a child of an invisible panel and never
+		// rendered.
+		if ( m_pClientLuaPanel )
+			m_pClientLuaPanel->SetParent( pRoot );
 #endif
 	}
 
@@ -1018,6 +1026,9 @@ void ClientModeShared::Enable()
 #ifdef LUA_SDK
 	if ( m_pScriptedViewport )
 		m_pScriptedViewport->SetVisible( true );
+
+	if ( m_pClientLuaPanel )
+		m_pClientLuaPanel->SetVisible( true );
 #endif
 
 	if ( m_pViewport->IsKeyBoardInputEnabled() )
@@ -1077,7 +1088,10 @@ void ClientModeShared::Layout()
 #endif
 		m_pViewport->SetBounds(0, 0, wide, tall);
 #ifdef LUA_SDK
-		//m_pClientLuaPanel->SetBounds(0, 0, wide, tall);
+		// Full-screen so panels created by Lua are laid out against the real
+		// viewport instead of a 0x0 parent.
+		if ( m_pClientLuaPanel )
+			m_pClientLuaPanel->SetBounds( 0, 0, wide, tall );
 #endif
 		if ( changed )
 		{
