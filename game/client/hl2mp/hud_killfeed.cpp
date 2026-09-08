@@ -7,10 +7,11 @@
 //
 //			   <KillerName>  <iconDeath>  <VictimName>
 //
-//			Colour rules (GMod-ish):
-//			  - killer name  : the killer's team colour, or white if unassigned
-//			  - victim name  : red if the victim is an NPC, else the victim's
-//			                   team colour (or red when unassigned)
+//			Colour rules:
+//			  - killer name  : gold when the killer is a player, red otherwise
+//			                   (NPC or world / environment)
+//			  - victim name  : gold when the victim is a player, red when it is
+//			                   an NPC / world entity
 //			  - icon         : red for a suicide / world / NPC kill, else the
 //			                   killer's team colour
 //
@@ -41,6 +42,7 @@
 #include <KeyValues.h>
 #include "c_baseplayer.h"
 #include "c_team.h"
+#include "filesystem.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -48,6 +50,11 @@
 static ConVar hud_deathnotice_time( "hud_deathnotice_time", "6", FCVAR_ARCHIVE, "How long each death notice stays on screen (seconds)." );
 static ConVar cl_drawdeathnotice( "cl_drawdeathnotice", "1", FCVAR_ARCHIVE, "Toggle the death notice / kill feed HUD on and off." );
 static ConVar hud_killfeed_iconscale( "hud_killfeed_iconscale", "0.9", FCVAR_ARCHIVE, "Kill feed icon height as a fraction of the text height." );
+
+// Name colours: players are always gold, NPCs and world/environment are always
+// red, regardless of team.
+static const Color KILLFEED_PLAYER_NAME_COLOUR( 255, 210, 60, 255 );	// gold
+static const Color KILLFEED_NPC_NAME_COLOUR( 220, 40, 40, 255 );		// red
 
 //-----------------------------------------------------------------------------
 // Player (or entity) entries in a death notice.
@@ -209,11 +216,26 @@ void CHudKillFeed::VidInit( void )
 	// Load the GMod killicon material as a texture so we can draw it as a
 	// texture and scale/centre it exactly (font glyphs carry a vertical ink
 	// offset we can't compensate without exact bounds).
+	//
+	// That material ships with GMod content, not with the engine.  When it is
+	// absent DrawSetTextureFile() - which returns void - silently binds the
+	// pink ERROR material, so every world/suicide kill (e.g. trigger_hurt)
+	// showed a checkerboard instead of the skull.  Probe for the file first and
+	// leave m_iKillIconTex at -1 when it is missing; Paint() then falls back to
+	// the d_skull font glyph.
 	if ( m_iKillIconTex == -1 )
 	{
-		m_iKillIconTex = surface()->CreateNewTextureID();
-		// Material path is relative to "materials/" (the material system prepends it).
-		surface()->DrawSetTextureFile( m_iKillIconTex, "hud/killicons/default", true, false );
+		if ( filesystem->FileExists( "materials/hud/killicons/default.vmt", "GAME" ) )
+		{
+			m_iKillIconTex = surface()->CreateNewTextureID();
+			// Material path is relative to "materials/" (the material system prepends it).
+			surface()->DrawSetTextureFile( m_iKillIconTex, "hud/killicons/default", true, false );
+		}
+		else
+		{
+			Msg( "[HL2SB] materials/hud/killicons/default.vmt not found - "
+				 "kill feed falls back to the d_skull glyph\n" );
+		}
 	}
 
 	m_DeathNotices.Purge();
@@ -234,38 +256,26 @@ bool CHudKillFeed::ShouldDraw( void )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Colour for the killer name.
+// Purpose: Colour for the killer name: gold for players, red for NPCs/world.
 //-----------------------------------------------------------------------------
 Color CHudKillFeed::GetKillerColour( const KillFeedItem &e )
 {
-	if ( e.bKillerIsPlayer && e.Killer.iEntIndex > 0 )
-	{
-		int iTeam = g_PR ? g_PR->GetTeam( e.Killer.iEntIndex ) : 0;
-		if ( iTeam > 0 )
-			return GameResources()->GetTeamColor( iTeam );
-	}
-	// Non-player killer or unassigned: GMod-ish white.
-	return Color( 240, 240, 240, 255 );
+	if ( e.bKillerIsPlayer )
+		return KILLFEED_PLAYER_NAME_COLOUR;
+
+	// NPC killer or world/environmental kill.
+	return KILLFEED_NPC_NAME_COLOUR;
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: Colour for the victim name.
+// Purpose: Colour for the victim name: gold for players, red for NPCs/world.
 //-----------------------------------------------------------------------------
 Color CHudKillFeed::GetVictimColour( const KillFeedItem &e )
 {
-	// NPC victim: always red (as requested).
 	if ( e.bVictimIsNPC )
-		return Color( 220, 40, 40, 255 );
+		return KILLFEED_NPC_NAME_COLOUR;
 
-	if ( e.Victim.iEntIndex > 0 )
-	{
-		int iTeam = g_PR ? g_PR->GetTeam( e.Victim.iEntIndex ) : 0;
-		if ( iTeam > 0 )
-			return GameResources()->GetTeamColor( iTeam );
-	}
-
-	// Unassigned / world victim: red.
-	return Color( 220, 40, 40, 255 );
+	return KILLFEED_PLAYER_NAME_COLOUR;
 }
 
 //-----------------------------------------------------------------------------
