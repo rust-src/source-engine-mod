@@ -72,6 +72,8 @@ private:
 		MAPCAT_COUNT,
 	};
 	const char *GetCategoryName( int iCategory );
+	// The gamemode a map category implies, or NULL to keep the current one.
+	const char *GamemodeForCategory( int iCategory );
 	// Detects a category for a map from its filesystem mount path.
 	int MapNameToCategory( const char *pszMapName );
 	// Rebuilds the map grid honouring the selected category.
