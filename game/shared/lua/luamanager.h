@@ -336,4 +336,8 @@ void       luasrc_LoadWeapons (const char *path = 0);
 bool       luasrc_LoadGamemode (const char *gamemode);
 bool       luasrc_SetGamemode (const char *gamemode);
 
+// HL2SB: pull the ammo type definitions out of the "ammo" Lua module.
+class CAmmoDef;
+void       luasrc_ApplyAmmoTypes (CAmmoDef *pAmmoDef);
+
 #endif // LUAMANAGER_H
