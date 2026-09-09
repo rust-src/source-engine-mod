@@ -82,6 +82,42 @@ LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
   if (!lua_isnil(L, -1))
     info.m_vecSrc = luaL_checkvector(L, -1);
   lua_pop(L, 1);
+
+  // HL2SB GMod SWEP compat: accept GMod bullet field names as aliases.
+  // (Only set when the corresponding m_* field was left out.)
+  lua_getfield(L, idx, "Num");   // -> m_iShots
+  if (!lua_isnil(L, -1) && !info.m_iShots)
+    info.m_iShots = luaL_checkint(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Src");   // -> m_vecSrc
+  if (!lua_isnil(L, -1) && info.m_vecSrc == vec3_origin)
+    info.m_vecSrc = luaL_checkvector(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Dir");   // -> m_vecDirShooting
+  if (!lua_isnil(L, -1) && info.m_vecDirShooting == vec3_origin)
+    info.m_vecDirShooting = luaL_checkvector(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Spread");  // -> m_vecSpread
+  if (!lua_isnil(L, -1) && info.m_vecSpread == vec3_origin)
+    info.m_vecSpread = luaL_checkvector(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Damage");  // -> m_iDamage
+  if (!lua_isnil(L, -1) && info.m_flDamage == 0)
+    info.m_flDamage = luaL_checkint(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Force");   // -> m_flDamageForceScale
+  if (!lua_isnil(L, -1) && info.m_flDamageForceScale == 0)
+    info.m_flDamageForceScale = luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "AmmoType"); // -> m_iAmmoType
+  if (!lua_isnil(L, -1) && info.m_iAmmoType == 0)
+    info.m_iAmmoType = luaL_checkint(L, -1);
+  lua_pop(L, 1);
+  lua_getfield(L, idx, "Tracer");   // -> m_iTracerFreq
+  if (!lua_isnil(L, -1) && info.m_iTracerFreq == 0)
+    info.m_iTracerFreq = luaL_checkint(L, -1);
+  lua_pop(L, 1);
+
   return info;
 }
 
