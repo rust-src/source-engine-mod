@@ -19,6 +19,7 @@
 #include "cliententitylist.h"
 #include "gamestringpool.h"
 #include "materialsystem/imaterialproxy.h"
+#include "materialsystem/imaterialproxyfactory.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "c_baseplayer.h"
@@ -686,4 +687,58 @@ private:
 };
 
 EXPOSE_INTERFACE( CPlayerColorProxy, IMaterialProxy, "PlayerColor" IMATERIAL_PROXY_INTERFACE_VERSION );
+
+// HL2SB: CPlayerColorProxy was only EXPOSE_INTERFACE'd, which never registers it
+// with the material system, so any vmt's "PlayerColor" proxy (the GMod player
+// model body / sleeve tint chain) found no handler and the colour did nothing.
+// Register a proxy factory (chain-preserving) so "PlayerColor" proxies bind.
+class CPlayerColorProxyFactory : public IMaterialProxyFactory
+{
+public:
+	CPlayerColorProxyFactory() : m_pOld( NULL ), m_bRegistered( false ) { }
+	virtual IMaterialProxy *CreateProxy( const char *proxyName )
+	{
+		if ( proxyName && !Q_stricmp( proxyName, "PlayerColor" ) )
+			return new CPlayerColorProxy;
+		return m_pOld ? m_pOld->CreateProxy( proxyName ) : NULL;
+	}
+	virtual void DeleteProxy( IMaterialProxy *pProxy )
+	{
+		if ( pProxy )
+			pProxy->Release();
+	}
+	void SetOld( IMaterialProxyFactory *pOld ) { m_pOld = pOld; }
+	bool m_bRegistered;
+private:
+	IMaterialProxyFactory *m_pOld;
+};
+
+static CPlayerColorProxyFactory g_PlayerColorProxyFactory;
+
+// Non-static: called from lModelPanel luaopen_vgui_ModelPanel (client Lua init,
+// after the material system is up and before player-model materials compile).
+void RegisterPlayerColorProxyFactory()
+{
+	// Try every time (not gated by m_bRegistered): luaopen_vgui runs for both
+	// LGameUI and the game Lua L, and the first one (GameUI) may run before the
+	// game material system is ready, so a one-shot gate would skip the good one.
+	IMaterialProxyFactory *pNew = &g_PlayerColorProxyFactory;
+	if ( materials && materials->GetMaterialProxyFactory() != pNew )
+	{
+		IMaterialProxyFactory *pOld = materials->GetMaterialProxyFactory();
+		g_PlayerColorProxyFactory.SetOld( pOld );
+		materials->SetMaterialProxyFactory( pNew );
+	}
+	Msg( "[HL2SB] PlayerColorProxyFactory: materials=%s\n", materials ? "yes" : "NO" );
+}
+
+// Register as soon as the client DLL is loaded (static init).  The material
+// system is up before the game DLL is loaded, so `materials` is valid here;
+// the proxy factory must be set before any model material that uses a
+// "PlayerColor" proxy is compiled.
+struct CPlayerColorProxyFactoryReg
+{
+	CPlayerColorProxyFactoryReg() { RegisterPlayerColorProxyFactory(); }
+} g_PlayerColorProxyFactoryReg;
+
 
