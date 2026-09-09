@@ -23,11 +23,10 @@
 #include "utlmap.h"
 #include "entitylist.h"
 #include "player.h"
-#include "lua.hpp"
+#include "luamanager.h"
 #include "luasrclib.h"
 #include "lbaseentity_shared.h"
 #include "lbaseplayer_shared.h"
-#include "luamanager.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -188,9 +187,19 @@ int HL2SB_UndoLast( CBasePlayer *pOwner )
 		}
 	}
 
-	// Notify the player (the GMod-style "undo notification").
+	// Notify via a server-side Lua hook.  The Lua server script listens for
+	// OnUndo and broadcasts a net message to the client, which the client Lua
+	// HUD turns into a popup + sound (the GMod-style undo notification).
 	const char *pszName = entry.m_Name.IsEmpty() ? "something" : entry.m_Name.Get();
-	ClientPrint( pOwner, HUD_PRINTTALK, UTIL_VarArgs( "[Undo] removed: %s (%d ent%s)\n", pszName, removed, removed == 1 ? "" : "ities" ) );
+
+#ifdef LUA_SDK
+	{
+		BEGIN_LUA_CALL_HOOK( "OnUndo" );
+			lua_pushstring( L, pszName );
+			lua_pushinteger( L, removed );
+		END_LUA_CALL_HOOK( 2, 0 );
+	}
+#endif
 
 	pStack->m_Undos.Remove( pStack->m_Undos.Count() - 1 );
 	return removed;
