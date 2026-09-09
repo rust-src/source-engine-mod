@@ -1,4 +1,4 @@
-//===== Copyright © 1996-2005, Valve Corporation, All rights reserved. ======//
+//===== Copyright Â© 1996-2005, Valve Corporation, All rights reserved. ======//
 //
 // Purpose: 
 //
@@ -450,6 +450,39 @@ static int surface_SetBitmapFontName (lua_State *L) {
   return 0;
 }
 
+// HL2SB: GMod-style SetFont by string name.  GMod scripts (and the ported
+// draw.lua) call surface.SetFont("DermaDefault") / surface.SetFont("Default")
+// where the argument is a face NAME, not an HFont handle.  The stock binding
+// only has SetFontGlyphSet(hfont,...).  We resolve the name through the default
+// scheme to an HFont, then select it for text drawing.  Falls back to the
+// scheme's "Default" font when the name is unknown (HL2SB's clientscheme only
+// defines Default / DefaultSmall / DefaultVerySmall).
+static int surface_SetFont (lua_State *L) {
+  const char *szName = luaL_checkstring(L, 1);
+
+  vgui::IScheme *pScheme = scheme()->GetIScheme(scheme()->GetDefaultScheme());
+  HFont hFont = 0;   // INVALID_FONT == 0 (vgui/VGUI.h)
+  if ( pScheme )
+  {
+    hFont = pScheme->GetFont( szName, false );
+    if ( hFont == 0 )
+    {
+      HFont hDefault = pScheme->GetFont( "Default", false );
+      if ( hDefault != 0 )
+        hFont = hDefault;
+    }
+  }
+
+  if ( hFont != 0 )
+  {
+    surface()->DrawSetTextFont( hFont );
+  }
+
+  // Push the resolved HFont back so a Lua caller can cache it.
+  lua_pushfont( L, hFont );
+  return 1;
+}
+
 static int surface_SetEmbeddedPanel (lua_State *L) {
   surface()->SetEmbeddedPanel(luaL_checkvpanel(L, 1));
   return 0;
@@ -569,6 +602,7 @@ static const luaL_Reg surfacelib[] = {
   {"RunFrame",   surface_RunFrame},
   {"SetAllowHTMLJavaScript",   surface_SetAllowHTMLJavaScript},
   {"SetBitmapFontName",   surface_SetBitmapFontName},
+  {"SetFont",   surface_SetFont},
   {"SetEmbeddedPanel",   surface_SetEmbeddedPanel},
   {"SetFontGlyphSet",   surface_SetFontGlyphSet},
   {"SetTranslateExtendedKeys",   surface_SetTranslateExtendedKeys},
