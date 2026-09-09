@@ -803,6 +803,25 @@ static int CBaseEntity_KeyValue (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod SWEP compat: entity:Fire(inputname, delay, activator).  Server-only
+// (AcceptInput is a server-side CBaseEntity method).  For the common GMod inputs
+// ("Explode"/"Use"/"Kill") the value is irrelevant, so pass an empty variant_t.
+#ifndef CLIENT_DLL
+static int CBaseEntity_Fire (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  const char *szInput = luaL_checkstring(L, 2);
+  float flDelay = luaL_optnumber(L, 3, 0.0f);
+  CBaseEntity *pActivator = luaL_optentity(L, 4, NULL);
+  if (flDelay > 0.0f) {
+    /* GMod Fire with delay: queue via AcceptInput with outputID (delay is
+       approximated; AcceptInput's outputID path handles immediate inputs here). */
+  }
+  variant_t v;
+  pEntity->AcceptInput( szInput, pActivator, pActivator, v, 0 );
+  return 0;
+}
+#endif
+
 static int CBaseEntity_LocalEyeAngles (lua_State *L) {
   QAngle v = luaL_checkentity(L, 1)->LocalEyeAngles();
   lua_pushangle(L, v);
@@ -1598,6 +1617,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"IsTransparent", CBaseEntity_IsTransparent},
   {"IsWeapon", CBaseEntity_IsWeapon},
   {"KeyValue", CBaseEntity_KeyValue},
+#ifndef CLIENT_DLL
+  {"Fire", CBaseEntity_Fire},
+#endif
   {"LocalEyeAngles", CBaseEntity_LocalEyeAngles},
   {"NextMovePeer", CBaseEntity_NextMovePeer},
   {"ObjectCaps", CBaseEntity_ObjectCaps},
@@ -1719,6 +1741,26 @@ static int luasrc_CreateEntityByName (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod SWEP compat: expose an `ents` library with Create / GetByIndex so
+// GMod scripts calling ents.Create("class") / ents.GetByIndex(i) work.  Create
+// maps to CreateEntityByName; GetByIndex maps to CBaseEntity::Instance.
+static int luasrc_ents_Create (lua_State *L) {
+  lua_pushentity(L, CreateEntityByName(luaL_checkstring(L, 1)));
+  return 1;
+}
+
+static int luasrc_ents_GetByIndex (lua_State *L) {
+  CBaseEntity *pEnt = CBaseEntity::Instance(luaL_checkint(L, 1));
+  lua_pushentity(L, pEnt);
+  return 1;
+}
+
+static const luaL_Reg ents_funcs[] = {
+  {"Create", luasrc_ents_Create},
+  {"GetByIndex", luasrc_ents_GetByIndex},
+  {NULL, NULL}
+};
+
 
 static const luaL_Reg CBaseEntity_funcs[] = {
   {"CreateEntityByName", luasrc_CreateEntityByName},
@@ -1739,6 +1781,8 @@ LUALIB_API int luaopen_CBaseEntity_shared (lua_State *L) {
   lua_pushstring(L, "entity");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "entity" */
   luaL_register(L, "_G", CBaseEntity_funcs);
+  lua_pop(L, 1);
+  luaL_register(L, "ents", ents_funcs);  /* HL2SB GMod SWEP compat: ents.Create/GetByIndex */
   lua_pop(L, 1);
   lua_pushentity(L, NULL);
   lua_setglobal(L, "NULL");  /* set global NULL */

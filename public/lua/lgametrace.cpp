@@ -123,6 +123,19 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushboolean(L, tr.startsolid);
   else if (Q_strcmp(field, "surface") == 0)
     lua_pushcsurface(L, tr.surface);
+  // HL2SB GMod SWEP compat: accept GMod trace field names.
+  else if (Q_strcmp(field, "HitPos") == 0)
+    lua_pushvector(L, tr.endpos);
+  else if (Q_strcmp(field, "StartPos") == 0)
+    lua_pushvector(L, tr.startpos);
+  else if (Q_strcmp(field, "HitEntity") == 0)
+    lua_pushentity(L, tr.m_pEnt);
+  else if (Q_strcmp(field, "HitNormal") == 0)
+    lua_pushvector(L, tr.plane.normal);
+  else if (Q_strcmp(field, "Fraction") == 0)
+    lua_pushnumber(L, tr.fraction);
+  else if (Q_strcmp(field, "HitWorld") == 0)
+    lua_pushboolean(L, tr.DidHitWorld());
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);
