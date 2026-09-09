@@ -71,6 +71,10 @@
 #include "luamanager.h"
 #endif
 
+#if defined( HL2SB )
+#include "hl2sb_undo.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -7489,6 +7493,9 @@ void CC_Ent_Create( const CCommand& args )
 		}
 
 		entity->Activate();
+
+		// HL2SB: record this spawn in the player's undo stack (spawnmenu undo).
+		HL2SB_UndoRecord( pPlayer, entity );
 	}
 	CBaseEntity::SetAllowPrecache( allowPrecache );
 }
