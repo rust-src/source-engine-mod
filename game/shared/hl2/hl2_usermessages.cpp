@@ -46,6 +46,9 @@ void RegisterUserMessages( void )
 	usermessages->Register( "AchievementEvent", -1 );
 	usermessages->Register( "UpdateJalopyRadar", -1 );
 
+	// HL2SB: generic Lua net transport (game/shared/lua/lnet.cpp).
+	usermessages->Register( "LuaNet", -1 );
+
 #ifndef _X360
 	// NVNT register haptic user messages
 	RegisterHapticMessages();

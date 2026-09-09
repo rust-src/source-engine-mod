@@ -304,18 +304,6 @@ static bf_write g_netWrite;
 static CUtlString g_netName;
 static bool g_netActive = false;
 
-//-----------------------------------------------------------------------------
-// Purpose: register the LuaNet usermessage on the server once.
-//-----------------------------------------------------------------------------
-static void EnsureLuaNetRegister()
-{
-	static bool bRegistered = false;
-	if ( bRegistered )
-		return;
-	usermessages->Register( "LuaNet", -1 );
-	bRegistered = true;
-}
-
 // net.Start( name )
 static int net_Start( lua_State *L )
 {
@@ -454,7 +442,6 @@ static const luaL_Reg net_funcs[] = {
 
 LUALIB_API int luaopen_net( lua_State *L )
 {
-	EnsureLuaNetRegister();
 	luaL_register( L, "net", net_funcs );
 	lua_newtable( L );
 	lua_setfield( L, -2, "Receivers" );
