@@ -44,6 +44,7 @@ $Project "Client (HL2SB)"
 			$File "lua/scripted_controls/lModelPanel.cpp"
 		
 		$File "$SRCDIR/game/shared/lua/lsrcinit.cpp"
+		$File "$SRCDIR/game/shared/lua/lnet.cpp"
 		$File "$SRCDIR/game/shared/lua/ltakedamageinfo.cpp"
 		$File "$SRCDIR/game/shared/lua/lbaseplayer_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lbaseentity_shared.cpp"

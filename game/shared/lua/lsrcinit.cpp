@@ -81,6 +81,7 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_MASKLIBNAME, luaopen_MASK},
   {LUA_MATHLIBLIBNAME, luaopen_mathlib},
   {LUA_MATRIXLIBNAME, luaopen_matrix3x4_t},
+  {LUA_NETLIBNAME, luaopen_net},
   {LUA_NETWORKSTRINGTABLELIBNAME, luaopen_networkstringtable},
 #ifdef CLIENT_DLL
   {LUA_PANELLIBNAME, luaopen_Panel},

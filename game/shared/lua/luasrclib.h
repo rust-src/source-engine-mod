@@ -148,6 +148,9 @@ LUALIB_API int (luaopen_mathlib) (lua_State *L);
 #define LUA_MATRIXLIBNAME				"matrix3x4_t"
 LUALIB_API int (luaopen_matrix3x4_t) (lua_State *L);
 
+#define LUA_NETLIBNAME					"net"
+LUALIB_API int (luaopen_net) (lua_State *L);
+
 #define LUA_NETWORKSTRINGTABLELIBNAME	"networkstringtable"
 LUALIB_API int (luaopen_networkstringtable) (lua_State *L);
 
