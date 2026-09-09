@@ -597,7 +597,11 @@ static int Panel_KeyCodeToString (lua_State *L) {
 }
 
 static int Panel_LocalToScreen (lua_State *L) {
-  int x, y;
+  // HL2SB: x/y were declared uninitialised and passed to the in/out method, so
+  // the function always returned stack junk.  Take the input coordinates (they
+  // default to 0, which yields the panel's own position).
+  int x = luaL_optint(L, 2, 0);
+  int y = luaL_optint(L, 3, 0);
   luaL_checkpanel(L, 1)->LocalToScreen(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
@@ -755,7 +759,11 @@ static int Panel_PaintBuildOverlay (lua_State *L) {
 }
 
 static int Panel_ParentLocalToScreen (lua_State *L) {
-  int x, y;
+  // HL2SB: x/y were declared uninitialised and passed to the in/out method, so
+  // the function always returned stack junk.  Take the input coordinates (they
+  // default to 0, which yields the panel's own position).
+  int x = luaL_optint(L, 2, 0);
+  int y = luaL_optint(L, 3, 0);
   luaL_checkpanel(L, 1)->ParentLocalToScreen(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
@@ -803,7 +811,11 @@ static int Panel_RevertKeyBindingsToDefault (lua_State *L) {
 }
 
 static int Panel_ScreenToLocal (lua_State *L) {
-  int x, y;
+  // HL2SB: x/y were declared uninitialised and passed to the in/out method, so
+  // the function always returned stack junk.  Take the input coordinates (they
+  // default to 0, which yields the panel's own position).
+  int x = luaL_optint(L, 2, 0);
+  int y = luaL_optint(L, 3, 0);
   luaL_checkpanel(L, 1)->ScreenToLocal(x, y);
   lua_pushinteger(L, x);
   lua_pushinteger(L, y);
