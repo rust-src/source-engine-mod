@@ -12,6 +12,10 @@
 #include "eventlist.h"
 #include "npcevent.h"
 
+#ifdef HL2SB
+#include "igameevents.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -32,7 +36,25 @@ int ITEM_GiveAmmo( CBasePlayer *pPlayer, float flCount, const char *pszAmmoName,
 	// Don't give out less than 1 of anything.
 	flCount = MAX( 1.0f, flCount );
 
-	return pPlayer->GiveAmmo( flCount, iAmmoType, bSuppressSound );
+	int iGave = pPlayer->GiveAmmo( flCount, iAmmoType, bSuppressSound );
+
+#ifdef HL2SB
+	// HL2SB: notify the client HUD of the ammo pickup with the actual amount the
+	// player received (drives the GMod pickup bar).
+	if ( iGave > 0 )
+	{
+		IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+		if ( event )
+		{
+			event->SetInt( "userid", pPlayer->GetUserID() );
+			event->SetString( "item", UTIL_VarArgs( "%s_ammo", pszAmmoName ) );
+			event->SetInt( "amount", iGave );
+			gameeventmanager->FireEvent( event );
+		}
+	}
+#endif
+
+	return iGave;
 }
 
 // ========================================================================

@@ -212,6 +212,7 @@ void CHudKillFeed::Init( void )
 {
 	ListenForGameEvent( "player_death" );
 	ListenForGameEvent( "entity_killed" );
+	ListenForGameEvent( "item_pickup" );
 }
 
 //-----------------------------------------------------------------------------
@@ -473,6 +474,28 @@ void CHudKillFeed::FireGameEvent( IGameEvent * event )
 		return;
 
 	const char *pszName = event->GetName();
+
+	// HL2SB: weapon / item / ammo pickup -> forward to Lua.  The engine passes
+	// the raw (item, amount); the Lua script classifies and colours it.
+	if ( !Q_stricmp( pszName, "item_pickup" ) )
+	{
+#ifdef LUA_SDK
+		if ( cl_killfeed_lua.GetBool() )
+		{
+			int iUserID = event->GetInt( "userid", 0 );
+			const char *pszItem = event->GetString( "item", "" );
+			int iAmount = event->GetInt( "amount", 0 );
+
+			BEGIN_LUA_CALL_HOOK( "HUDItemPickedUp" );
+				lua_pushinteger( L, iUserID );
+				lua_pushstring( L, pszItem );
+				lua_pushinteger( L, iAmount );
+			END_LUA_CALL_HOOK( 3, 0 );
+			return;
+		}
+#endif
+		return;
+	}
 
 	KillFeedItem deathMsg;
 	deathMsg.Killer.iEntIndex = 0;
