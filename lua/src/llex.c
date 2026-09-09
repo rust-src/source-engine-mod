@@ -35,7 +35,7 @@
 
 /* ORDER RESERVED */
 const char *const luaX_tokens [] = {
-    "and", "break", "do", "else", "elseif",
+    "and", "break", "continue", "do", "else", "elseif",
     "end", "false", "for", "function", "if",
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
@@ -408,6 +408,12 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case EOZ: {
         return TK_EOS;
+      }
+      case '!': {
+        /* GMod/LuaJIT style: `!` is unary logical `not`; `!=` is inequality. */
+        next(ls);
+        if (ls->current != '=') return TK_NOT;  /* `!x` == `not x` */
+        else { next(ls); return TK_NE; }         /* `!=` == `~=` */
       }
       default: {
         if (isspace(ls->current)) {
