@@ -18,6 +18,10 @@
 #include "hl2mp_gamerules.h"
 #endif
 
+#ifdef HL2SB
+#include "igameevents.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -439,6 +443,25 @@ void CItem::ItemTouch( CBaseEntity *pOther )
 	if ( MyTouch( pPlayer ) )
 	{
 		m_OnPlayerTouch.FireOutput(pOther, this);
+
+#ifdef HL2SB
+		// HL2SB: notify the client HUD that the player picked up an item
+		// (battery / healthkit ...).  Drives the GMod pickup HUD.  Ammo boxes
+		// (item_ammo_* / item_box_*) are skipped here - they're reported by
+		// ITEM_GiveAmmo with the real amount, so we don't emit a duplicate.
+		if ( Q_strnicmp( GetClassname(), "item_ammo_", 10 ) != 0 &&
+		     Q_strnicmp( GetClassname(), "item_box_", 9 ) != 0 )
+		{
+			IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+			if ( event )
+			{
+				event->SetInt( "userid", pPlayer->GetUserID() );
+				event->SetString( "item", GetClassname() );
+				event->SetInt( "amount", 0 );
+				gameeventmanager->FireEvent( event );
+			}
+		}
+#endif
 
 		SetTouch( NULL );
 		SetThink( NULL );

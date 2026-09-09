@@ -27,6 +27,12 @@
 #include "lColor.h"
 #endif
 
+// HL2SB: which pickup visual to use.
+//   0 = GMod pickup HUD (suppress the stock weapon-history icon)
+//   1 = stock HL2MP weapon-history icon (original behaviour)
+static ConVar hl2sb_pickup_hud( "hl2sb_pickup_hud", "0", FCVAR_ARCHIVE,
+	"0 = GMod pickup HUD, 1 = stock weapon-history icon" );
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -217,6 +223,17 @@ CHudWeaponSelection::CHudWeaponSelection( const char *pElementName ) : CBaseHudW
 //-----------------------------------------------------------------------------
 void CHudWeaponSelection::OnWeaponPickup( C_BaseCombatWeapon *pWeapon )
 {
+	// HL2SB: the base game shows a weapon icon in the pickup history when a
+	// weapon is picked up.  hl2sb_pickup_hud 0 (default) replaces that with the
+	// GMod pickup HUD (driven by the item_pickup game event), so we suppress the
+	// stock history entry.  Setting hl2sb_pickup_hud 1 restores the original.
+	// This does NOT touch the weapon-selection menu (number keys / mouse wheel),
+	// which is driven separately by OnThink/OpenSelection.
+	if ( hl2sb_pickup_hud.GetBool() == false )
+	{
+		return;
+	}
+
 	// add to pickup history
 	CHudHistoryResource *pHudHR = GET_HUDELEMENT( CHudHistoryResource );
 	if ( pHudHR )

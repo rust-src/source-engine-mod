@@ -16,6 +16,7 @@
 #include "ammodef.h"
 #include "ndebugoverlay.h"
 #include "player.h"
+#include "igameevents.h"
 #include "physics.h"
 #include "engine/IEngineSound.h"
 #include "tier1/strtools.h"
@@ -2216,7 +2217,26 @@ bool CBaseCombatCharacter::Weapon_EquipAmmoOnly( CBaseCombatWeapon *pWeapon )
 			
 			//Only succeed if we've taken ammo from the weapon
 			if ( takenPrimary > 0 || takenSecondary > 0 )
+			{
+#ifdef HL2SB
+				// HL2SB: report the ammo picked up from a duplicate weapon (the
+				// player already owned the weapon, so it's an ammo pickup).
+				// amount = how much ammo the player actually received.
+				if ( this && this->IsPlayer() )
+				{
+					CBasePlayer *pPlayer = (CBasePlayer *)this;
+					IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+					if ( event )
+					{
+						event->SetInt( "userid", pPlayer->GetUserID() );
+						event->SetString( "item", UTIL_VarArgs( "%s_ammo", pWeapon->GetClassname() ) );
+						event->SetInt( "amount", takenPrimary > 0 ? takenPrimary : takenSecondary );
+						gameeventmanager->FireEvent( event );
+					}
+				}
+#endif
 				return true;
+			}
 			
 			return false;
 		}

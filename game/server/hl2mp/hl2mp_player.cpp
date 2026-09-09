@@ -22,6 +22,7 @@
 #ifdef HL2SB
 #include "hl2sb_player_model_manager.h"
 #include "hl2sb_model_config.h"
+#include "igameevents.h"
 #endif
 #include "grenade_satchel.h"
 #include "eventqueue.h"
@@ -966,7 +967,6 @@ bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
 		 if ( Weapon_EquipAmmoOnly( pWeapon ) )
 		 {
 			 pWeapon->CheckRespawn();
-
 			 UTIL_Remove( pWeapon );
 			 return true;
 		 }
@@ -978,6 +978,21 @@ bool CHL2MP_Player::BumpWeapon( CBaseCombatWeapon *pWeapon )
 
 	pWeapon->CheckRespawn();
 	Weapon_Equip( pWeapon );
+
+#ifdef HL2SB
+	// HL2SB: notify the client HUD that the local player picked up a weapon
+	// (drives the ported GMod pickup animation).  item = weapon classname.
+	{
+		IGameEvent *event = gameeventmanager->CreateEvent( "item_pickup" );
+		if ( event )
+		{
+			event->SetInt( "userid", GetUserID() );
+			event->SetString( "item", pWeapon->GetClassname() );
+			event->SetInt( "amount", 0 );
+			gameeventmanager->FireEvent( event );
+		}
+	}
+#endif
 
 	return true;
 }
