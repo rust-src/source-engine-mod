@@ -317,7 +317,10 @@ void LPanel::OnRequestFocus(VPANEL subFocus, VPANEL defaultPanel)
 	RETURN_LUA_PANEL_NONE();
 #endif
 
-	BaseClass::OnRequestFocus(subFocus, defaultPanel);
+	// HL2SB: BaseClass::OnRequestFocus() access-violates in vgui for this
+	// Panel-in-Frame hierarchy (focus navigation bookkeeping), so it is skipped.
+	// Panel::RequestFocus() still marks the panel focused internally, so the
+	// panel receives keyboard events without this vgui focus-nav call.
 }
 
 //-----------------------------------------------------------------------------
