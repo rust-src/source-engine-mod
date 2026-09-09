@@ -283,10 +283,25 @@ bool C_BaseViewModel::ShouldDraw()
 // Purpose: Render the weapon. Draw the Viewmodel if the weapon's being carried
 //			by this player, otherwise draw the worldmodel.
 //-----------------------------------------------------------------------------
+// Defined further below: per-viewmodel flag that is set while the owner is
+// riding in a vehicle (the hands are released for the ride).
+static bool HL2SB_HandsHeldForVehicle( C_BaseViewModel *pVM );
+
 int C_BaseViewModel::DrawModel( int flags )
 {
 	if ( !m_bReadyToDraw )
 		return 0;
+
+	// Just left a vehicle: rebuild the hands before this frame draws, so the
+	// arms appear together with the weapon. Relying on the next OnDataChanged
+	// (the HUD-hide repaint on exit) drew the gun first and the hands a few
+	// frames later.
+	if ( ( flags & STUDIO_RENDER ) && HL2SB_HandsHeldForVehicle( this ) )
+	{
+		C_BasePlayer *pOwner = ToBasePlayer( GetOwner() );
+		if ( pOwner && !pOwner->GetVehicle() )
+			UpdateHandsAttachment();
+	}
 
 	if ( flags & STUDIO_RENDER )
 	{
@@ -361,10 +376,12 @@ int C_BaseViewModel::DrawModel( int flags )
 			CStudioHdr *pHdr = pAttach->GetModelPtr();
 
 			// Only the held weapon's viewmodel draws its arms, only while the
-			// owner is alive, and only once the arms rig is actually loaded -
-			// a rig with no bones cannot merge and renders as a degenerate
-			// floating hand.
-			if ( pOwner && pOwner->IsAlive() &&
+			// owner is alive and NOT riding a vehicle (the vehicle viewmodel is
+			// drawn instead, and the arms would merge onto bones nobody
+			// refreshes), and only once the arms rig is actually loaded - a rig
+			// with no bones cannot merge and renders as a degenerate floating
+			// hand.
+			if ( pOwner && pOwner->IsAlive() && !pOwner->GetVehicle() &&
 				 !( pActive && pThis && pActive != pThis ) &&
 				 pHdr && pHdr->numbones() > 0 )
 			{
@@ -740,17 +757,14 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	}
 
 	// In a vehicle the engine draws the VEHICLE viewmodel instead of the
-	// weapon's, so our arms are not rendered - and while driving, nothing ever
-	// touches this viewmodel's networked state, so leaving the vehicle does not
-	// re-run this function either: the hands stayed gone until a reload or a
-	// respawn. Release them for the ride (they would merge onto bones nobody
-	// refreshes otherwise), and remember that we did: exiting drive mode
-	// repaints the HUD-hide flag on the player, whose OnDataChanged re-runs the
-	// hands decision for every viewmodel and takes the rebuild path below.
+	// weapon's, so our arms are not rendered. Keep the arms entity (and its
+	// loaded model) through the ride and just stop drawing it in DrawModel -
+	// releasing it here destroyed the entity and unloaded the arms model, so on
+	// exit the model had to reload and the hands popped in ~0.5s after the
+	// weapon. The flag marks the ride so DrawModel skips drawing them.
 	if ( pOwner->GetVehicle() != NULL )
 	{
 		HL2SB_SetHandsHeldForVehicle( this, true );
-		ReleaseHandsAttachment();
 		return;
 	}
 
@@ -865,11 +879,13 @@ void C_BaseViewModel::UpdateHandsAttachment( void )
 	// Already holding exactly this hands model? Nothing to do. This is the hot
 	// path - OnDataChanged runs on every animation parity change, so the
 	// comparison has to be cheap and must be per-viewmodel: each weapon's
-	// viewmodel owns its own single arms entity. (When we had released for a
-	// vehicle ride the handle is NULL and the flag below forces the rebuild.)
-	if ( m_hHandsAttachment.Get() && !HL2SB_HandsHeldForVehicle( this )
+	// viewmodel owns its own single arms entity. This is also the just-left-a-
+	// vehicle case: the arms were kept through the ride, so clearing the ride
+	// flag here is all that is needed for them to draw again.
+	if ( m_hHandsAttachment.Get()
 			&& !Q_stricmp( m_hHandsAttachment->GetHandsKey(), pszHandsModel ) )
 	{
+		HL2SB_SetHandsHeldForVehicle( this, false );
 		return;
 	}
 
