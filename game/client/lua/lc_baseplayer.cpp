@@ -38,5 +38,13 @@ LUALIB_API int luaopen_CBasePlayer (lua_State *L) {
     luaL_newmetatable(L, LUA_BASEPLAYERLIBNAME);
   }
   luaL_register(L, NULL, CBasePlayermeta);
+
+  // HL2SB: expose a global LocalPlayer() that returns the local player entity,
+  // so GMod-style scripts (and the player model menu's colour tab) can call
+  // LocalPlayer():SetPlayerColor(...) / GetPlayerColor().  engine.GetLocalPlayer()
+  // only returns the ent index, which is useless for entity method calls.
+  lua_pushcfunction(L, CBasePlayer_GetLocalPlayer);
+  lua_setglobal(L, "LocalPlayer");
+
   return 1;
 }

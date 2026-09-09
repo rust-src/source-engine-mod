@@ -182,11 +182,12 @@ bool LModelPanel::LoadModel( const char *pszModel )
 	if ( !pszModel || !pszModel[0] )
 		return false;
 
-	if ( modelinfo->GetModelIndex( pszModel ) == -1 )
-	{
-		Msg( "[HL2SB] ModelPanel: '%s' is not precached\n", pszModel );
-		return false;
-	}
+	// HL2SB: do NOT reject models the client has not precached.  The player model
+	// configs load GMod/workshop models from custom/* that are not all present in
+	// the server's precache transfer on a solo listen server, so modelinfo->
+	// GetModelIndex() returns -1 for many of them and the thumbnail grid showed
+	// mostly empty cells.  CModelPanel::SwapModel() -> InitializeAsClientEntity()
+	// loads a client-side model by path anyway, so let it try rather than bailing.
 
 	EnsureModelInfo();
 
@@ -714,6 +715,7 @@ static int luasrc_ModelPanel( lua_State *L )
 
 static const luaL_Reg ModelPanel_funcs[] = {
 	{"ModelPanel", luasrc_ModelPanel},
+	{"ModelImage", luasrc_ModelPanel},
 	{NULL, NULL}
 };
 
@@ -722,6 +724,13 @@ static const luaL_Reg ModelPanel_funcs[] = {
 */
 LUALIB_API int luaopen_vgui_ModelPanel( lua_State *L )
 {
+	// Register the PlayerColor material proxy factory (defined in
+	// c_viewmodel_attachment.cpp) now that the client Lua env is up, so any vmt
+	// "PlayerColor" proxy (player model body / sleeve tint) finds a handler
+	// before those materials compile.
+	extern void RegisterPlayerColorProxyFactory();
+	RegisterPlayerColorProxyFactory();
+
 	luaL_newmetatable( L, "ModelPanel" );
 	luaL_register( L, NULL, ModelPanelmeta );
 	lua_pushstring( L, "panel" );
