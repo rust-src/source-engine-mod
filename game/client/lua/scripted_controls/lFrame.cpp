@@ -1,4 +1,4 @@
-//===== Copyright © 1996-2005, Valve Corporation, All rights reserved. ======//
+//===== Copyright Â© 1996-2005, Valve Corporation, All rights reserved. ======//
 //
 // Purpose: 
 //
@@ -40,6 +40,134 @@ LFrame::~LFrame()
 #if defined( LUA_SDK )
 	lua_unref( m_lua_State, m_nTableReference );
 #endif // LUA_SDK
+}
+
+//-----------------------------------------------------------------------------
+// Lua method forwarding.
+//
+// LFrame does not derive from LPanel, so the virtual overrides that LPanel uses
+// to reach a script's Paint/PerformLayout/mouse/key callbacks are NOT inherited
+// here.  Without them the vgui loop calls vgui::Frame::Paint() etc. and never
+// touches the Lua script table - which is why the old player-model menu had to
+// re-apply its layout every frame from a HudViewportPaint hook.  Mirror the
+// LPanel set so a vgui.register( ..., "Frame" ) subclass can own its own layout,
+// painting and input just like any LPanel.
+//-----------------------------------------------------------------------------
+void LFrame::Paint()
+{
+	BaseClass::Paint();
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "Paint" );
+	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+#endif
+}
+
+void LFrame::PerformLayout()
+{
+	BaseClass::PerformLayout();
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "PerformLayout" );
+	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+#endif
+}
+
+void LFrame::OnMousePressed( MouseCode code )
+{
+	BaseClass::OnMousePressed( code );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnMousePressed" );
+	END_LUA_CALL_PANEL_METHOD( 1, 0 );
+#endif
+}
+
+void LFrame::OnMouseReleased( MouseCode code )
+{
+	BaseClass::OnMouseReleased( code );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnMouseReleased" );
+	END_LUA_CALL_PANEL_METHOD( 1, 0 );
+#endif
+}
+
+void LFrame::OnCursorMoved( int x, int y )
+{
+	BaseClass::OnCursorMoved( x, y );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnCursorMoved" );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
+#endif
+}
+
+void LFrame::OnCursorEntered()
+{
+	BaseClass::OnCursorEntered();
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnCursorEntered" );
+	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+#endif
+}
+
+void LFrame::OnCursorExited()
+{
+	BaseClass::OnCursorExited();
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnCursorExited" );
+	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+#endif
+}
+
+void LFrame::OnMouseWheeled( int delta )
+{
+	BaseClass::OnMouseWheeled( delta );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnMouseWheeled" );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
+#endif
+}
+
+void LFrame::OnKeyCodePressed( KeyCode code )
+{
+	BaseClass::OnKeyCodePressed( code );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodePressed" );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
+#endif
+}
+
+void LFrame::OnKeyCodeTyped( KeyCode code )
+{
+	BaseClass::OnKeyCodeTyped( code );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodeTyped" );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
+#endif
+}
+
+void LFrame::OnKeyCodeReleased( KeyCode code )
+{
+	BaseClass::OnKeyCodeReleased( code );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnKeyCodeReleased" );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
+#endif
+}
+
+void LFrame::OnThink()
+{
+	BaseClass::OnThink();
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnThink" );
+	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+#endif
+}
+
+void LFrame::OnCommand( const char *command )
+{
+	BaseClass::OnCommand( command );
+#if defined( LUA_SDK )
+	BEGIN_LUA_CALL_PANEL_METHOD( "OnCommand" );
+	END_LUA_CALL_PANEL_METHOD( 1, 1 );
+#endif
 }
 
 /*

@@ -1,4 +1,4 @@
-//========= Copyright © 1996-2005, Valve Corporation, All rights reserved. ============//
+//========= Copyright Â© 1996-2005, Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -27,6 +27,26 @@ class LFrame : public Frame
 public:
 	LFrame(Panel *parent, const char *panelName, bool showTaskbarIcon = true, lua_State *L = NULL);
 	virtual ~LFrame();
+
+public:
+	// Lua method forwarding (same set as LPanel / LModelPanel), so a vgui.register(
+	// ..., "Frame") subclass can cleanly override Paint/PerformLayout/mouse/key/
+	// command from Lua.  Without these the vgui loop calls Frame::Paint() etc. and
+	// never reaches the Lua script table, which is why the old Lua menu had to
+	// re-apply its layout every frame from a HudViewportPaint hook.
+	virtual void Paint();
+	virtual void PerformLayout();
+	virtual void OnMousePressed( MouseCode code );
+	virtual void OnMouseReleased( MouseCode code );
+	virtual void OnCursorMoved( int x, int y );
+	virtual void OnCursorEntered();
+	virtual void OnCursorExited();
+	virtual void OnMouseWheeled( int delta );
+	virtual void OnKeyCodePressed( KeyCode code );
+	virtual void OnKeyCodeTyped( KeyCode code );
+	virtual void OnKeyCodeReleased( KeyCode code );
+	virtual void OnThink();
+	virtual void OnCommand( const char *command );
 
 public:
 #if defined( LUA_SDK )
