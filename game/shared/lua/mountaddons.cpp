@@ -1,4 +1,4 @@
-//========== Copyleft © 2011, Team Sandbox, Some rights reserved. ===========//
+//========== Copyleft Â© 2011, Team Sandbox, Some rights reserved. ===========//
 //
 // Purpose:
 //
