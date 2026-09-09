@@ -42,6 +42,10 @@
 #include "gamestats.h"
 #include "vehicle_base.h"
 
+#if defined( HL2SB )
+#include "hl2sb_undo.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -5901,7 +5905,12 @@ void CC_Prop_Physics_Create( const CCommand &args )
 	Vector forward;
 	pPlayer->EyeVectors( &forward );
 
-	CreatePhysicsProp( pModelName, pPlayer->EyePosition(), pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH, pPlayer, true, "physics_prop" );
+	CPhysicsProp *pProp = CreatePhysicsProp( pModelName, pPlayer->EyePosition(), pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH, pPlayer, true, "physics_prop" );
+
+	// HL2SB: record this spawn in the player's undo stack (spawnmenu undo).
+#if defined( HL2SB )
+	HL2SB_UndoRecord( pPlayer, pProp );
+#endif
 }
 
 

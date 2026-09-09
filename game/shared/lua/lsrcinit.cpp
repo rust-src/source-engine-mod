@@ -101,6 +101,9 @@ static const luaL_Reg luasrclibs[] = {
 #endif
   {LUA_UTILLIBNAME, luaopen_UTIL},
   {LUA_UTILLIBNAME, luaopen_UTIL_shared},
+#ifndef CLIENT_DLL
+  {LUA_UNDOLIBNAME, luaopen_undo},
+#endif
   {LUA_VECTORLIBNAME, luaopen_Vector},
 #ifdef CLIENT_DLL
   {LUA_VGUILIBNAME, luaopen_vgui},

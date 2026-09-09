@@ -182,6 +182,11 @@ LUALIB_API int (luaopen_surface) (lua_State *L);
 LUALIB_API int (luaopen_UTIL) (lua_State *L);
 LUALIB_API int (luaopen_UTIL_shared) (lua_State *L);
 
+#ifndef CLIENT_DLL
+#define LUA_UNDOLIBNAME					"hl2sb_undo"
+LUALIB_API int (luaopen_undo) (lua_State *L);
+#endif
+
 #define LUA_VECTORLIBNAME				"Vector"
 LUALIB_API int (luaopen_Vector) (lua_State *L);
 
