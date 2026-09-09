@@ -13,9 +13,43 @@
 #include "lbaseplayer_shared.h"
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
+#include "entitylist.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - player.GetAll()
+//
+// Returns a Lua array of every player entity currently on the server, so
+// GMod-style scripts (and the undo system) can iterate players without a
+// player.Iterator binding.  Built on gEntList.FirstEnt/NextEnt.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_GetAll (lua_State *L) {
+  lua_newtable( L );
+  int i = 0;
+  for ( CBaseEntity *pEntity = gEntList.FirstEnt(); pEntity != NULL; pEntity = gEntList.NextEnt( pEntity ) )
+  {
+    if ( !pEntity->IsPlayer() )
+      continue;
+
+    lua_pushinteger( L, ++i );
+    lua_pushplayer( L, static_cast< CBasePlayer * >( pEntity ) );
+    lua_rawset( L, -3 );
+  }
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - player:UniqueID()
+//
+// Returns a stable per-player key (the engine user ID) so undo stacks and
+// other per-player tables can be keyed like GMod's ply:UniqueID().
+//-----------------------------------------------------------------------------
+static int CBasePlayer_UniqueID (lua_State *L) {
+  lua_pushinteger( L, luaL_checkplayer( L, 1 )->GetUserID() );
+  return 1;
+}
 
 static int CBasePlayer_GiveAmmo (lua_State *L) {
   switch(lua_type(L, 3)) {
@@ -590,6 +624,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"CheckTrainUpdate", CBasePlayer_CheckTrainUpdate},
   {"EquipSuit", CBasePlayer_EquipSuit},
   {"RemoveSuit", CBasePlayer_RemoveSuit},
+  {"UniqueID", CBasePlayer_UniqueID},
   {NULL, NULL}
 };
 
@@ -604,6 +639,18 @@ LUALIB_API int luaopen_CBasePlayer (lua_State *L) {
     luaL_newmetatable(L, "CBasePlayer");
   }
   luaL_register(L, NULL, CBasePlayermeta);
+
+  // HL2SB: expose a global player.GetAll() so scripts can iterate players.
+  lua_getglobal( L, "player" );
+  if ( lua_isnil( L, -1 ) )
+  {
+    lua_pop( L, 1 );
+    lua_newtable( L );
+  }
+  lua_pushcfunction( L, CBasePlayer_GetAll );
+  lua_setfield( L, -2, "GetAll" );
+  lua_setglobal( L, "player" );
+
   return 1;
 }
 

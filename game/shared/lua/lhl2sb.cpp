@@ -14,12 +14,32 @@
 #include "luasrclib.h"
 #include "hl2sb_model_config.h"
 
+// HL2SB: global IsValid( ent ) needs the entity type-checking helper.
+#include "lbaseentity_shared.h"
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 #ifdef CLIENT_DLL
 #include "c_baseplayer.h"
 #endif
+
+//-----------------------------------------------------------------------------
+// Purpose: global IsValid( ent ) - HL2SB
+//
+// GMod scripts call IsValid( ent ) as a free function.  HL2SB exposes the same
+// via util.IsValid, but not as a global.  We must NOT use luaL_checkentity here
+// because that raises a Lua error when the entity pointer is NULL - IsValid
+// should return false for an invalid entity, not throw.  lua_toentity returns
+// NULL for NULL/bad handles without raising.
+//-----------------------------------------------------------------------------
+static int hl2sb_GlobalIsValid( lua_State *L )
+{
+	CBaseEntity *pEntity = lua_toentity( L, 1 );
+	lua_pushboolean( L, pEntity != NULL );
+	return 1;
+}
+
 
 //-----------------------------------------------------------------------------
 // Purpose: hl2sb.GetPlayerModels()
@@ -187,5 +207,11 @@ static const luaL_Reg hl2sblib[] = {
 LUALIB_API int luaopen_hl2sb( lua_State *L )
 {
 	luaL_register( L, LUA_HL2SBLIBNAME, hl2sblib );
+
+	// HL2SB: expose a global IsValid( ent ) so GMod-style scripts (and the
+	// Lua undo system) can test entities without the util. prefix.
+	lua_pushcfunction( L, hl2sb_GlobalIsValid );
+	lua_setglobal( L, "IsValid" );
+
 	return 1;
 }
