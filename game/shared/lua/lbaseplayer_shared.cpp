@@ -18,6 +18,7 @@
 #endif
 #include "lbasecombatweapon_shared.h"
 #include "lbaseentity_shared.h"
+#include "lgametrace.h"
 #include "SoundEmitterSystem/lisoundemittersystembase.h"
 #include "mathlib/lvector.h"
 #include "lvphysics_interface.h"
@@ -127,6 +128,35 @@ static int CBasePlayer_EyePositionAndVectors (lua_State *L) {
 static int CBasePlayer_EyeVectors (lua_State *L) {
   luaL_checkplayer(L, 1)->EyeVectors(&luaL_checkvector(L, 2), &luaL_optvector(L, 3, NULL), &luaL_optvector(L, 4, NULL));
   return 0;
+}
+
+// HL2SB GMod SWEP compat: selffire bullet origin (GMod Owner:GetShootPos()).
+static int CBasePlayer_GetShootPos (lua_State *L) {
+  Vector v = luaL_checkplayer(L, 1)->Weapon_ShootPosition();
+  lua_pushvector(L, v);
+  return 1;
+}
+
+// HL2SB GMod SWEP compat: aim direction (GMod Owner:GetAimVector()).
+static int CBasePlayer_GetAimVector (lua_State *L) {
+  Vector v = luaL_checkplayer(L, 1)->GetAutoaimVector(luaL_optnumber(L, 2, 0.0f));
+  lua_pushvector(L, v);
+  return 1;
+}
+
+// HL2SB GMod SWEP compat: GMod Owner:GetEyeTrace() -> trace table.
+// Mirrors util.TraceLine from the eye along the aim vector a long distance.
+static int CBasePlayer_GetEyeTrace (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+  Vector vForward;
+  pPlayer->EyeVectors(&vForward, NULL, NULL);
+  Vector vecEye = pPlayer->EyePosition();
+  Vector vecEnd = vecEye + vForward * MAX_TRACE_LENGTH;
+
+  trace_t tr;
+  UTIL_TraceLine(vecEye, vecEnd, MASK_SHOT, pPlayer, COLLISION_GROUP_NONE, &tr);
+  lua_pushtrace(L, tr);
+  return 1;
 }
 
 static int CBasePlayer_FindUseEntity (lua_State *L) {
@@ -978,6 +1008,9 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"GetActiveWeapon", CBasePlayer_GetActiveWeapon},
   {"GetAmmoCount", CBasePlayer_GetAmmoCount},
   {"GetAutoaimVector", CBasePlayer_GetAutoaimVector},
+  {"GetShootPos", CBasePlayer_GetShootPos},
+  {"GetAimVector", CBasePlayer_GetAimVector},
+  {"GetEyeTrace", CBasePlayer_GetEyeTrace},
   {"GetBonusChallenge", CBasePlayer_GetBonusChallenge},
   {"GetBonusProgress", CBasePlayer_GetBonusProgress},
   {"GetDeathTime", CBasePlayer_GetDeathTime},
