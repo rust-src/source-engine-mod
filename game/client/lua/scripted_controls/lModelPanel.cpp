@@ -634,8 +634,7 @@ static int ModelPanel___gc( lua_State *L )
 
 static int ModelPanel___eq( lua_State *L )
 {
-	lua_pushboolean( L, lua_tomodelpanel( L, 1 ) == lua_tomodelpanel( L, 2 ) );
-	return 1;
+	lua_pushboolean( L, lua_tomodelpanel( L, 1 ) == lua_tomodelpanel( L, 2 ) );	return 1;
 }
 
 static int ModelPanel___tostring( lua_State *L )
@@ -657,7 +656,34 @@ static int ModelPanel___tostring( lua_State *L )
 	return 1;
 }
 
+static int ModelPanel_GetRefTable( lua_State *L )
+{
+	// The inherited Panel_GetRefTable() does dynamic_cast<LPanel*>, which fails
+	// for this class (it derives from CModelPanel, not LPanel) and returns nil.
+	// vgui.register()'s factory calls GetRefTable() to merge the script table in,
+	// so without this override any vgui.register(..., "ModelPanel") panel comes
+	// out with no Lua table - the factory errors and the caller's build step
+	// aborts halfway, leaving an empty window.
+	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( luaL_checkpanel( L, 1 ) );
+	if ( plPanel )
+	{
+		if ( plPanel->m_nTableReference == LUA_NOREF )
+		{
+			lua_newtable( L );
+			plPanel->m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+		}
+		lua_getref( L, plPanel->m_nTableReference );
+	}
+	else
+	{
+		lua_pushnil( L );
+	}
+
+	return 1;
+}
+
 static const luaL_Reg ModelPanelmeta[] = {
+	{"GetRefTable",			ModelPanel_GetRefTable},
 	{"SetModel",			ModelPanel_SetModel},
 	{"GetModel",			ModelPanel_GetModel},
 	{"SetYaw",				ModelPanel_SetYaw},
