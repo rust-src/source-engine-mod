@@ -643,15 +643,42 @@ static bool ViewModelHasBakedArms( C_BaseViewModel *pVM )
 	if ( !pRaw )
 		return false;
 
-	for ( int i = 0; i < pRaw->numtextures; i++ )
+	// A "v_hand" material only means baked arms when a mesh actually renders it.
+	// GMod c_model weapons (e.g. c_shotgun) can carry a stray v_hand_sheet entry
+	// in the texture table that no mesh references - those are gun-only and must
+	// still receive the merged c_hands. Scan the mesh materials, not just the
+	// texture table.
+	for ( int iBody = 0; iBody < pRaw->numbodyparts; iBody++ )
 	{
-		const mstudiotexture_t *pTex = pRaw->pTexture( i );
-		if ( !pTex )
+		const mstudiobodyparts_t *pBody = pRaw->pBodypart( iBody );
+		if ( !pBody )
 			continue;
 
-		const char *pszName = pTex->pszName();
-		if ( pszName && Q_stristr( pszName, "v_hand" ) )
-			return true;
+		for ( int iModel = 0; iModel < pBody->nummodels; iModel++ )
+		{
+			const mstudiomodel_t *pModel = pBody->pModel( iModel );
+			if ( !pModel )
+				continue;
+
+			for ( int iMesh = 0; iMesh < pModel->nummeshes; iMesh++ )
+			{
+				const mstudiomesh_t *pMesh = pModel->pMesh( iMesh );
+				if ( !pMesh )
+					continue;
+
+				const int iMat = pMesh->material;
+				if ( iMat < 0 || iMat >= pRaw->numtextures )
+					continue;
+
+				const mstudiotexture_t *pTex = pRaw->pTexture( iMat );
+				if ( !pTex )
+					continue;
+
+				const char *pszName = pTex->pszName();
+				if ( pszName && Q_stristr( pszName, "v_hand" ) )
+					return true;
+			}
+		}
 	}
 
 	return false;
