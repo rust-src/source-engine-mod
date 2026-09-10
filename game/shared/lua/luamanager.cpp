@@ -24,6 +24,9 @@
 #include "licvar.h"
 #include "lgameevents.h"
 #include "activitylist.h"
+// HL2SB: the scripted control factories (luaopen_vgui_Panel/Frame/Button) that
+// luasrc_init_gameui opens for the main menu state.
+#include "lua/vgui_controls/lControls.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -247,6 +250,53 @@ void luasrc_init_gameui (void) {
   luaopen_Panel(LGameUI);
   luaopen_surface(LGameUI);
   luaopen_vgui(LGameUI);
+
+  /*
+  ** HL2SB: the rest of what a main menu UI needs, so the mod can build one there the
+  ** way Garry's Mod does -- its error viewer, for instance, is part of the menu.
+  **
+  ** Experiment: Source solves the same problem by opening every library with a realm
+  ** flag and running their includes/init.lua.  HL2SB has no realm flags on its library
+  ** table, and its Team Sandbox era modules are not all menu-safe, so this opens the
+  ** specific set the UI actually uses and loads the specific files in dependency
+  ** order.  Everything here is additive: the in-game state keeps opening its own set
+  ** through luasrc_openlibs and is untouched.
+  **
+  ** Order matters -- extensions/table.lua provides table.merge, which
+  ** extensions/vgui.lua calls, and both must precede the modules that use them.
+  */
+#ifdef CLIENT_DLL
+  luaopen_QAngle(LGameUI);
+  luaopen_gpGlobals(LGameUI);
+  luaopen_input(LGameUI);
+
+  // The scripted control factories, normally opened by lsrcinit for the in-game
+  // state (see the .vpc entries for scripted_controls/*).
+  luaopen_vgui_Panel(LGameUI);  luaopen_vgui_Frame(LGameUI);
+  luaopen_vgui_Button(LGameUI);
+  luaopen_Label(LGameUI);
+  luaopen_TextEntry(LGameUI);
+
+  static const char *const menuFiles[] = {
+    LUA_PATH_EXTENSIONS "/table.lua",     // table.merge, used by vgui.register
+    LUA_PATH_EXTENSIONS "/vgui.lua",      // vgui.register
+    LUA_PATH_EXTENSIONS "/gmod_globals.lua",  // CurTime, ScrW, ScrH, GetConVar, ...
+    LUA_PATH_MODULES "/hook.lua",         // hook.add("LuaError", ...)
+    LUA_PATH_MODULES "/concommand.lua",   // concommand.Create
+    LUA_PATH_MODULES "/gmod_vgui.lua",    // vgui.Create / vgui.Register
+    LUA_PATH_MODULES "/hl2sb_lua_errors.lua",
+    NULL
+  };
+
+  for (int i = 0; menuFiles[i] != NULL; ++i) {
+    // Non-fatal: a missing optional dependency must not take the menu down, and
+    // luasrc_dofile already reports what went wrong.
+    if (luasrc_dofile(LGameUI, menuFiles[i]) != 0)
+      Warning("HL2SB: main menu module failed to load: %s\n", menuFiles[i]);
+  }
+#endif
+
+  Msg("Lua Menu initialized (" LUA_VERSION ")\n");
 }
 
 void luasrc_shutdown_gameui (void) {
@@ -320,10 +370,49 @@ void luasrc_shutdown (void) {
   L = NULL;
 }
 
+/*
+** HL2SB: report a Lua error to the console *and* to scripts.
+**
+** Every error that reaches here used to go to Warning() alone, so a mod could
+** only see it by reading the console -- GMod instead shows it in-game and lets
+** addons hook it.  The hook is "LuaError( message, traceback )"; a re-entrancy
+** guard keeps a broken error handler from recursing into itself.
+*/
+static bool g_bReportingLuaError = false;
+
+LUA_API void luasrc_report_error (lua_State *L, const char *pszError) {
+  if (!pszError)
+    pszError = "(no error message)";
+
+  Warning("%s\n", pszError);
+
+  if (g_bReportingLuaError)
+    return;
+
+  g_bReportingLuaError = true;
+
+  // Build the traceback first and copy it into a C buffer.  Doing it inline in the
+  // hook call would mean addressing it by stack offset while the hook macros are
+  // pushing hook/call/name/_GAMEMODE underneath it.
+  char szTraceback[2048];
+  szTraceback[0] = '\0';
+  luaL_traceback(L, L, pszError, 1);
+  if (lua_isstring(L, -1))
+    Q_strncpy(szTraceback, lua_tostring(L, -1), sizeof(szTraceback));
+  lua_pop(L, 1);
+
+  LUA_CALL_HOOK_FOR_STATE_BEGIN(L, "LuaError");
+    lua_pushstring(L, pszError);
+    lua_pushstring(L, szTraceback);
+  LUA_CALL_HOOK_FOR_STATE_END(L, 2, 0);
+
+  g_bReportingLuaError = false;
+}
+
 LUA_API int luasrc_dostring (lua_State *L, const char *string) {
   int iError = luaL_dostring(L, string);
   if (iError != 0) {
-    Warning( "%s\n", lua_tostring(L, -1) );
+    luasrc_report_error(L, lua_tostring(L, -1));
     lua_pop(L, 1);
   }
   return iError;
