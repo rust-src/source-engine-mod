@@ -258,14 +258,17 @@ static const char *LuaNativeMetatableName (const char *pszName) {
 /*
 ** GMod returns nil for a metatable that is not registered yet, which is what
 ** Derma relies on while it is still defining its controls.
+**
+** It has to be an explicit nil and not "no results": in Lua a call that returns
+** zero values vanishes when it is the last argument of another call, so
+** `print( FindMetaTable( "Label" ) )` collapsed to a bare `print()` and printed
+** an empty line instead of "nil".
 */
 static int lua_FindMetaTable (lua_State *L) {
   const char *pszName = luaL_checkstring(L, 1);
   luaL_getmetatable(L, LuaNativeMetatableName(pszName));
-  if (lua_isnil(L, -1)) {
-    lua_pop(L, 1);
-    return 0;
-  }
+  if (lua_isnil(L, -1))
+    lua_pushnil(L);  /* leave exactly one value: nil */
   return 1;
 }
 
