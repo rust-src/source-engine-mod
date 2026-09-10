@@ -296,6 +296,144 @@ static void luasrc_install_metatable_aliases (lua_State *L) {
   }
 }
 
+/*
+** ===========================================================================
+** HL2SB: GMod type names.
+**
+** GMod's Lua type system is not the raw Lua one.  garrysmod/lua/includes/util.lua
+** *replaces* the global `type` with:
+**
+**   function type( v )
+**     local v_type = C_type( v )
+**     if ( v_type ~= "userdata" ) then return v_type end
+**     local metatable = getmetatable( v )
+**     local metaName = metatable and metatable.MetaName
+**     return C_type( metaName ) == "string" and metaName or "UserData"
+**   end
+**
+** and TypeID() reads metatable.MetaID, and isentity() walks
+** metatable.MetaBaseClass to find "Entity".  So a metatable without MetaName
+** makes type() report "UserData" for everything the moment GMod's util.lua is
+** loaded, which would break all of Derma and the spawnmenu.
+**
+** HL2SB's own type() (luamanager.cpp) reads __type instead, and its values are
+** the Team Sandbox era lowercase ones ("entity", "vector", "panel", ...).  The
+** names below are stamped as both __type and MetaName so the two agree, and they
+** follow Garry's Mod rather than Experiment: Source, which disagrees in three
+** places (it calls a player "Entity", a VMatrix "Matrix", and a physics object
+** "PhysicsObject").  Values are Garry's Mod's TYPE_* enum
+** (https://wiki.facepunch.com/gmod/Enums/TYPE).
+**
+** Stamping happens here, once, rather than editing the ~30 binding files that
+** create the metatables: every luaopen_* has already run by this point, so this
+** covers both realms, and the table stays the single place to audit.
+** ===========================================================================
+*/
+#define LUA_TYPE_ENTITY        9
+#define LUA_TYPE_VECTOR       10
+#define LUA_TYPE_ANGLE        11
+#define LUA_TYPE_PHYSOBJ      12
+#define LUA_TYPE_DAMAGEINFO   15
+#define LUA_TYPE_EFFECTDATA   16
+#define LUA_TYPE_MOVEDATA     17
+#define LUA_TYPE_RECIPFILTER  18
+#define LUA_TYPE_USERCMD      19
+#define LUA_TYPE_MATERIAL     21
+#define LUA_TYPE_PANEL        22
+#define LUA_TYPE_TEXTURE      25
+#define LUA_TYPE_CONVAR       27
+#define LUA_TYPE_MATRIX       29
+#define LUA_TYPE_FILE         34
+#define LUA_TYPE_PROJTEX      41
+#define LUA_TYPE_USERDATA      7
+#define LUA_TYPE_COLOR       255
+
+struct LuaTypeInfo_t
+{
+  const char *pszMetatable;   // registry name the metatable was created under
+  const char *pszTypeName;    // MetaName / __type
+  int iTypeID;                // MetaID
+  const char *pszBaseMetatable; // MetaBaseClass, or NULL
+};
+
+static const LuaTypeInfo_t s_LuaTypeInfo[] = {
+  // Entities.  GMod reports Player and Weapon separately and chains them onto
+  // Entity, which is what isentity() walks.
+  { LUA_BASEENTITYLIBNAME,      "Entity",          LUA_TYPE_ENTITY,     NULL },
+  { LUA_BASEPLAYERLIBNAME,      "Player",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { "CHL2MP_Player",            "Player",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { LUA_BASECOMBATWEAPONLIBNAME,"Weapon",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { "CBaseAnimating",           "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { "CBaseFlex",                "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+  { "CBaseCombatCharacter",     "Entity",          LUA_TYPE_ENTITY,     LUA_BASEENTITYLIBNAME },
+
+  // Value types.
+  { LUA_VECTORLIBNAME,          "Vector",          LUA_TYPE_VECTOR,     NULL },
+  { LUA_QANGLELIBNAME,          "Angle",           LUA_TYPE_ANGLE,      NULL },
+  { LUA_COLORLIBNAME,           "Color",           LUA_TYPE_COLOR,      NULL },
+  { LUA_VMATRIXLIBNAME,         "VMatrix",         LUA_TYPE_MATRIX,     NULL },
+  { LUA_MATRIXLIBNAME,          "VMatrix",         LUA_TYPE_MATRIX,     NULL },
+  { LUA_GAMETRACELIBNAME,       "Trace",           LUA_TYPE_USERDATA,   NULL },
+  { LUA_KEYVALUESLIBNAME,       "KeyValues",       LUA_TYPE_USERDATA,   NULL },
+
+  // engine objects
+  { LUA_TAKEDAMAGEINFOLIBNAME,  "CTakeDamageInfo", LUA_TYPE_DAMAGEINFO, NULL },
+  { LUA_EFFECTDATALIBNAME,      "CEffectData",     LUA_TYPE_EFFECTDATA, NULL },
+  { LUA_RECIPIENTFILTERLIBNAME, "CRecipientFilter",LUA_TYPE_RECIPFILTER,NULL },
+  { LUA_PASFILTERLIBNAME,       "CRecipientFilter",LUA_TYPE_RECIPFILTER,LUA_RECIPIENTFILTERLIBNAME },
+  { LUA_MATERIALLIBNAME,        "IMaterial",       LUA_TYPE_MATERIAL,   NULL },
+  { LUA_ITEXTUREMETANAME,       "ITexture",        LUA_TYPE_TEXTURE,    NULL },
+  { LUA_CONVARLIBNAME,          "ConVar",          LUA_TYPE_CONVAR,     NULL },
+  { LUA_CONCOMMANDLIBNAME,      "ConCommand",      LUA_TYPE_CONVAR,     NULL },
+  { LUA_PHYSICSOBJECTLIBNAME,   "PhysObj",         LUA_TYPE_PHYSOBJ,    NULL },
+  // The metatable is registered as "FileHandle_t" (lfilesystem.cpp);
+  // LUA_FILEHANDLEMETANAME is the *library* name, not the metatable name.
+  { "FileHandle_t",             "File",            LUA_TYPE_FILE,       NULL },
+  { LUA_MOVEHELPERLIBNAME,      "MoveHelper",      LUA_TYPE_MOVEDATA,   NULL },
+
+  // All vgui controls report "Panel" in GMod, with the class chain in
+  // MetaBaseClass -- this is what derma's panels all rely on.
+  { "Panel",                    "Panel",           LUA_TYPE_PANEL,      NULL },
+  { "EditablePanel",            "Panel",           LUA_TYPE_PANEL,      "Panel" },
+  { "Frame",                    "Panel",           LUA_TYPE_PANEL,      "EditablePanel" },
+  { "Button",                   "Panel",           LUA_TYPE_PANEL,      "Panel" },
+  { "CheckButton",              "Panel",           LUA_TYPE_PANEL,      "Button" },
+  { "ModelPanel",               "Panel",           LUA_TYPE_PANEL,      "Panel" },
+  { "PropertyDialog",           "Panel",           LUA_TYPE_PANEL,      "Frame" },
+  { "PropertyPage",             "Panel",           LUA_TYPE_PANEL,      "EditablePanel" },
+
+  { NULL, NULL, 0, NULL }
+};
+
+static void luasrc_install_type_names (lua_State *L) {
+  for (int i = 0; s_LuaTypeInfo[i].pszMetatable; ++i) {
+    luaL_getmetatable(L, s_LuaTypeInfo[i].pszMetatable);
+    if (!lua_istable(L, -1)) {
+      lua_pop(L, 1);
+      continue;  // not opened in this realm
+    }
+
+    // metatable.__type  (HL2SB's type()) and metatable.MetaName (GMod's type())
+    lua_pushstring(L, s_LuaTypeInfo[i].pszTypeName);
+    lua_setfield(L, -2, "__type");
+    lua_pushstring(L, s_LuaTypeInfo[i].pszTypeName);
+    lua_setfield(L, -2, "MetaName");
+
+    lua_pushinteger(L, s_LuaTypeInfo[i].iTypeID);
+    lua_setfield(L, -2, "MetaID");
+
+    if (s_LuaTypeInfo[i].pszBaseMetatable) {
+      luaL_getmetatable(L, s_LuaTypeInfo[i].pszBaseMetatable);
+      if (lua_istable(L, -1))
+        lua_setfield(L, -2, "MetaBaseClass");
+      else
+        lua_pop(L, 1);
+    }
+
+    lua_pop(L, 1);
+  }
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -306,6 +444,7 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
 
   /* Every lib is open now, so the metatables exist and can be aliased. */
   luasrc_install_metatable_aliases(L);
+  luasrc_install_type_names(L);
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
