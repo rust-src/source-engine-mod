@@ -803,21 +803,30 @@ static int CBaseEntity_KeyValue (lua_State *L) {
   return 1;
 }
 
-// HL2SB GMod SWEP compat: entity:Fire(inputname, delay, activator).  Server-only
-// (AcceptInput is a server-side CBaseEntity method).  For the common GMod inputs
-// ("Explode"/"Use"/"Kill") the value is irrelevant, so pass an empty variant_t.
+// HL2SB GMod SWEP compat: entity:Fire( input, value = "", delay = 0,
+// activator = NULL ) - the GMod signature. Server-only (AcceptInput is a
+// server-side CBaseEntity method). The previous HL2SB signature here was
+// (input, delay, activator): the stock Ultimate Admin Gun calls
+// ent:Fire("Explode", 0, 0), and its numeric 0 landed in the activator slot,
+// which luaL_checkentity rejects - SecondaryAttack aborted before exploding.
+// GMod's delay queues the input; AcceptInput fires immediately, which matches
+// every stock SWEP (they pass 0).
 #ifndef CLIENT_DLL
 static int CBaseEntity_Fire (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *szInput = luaL_checkstring(L, 2);
-  float flDelay = luaL_optnumber(L, 3, 0.0f);
-  CBaseEntity *pActivator = luaL_optentity(L, 4, NULL);
-  if (flDelay > 0.0f) {
-    /* GMod Fire with delay: queue via AcceptInput with outputID (delay is
-       approximated; AcceptInput's outputID path handles immediate inputs here). */
+  variant_t valueData;
+  if ( !lua_isnoneornil(L, 3) ) {
+    int nType = lua_type(L, 3);
+    if ( nType == LUA_TSTRING )
+      valueData.SetString( AllocPooledString( lua_tostring(L, 3) ) );
+    else if ( nType == LUA_TNUMBER )
+      valueData.SetFloat( (float)lua_tonumber(L, 3) );
+    else if ( nType == LUA_TBOOLEAN )
+      valueData.SetBool( lua_toboolean(L, 3) != 0 );
   }
-  variant_t v;
-  pEntity->AcceptInput( szInput, pActivator, pActivator, v, 0 );
+  CBaseEntity *pActivator = lua_isnoneornil(L, 4) ? NULL : lua_toentity(L, 4);
+  pEntity->AcceptInput( szInput, pActivator, pActivator, valueData, 0 );
   return 0;
 }
 #endif
