@@ -17,6 +17,7 @@
 //===========================================================================//
 
 #include "cbase.h"
+#include "basecombatcharacter.h"
 #include "hl2sb_undo.h"
 #include "client.h"
 #include "utlvector.h"
@@ -161,6 +162,40 @@ void HL2SB_UndoEnd( CBasePlayer *pOwner )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: HL2SB_UndoPruneInvalid - remove undo entries whose entities have all
+//          been removed/destroyed (e.g. a spawned NPC that later died).  Mirrors
+//          GMod's CleanupInvalidUndos: an undo whose every entity is now gone
+//          can no longer be undone, so it should vanish from the stack.
+//-----------------------------------------------------------------------------
+static void HL2SB_UndoPruneInvalid( CHL2SB_UndoPlayer *pStack )
+{
+	if ( !pStack )
+		return;
+
+	for ( int j = pStack->m_Undos.Count() - 1; j >= 0; j-- )
+	{
+		CHL2SB_UndoEntry &entry = pStack->m_Undos[ j ];
+
+		// Keep entries that carry functions (they may still do something).
+		bool bAnyValid = false;
+		for ( int i = 0; i < entry.m_Entities.Count(); i++ )
+		{
+			if ( entry.m_Entities[ i ].Get() != NULL )
+			{
+				bAnyValid = true;
+				break;
+			}
+		}
+
+		if ( !bAnyValid && entry.m_Entities.Count() > 0 )
+		{
+			// Every entity in this undo is gone (dead / removed) -> drop it.
+			pStack->m_Undos.Remove( j );
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: HL2SB_UndoLast - undo the most recent action for a player.
 //          Removes the entities in that action (if still valid).  Returns the
 //          number of entities successfully removed.
@@ -172,6 +207,13 @@ int HL2SB_UndoLast( CBasePlayer *pOwner )
 
 	CHL2SB_UndoPlayer *pStack = GetPlayerStack( pOwner );
 	if ( !pStack || pStack->m_Undos.Count() == 0 )
+		return 0;
+
+	// GMod undo semantics: an undo whose entities have all been removed/dead
+	// cannot be undone.  Drop those before picking the most recent one, so a
+	// dead NPC never gets "undone".
+	HL2SB_UndoPruneInvalid( pStack );
+	if ( pStack->m_Undos.Count() == 0 )
 		return 0;
 
 	CHL2SB_UndoEntry &entry = pStack->m_Undos[ pStack->m_Undos.Count() - 1 ];
@@ -187,10 +229,21 @@ int HL2SB_UndoLast( CBasePlayer *pOwner )
 		}
 	}
 
+	// GMod undo semantics: if this undo removed nothing (its entities were all
+	// already gone / dead), drop the entry and keep unwinding to older undos
+	// until we actually undo something (or the stack empties).  This is what
+	// makes a dead NPC "not undoable" without popping a spurious notification.
+	CUtlString sName = entry.m_Name;
+
+	pStack->m_Undos.Remove( pStack->m_Undos.Count() - 1 );
+
+	if ( removed <= 0 )
+		return HL2SB_UndoLast( pOwner );
+
 	// Notify via a server-side Lua hook.  The Lua server script listens for
 	// OnUndo and broadcasts a net message to the client, which the client Lua
 	// HUD turns into a popup + sound (the GMod-style undo notification).
-	const char *pszName = entry.m_Name.IsEmpty() ? "something" : entry.m_Name.Get();
+	const char *pszName = sName.IsEmpty() ? "something" : sName.Get();
 
 #ifdef LUA_SDK
 	{
@@ -201,7 +254,6 @@ int HL2SB_UndoLast( CBasePlayer *pOwner )
 	}
 #endif
 
-	pStack->m_Undos.Remove( pStack->m_Undos.Count() - 1 );
 	return removed;
 }
 
@@ -233,6 +285,7 @@ int HL2SB_UndoCount( CBasePlayer *pOwner )
 	if ( !pStack )
 		return 0;
 
+	HL2SB_UndoPruneInvalid( pStack );
 	return pStack->m_Undos.Count();
 }
 

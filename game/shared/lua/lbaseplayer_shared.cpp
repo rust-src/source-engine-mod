@@ -103,6 +103,12 @@ static int CBasePlayer_DoMuzzleFlash (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod SWEP compat: GMod SWEPs call owner:MuzzleFlash().
+static int CBasePlayer_MuzzleFlash (lua_State *L) {
+  luaL_checkplayer(L, 1)->DoMuzzleFlash();
+  return 0;
+}
+
 static int CBasePlayer_ExitLadder (lua_State *L) {
   luaL_checkplayer(L, 1)->ExitLadder();
   return 0;
@@ -999,6 +1005,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"ClearZoomOwner", CBasePlayer_ClearZoomOwner},
   {"CurrentCommandNumber", CBasePlayer_CurrentCommandNumber},
   {"DoMuzzleFlash", CBasePlayer_DoMuzzleFlash},
+  {"MuzzleFlash", CBasePlayer_MuzzleFlash},
   {"ExitLadder", CBasePlayer_ExitLadder},
   {"EyeAngles", CBasePlayer_EyeAngles},
   {"EyePosition", CBasePlayer_EyePosition},

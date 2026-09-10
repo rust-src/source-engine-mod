@@ -983,6 +983,39 @@ static int CBaseEntity_SetAbsOrigin (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod SWEP compat: GMod calls ent:SetPos(v) (alias for SetAbsOrigin).
+static int CBaseEntity_SetPos (lua_State *L) {
+  luaL_checkentity(L, 1)->SetAbsOrigin(luaL_checkvector(L, 2));
+  return 0;
+}
+
+// HL2SB GMod SWEP compat: GMod calls ent:SetKeyValue(k, v) (alias for KeyValue).
+static int CBaseEntity_SetKeyValue (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  switch(lua_type(L, 3)) {
+    case LUA_TNUMBER:
+      lua_pushboolean(L, pEntity->KeyValue(luaL_checkstring(L, 2), luaL_checknumber(L, 3)));
+      break;
+    case LUA_TSTRING:
+    default:
+      lua_pushboolean(L, pEntity->KeyValue(luaL_checkstring(L, 2), luaL_checkstring(L, 3)));
+      break;
+    case LUA_TUSERDATA:
+      if (luaL_checkudata(L, 3, "Vector"))
+        lua_pushboolean(L, pEntity->KeyValue(luaL_checkstring(L, 2), luaL_checkvector(L, 3)));
+      else
+        luaL_typerror(L, 3, "Vector");
+      break;
+  }
+  return 1;
+}
+
+// HL2SB GMod SWEP compat: GMod calls ent:GetPos() (alias for GetAbsOrigin).
+static int CBaseEntity_GetPos (lua_State *L) {
+  lua_pushvector(L, luaL_checkentity(L, 1)->GetAbsOrigin());
+  return 1;
+}
+
 static int CBaseEntity_SetAbsQueriesValid (lua_State *L) {
   CBaseEntity::SetAbsQueriesValid(luaL_checkboolean(L, 1));
   return 0;
@@ -1652,6 +1685,9 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"RemoveSolidFlags", CBaseEntity_RemoveSolidFlags},
   {"SetAbsAngles", CBaseEntity_SetAbsAngles},
   {"SetAbsOrigin", CBaseEntity_SetAbsOrigin},
+  {"SetPos", CBaseEntity_SetPos},
+  {"SetKeyValue", CBaseEntity_SetKeyValue},
+  {"GetPos", CBaseEntity_GetPos},
   {"SetAbsQueriesValid", CBaseEntity_SetAbsQueriesValid},
   {"SetAbsVelocity", CBaseEntity_SetAbsVelocity},
   {"SetAIWalkable", CBaseEntity_SetAIWalkable},

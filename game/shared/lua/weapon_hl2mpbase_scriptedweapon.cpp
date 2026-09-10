@@ -198,6 +198,35 @@ extern const char *pWeaponSoundCategories[ NUM_SHOOT_SOUND_TYPES ];
 extern ConVar hud_fastswitch;
 #endif
 
+// HL2SB GMod SWEP compat: read a weapon data field that GMod stores nested
+// (Primary.SubKey / Secondary.SubKey) but HL2SB keeps flat.  Prefers the nested
+// value; falls back to the flat key.  ALWAYS leaves exactly one value on the
+// Lua stack (the caller must lua_pop it once), so the over/underflow bugs in
+// the old inline getref/getfield/remove sequences are impossible here.
+static int lua_getweaponfield ( lua_State *L, int ref, const char *tblKey, const char *subKey, const char *flatKey )
+{
+	lua_getref( L, ref );                    // [T]
+	lua_getfield( L, -1, tblKey );           // [T, tbl]
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, subKey );       // [T, tbl, sub]
+		lua_remove( L, -2 );                 // [T, sub]
+		if ( !lua_isnil( L, -1 ) )
+		{
+			lua_remove( L, -2 );             // [sub]
+			return 1;
+		}
+		lua_pop( L, 1 );                     // [T]  (sub was nil)
+	}
+	else
+	{
+		lua_pop( L, 1 );                     // [T]  (tbl not a table)
+	}
+	lua_getfield( L, -1, flatKey );          // [T, flat]
+	lua_remove( L, -2 );                     // [flat]
+	return 1;
+}
+
 void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 {
 #if defined ( LUA_SDK )
@@ -249,8 +278,16 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 #endif
 	// Printable name
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "printname" );
+	lua_getfield( L, -1, "PrintName" );
 	lua_remove( L, -2 );
+	if ( !lua_isstring( L, -1 ) || lua_tostring( L, -1 )[0] == '\0' )
+	{
+		// HL2SB GMod SWEP compat: fall back to the flat HL2SB printname key.
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "printname" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isstring( L, -1 ) )
 	{
 		Q_strncpy( m_pLuaWeaponInfo->szPrintName, lua_tostring( L, -1 ), MAX_WEAPON_STRING );
@@ -260,18 +297,35 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		Q_strncpy( m_pLuaWeaponInfo->szPrintName, WEAPON_PRINTNAME_MISSING, MAX_WEAPON_STRING );
 	}
 	lua_pop( L, 1 );
-	// View model & world model
+	// View model & world model.  HL2SB GMod SWEP compat: GMod SWEPs set the
+	// capitalised ViewModel/WorldModel and inherit the flat lowercase keys from
+	// weapon_hl2mpbase_scriptedweapon (v_357/etc).  Prefer the GMod-style key so
+	// the SWEP's own model wins; fall back to the flat key for HL2SB-era scripts.
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "viewmodel" );
+	lua_getfield( L, -1, "ViewModel" );
 	lua_remove( L, -2 );
+	if ( !lua_isstring( L, -1 ) || lua_tostring( L, -1 )[0] == '\0' )
+	{
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "viewmodel" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isstring( L, -1 ) )
 	{
 		Q_strncpy( m_pLuaWeaponInfo->szViewModel, lua_tostring( L, -1 ), MAX_WEAPON_STRING );
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "playermodel" );
+	lua_getfield( L, -1, "WorldModel" );
 	lua_remove( L, -2 );
+	if ( !lua_isstring( L, -1 ) || lua_tostring( L, -1 )[0] == '\0' )
+	{
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "playermodel" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isstring( L, -1 ) )
 	{
 		Q_strncpy( m_pLuaWeaponInfo->szWorldModel, lua_tostring( L, -1 ), MAX_WEAPON_STRING );
@@ -286,8 +340,16 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "bucket" );
+	lua_getfield( L, -1, "Slot" );
 	lua_remove( L, -2 );
+	if ( !lua_isnumber( L, -1 ) )
+	{
+		// HL2SB GMod SWEP compat: fall back to the flat HL2SB bucket key.
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "bucket" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iSlot = lua_tonumber( L, -1 );
@@ -298,8 +360,16 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "bucket_position" );
+	lua_getfield( L, -1, "SlotPos" );
 	lua_remove( L, -2 );
+	if ( !lua_isnumber( L, -1 ) )
+	{
+		// HL2SB GMod SWEP compat: fall back to the flat HL2SB bucket_position.
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "bucket_position" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iPosition = lua_tonumber( L, -1 );
@@ -334,9 +404,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		}
 		lua_pop( L, 1 );
 	}
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "clip_size" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Primary", "ClipSize", "clip_size" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iMaxClip1 = lua_tonumber( L, -1 );					// Max primary clips gun can hold (assume they don't use clips by default)
@@ -346,9 +414,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->iMaxClip1 = WEAPON_NOCLIP;
 	}
 	lua_pop( L, 1 );
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "clip2_size" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Secondary", "ClipSize", "clip2_size" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iMaxClip2 = lua_tonumber( L, -1 );					// Max secondary clips gun can hold (assume they don't use clips by default)
@@ -358,9 +424,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->iMaxClip2 = WEAPON_NOCLIP;
 	}
 	lua_pop( L, 1 );
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "default_clip" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Primary", "DefaultClip", "default_clip" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iDefaultClip1 = lua_tonumber( L, -1 );		// amount of primary ammo placed in the primary clip when it's picked up
@@ -370,9 +434,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->iDefaultClip1 = m_pLuaWeaponInfo->iMaxClip1;
 	}
 	lua_pop( L, 1 );
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "default_clip2" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Secondary", "DefaultClip", "default_clip2" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iDefaultClip2 = lua_tonumber( L, -1 );		// amount of secondary ammo placed in the secondary clip when it's picked up
@@ -383,8 +445,16 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "weight" );
+	lua_getfield( L, -1, "Weight" );
 	lua_remove( L, -2 );
+	if ( !lua_isnumber( L, -1 ) )
+	{
+		// HL2SB GMod SWEP compat: fall back to the flat HL2SB weight key.
+		lua_pop( L, 1 );
+		lua_getref( L, m_nTableReference );
+		lua_getfield( L, -1, "weight" );
+		lua_remove( L, -2 );
+	}
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->iWeight = lua_tonumber( L, -1 );
@@ -468,9 +538,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->m_bAllowFlipping = true;
 	}
 	lua_pop( L, 1 );
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "MeleeWeapon" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Primary", "MeleeWeapon", "MeleeWeapon" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->m_bMeleeWeapon = (int)lua_tointeger( L, -1 ) != 0 ? true : false;
@@ -481,10 +549,8 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 
-	// Primary ammo used
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "primary_ammo" );
-	lua_remove( L, -2 );
+	// Primary ammo used.  GMod SWEPs use Primary.Ammo; helper falls back flat.
+	lua_getweaponfield( L, m_nTableReference, "Primary", "Ammo", "primary_ammo" );
 	if ( lua_isstring( L, -1 ) )
 	{
 		const char *pAmmo = lua_tostring( L, -1 );
@@ -497,9 +563,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	lua_pop( L, 1 );
 	
 	// Secondary ammo used
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "secondary_ammo" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Secondary", "Ammo", "secondary_ammo" );
 	if ( lua_isstring( L, -1 ) )
 	{
 		const char *pAmmo = lua_tostring( L, -1 );
@@ -534,9 +598,7 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 	}
 	lua_pop( L, 1 );
 
-	lua_getref( L, m_nTableReference );
-	lua_getfield( L, -1, "damage" );
-	lua_remove( L, -2 );
+	lua_getweaponfield( L, m_nTableReference, "Primary", "Damage", "damage" );
 	if ( lua_isnumber( L, -1 ) )
 	{
 		m_pLuaWeaponInfo->m_iPlayerDamage = (int)lua_tointeger( L, -1 );

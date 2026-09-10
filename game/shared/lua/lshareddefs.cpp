@@ -109,13 +109,33 @@ LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
   if (!lua_isnil(L, -1) && info.m_flDamageForceScale == 0)
     info.m_flDamageForceScale = luaL_checknumber(L, -1);
   lua_pop(L, 1);
-  lua_getfield(L, idx, "AmmoType"); // -> m_iAmmoType
+  lua_getfield(L, idx, "AmmoType"); // -> m_iAmmoType (GMod passes a string ammo name)
   if (!lua_isnil(L, -1) && info.m_iAmmoType == 0)
-    info.m_iAmmoType = luaL_checkint(L, -1);
+  {
+    if (lua_type(L, -1) == LUA_TSTRING)
+    {
+      const char *pAmmo = lua_tostring(L, -1);
+      int idx2 = GetAmmoDef()->Index(pAmmo);
+      if (idx2 >= 0)
+        info.m_iAmmoType = idx2;
+    }
+    else if (lua_isnumber(L, -1))
+    {
+      info.m_iAmmoType = luaL_checkint(L, -1);
+    }
+  }
   lua_pop(L, 1);
   lua_getfield(L, idx, "Tracer");   // -> m_iTracerFreq
   if (!lua_isnil(L, -1) && info.m_iTracerFreq == 0)
     info.m_iTracerFreq = luaL_checkint(L, -1);
+  lua_pop(L, 1);
+
+  // HL2SB GMod SWEP compat: GMod's ShootBullet sets bullet.Attacker (and
+  // bullet.Inflictor).  FireBulletsInfo_t only carries m_pAttacker; ignore
+  // Inflictor (HL2SB's FireBullets derives inflictor itself).
+  lua_getfield(L, idx, "Attacker");  // -> m_pAttacker
+  if (!lua_isnil(L, -1) && info.m_pAttacker == NULL)
+    info.m_pAttacker = lua_toentity(L, -1);
   lua_pop(L, 1);
 
   return info;
