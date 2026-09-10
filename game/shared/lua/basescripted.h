@@ -43,6 +43,9 @@ public:
 	void	Touch( CBaseEntity *pOther ); 
 	void	EndTouch( CBaseEntity *pOther );
 
+	// GMod ENT contract: OnRemove is called before the entity is deleted.
+	virtual void	UpdateOnRemove( void );
+
 #ifdef CLIENT_DLL
 	// model specific
 	virtual int DrawModel( int flags );

@@ -299,6 +299,25 @@ void CBaseScripted::VPhysicsUpdate( IPhysicsObject *pPhysics )
 	BEGIN_LUA_CALL_ENTITY_METHOD( "VPhysicsUpdate" );
 		lua_pushphysicsobject( L, pPhysics );
 	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
+
+	// GMod name for the same callback.
+	BEGIN_LUA_CALL_ENTITY_METHOD( "PhysicsUpdate" );
+		lua_pushphysicsobject( L, pPhysics );
+	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
 #endif
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod ENT contract: OnRemove is called before the entity is deleted.
+//-----------------------------------------------------------------------------
+void CBaseScripted::UpdateOnRemove( void )
+{
+#ifdef LUA_SDK
+	BEGIN_LUA_CALL_ENTITY_METHOD( "OnRemove" );
+		lua_pushboolean( L, true );  /* fullUpdate */
+	END_LUA_CALL_ENTITY_METHOD( 1, 0 );
+#endif
+
+	BaseClass::UpdateOnRemove();
 }
 
