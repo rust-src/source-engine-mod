@@ -73,8 +73,11 @@ static int luasrc_print (lua_State *L) {
     if (s == NULL)
       return luaL_error(L, LUA_QL("tostring") " must return a string to "
                            LUA_QL("print"));
-    if (i>1) Msg("\t");
-    Msg(s);
+    // HL2SB: Msg is printf-style, so the value has to go through a format string.
+    // Passing it straight in made Lua output a format string -- `print("%d")`
+    // read a vararg that was never pushed.
+    if (i>1) Msg("%s", "\t");
+    Msg("%s", s);
     lua_pop(L, 1);  /* pop result */
   }
   Msg("\n");
@@ -1036,7 +1039,13 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 	CON_COMMAND( lua_run_cl, "Run a Lua string (client)" )
 	{
 		if ( !g_bLuaInitialized )
+		{
+			// HL2SB: the Lua state is created per level (CHLClient::LevelInitPreEntity),
+			// so in the main menu there is nothing to run against -- say so instead of
+			// returning silently, which looks like the command did not exist.
+			Msg( "lua_run_cl: Lua is not initialized yet (enter a map first)\n" );
 			return;
+		}
 
 		if ( args.ArgC() == 1 )
 		{
