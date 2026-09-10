@@ -19,9 +19,12 @@ typedef Color lua_Color;
 
 /*
 ** access functions (stack -> C)
+**
+** By value, not by reference: GMod's Color is a Lua table with r/g/b/a fields, so
+** there is no C++ object on the stack to hand back a reference to.
 */
 
-LUA_API lua_Color      &(lua_tocolor) (lua_State *L, int idx);
+LUA_API lua_Color      (lua_tocolor) (lua_State *L, int idx);
 
 
 /*
@@ -31,10 +34,10 @@ LUA_API void  (lua_pushcolor) (lua_State *L, const lua_Color &clr);
 
 
 
-LUALIB_API lua_Color &(luaL_checkcolor) (lua_State *L, int narg);
+LUALIB_API lua_Color (luaL_checkcolor) (lua_State *L, int narg);
 
-// HL2SB: ported from Experiment: Source.  True when the argument is a Color
-// userdata; the chat binding uses it to accept mixed color/text arguments.
+// HL2SB: ported from Experiment: Source.  True when the argument is a Color; since
+// GMod's Color is a table this checks the metatable identity, not a userdata type.
 LUALIB_API bool (lua_iscolor) (lua_State *L, int narg);
 
 // HL2SB: ported from Experiment: Source.  Returns by value rather than by

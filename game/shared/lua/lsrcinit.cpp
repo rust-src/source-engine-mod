@@ -391,6 +391,7 @@ struct LuaTypeInfo_t
   const char *pszTypeName;    // MetaName / __type
   int iTypeID;                // MetaID
   const char *pszBaseMetatable; // MetaBaseClass, or NULL
+  bool bIsTableType;          // value is a Lua table: stamp MetaName/MetaID but NOT __type
 };
 
 static const LuaTypeInfo_t s_LuaTypeInfo[] = {
@@ -407,7 +408,7 @@ static const LuaTypeInfo_t s_LuaTypeInfo[] = {
   // Value types.
   { LUA_VECTORLIBNAME,          "Vector",          LUA_TYPE_VECTOR,     NULL },
   { LUA_QANGLELIBNAME,          "Angle",           LUA_TYPE_ANGLE,      NULL },
-  { LUA_COLORLIBNAME,           "Color",           LUA_TYPE_COLOR,      NULL },
+  { LUA_COLORLIBNAME,           "Color",           LUA_TYPE_COLOR,      NULL, /*bIsTableType*/ true },
   { LUA_VMATRIXLIBNAME,         "VMatrix",         LUA_TYPE_MATRIX,     NULL },
   { LUA_MATRIXLIBNAME,          "VMatrix",         LUA_TYPE_MATRIX,     NULL },
   { LUA_GAMETRACELIBNAME,       "Trace",           LUA_TYPE_USERDATA,   NULL },
@@ -450,11 +451,20 @@ static void luasrc_install_type_names (lua_State *L) {
       continue;  // not opened in this realm
     }
 
-    // metatable.__type  (HL2SB's type()) and metatable.MetaName (GMod's type())
-    lua_pushstring(L, s_LuaTypeInfo[i].pszTypeName);
-    lua_setfield(L, -2, "__type");
+    // metatable.MetaName is what GMod's type() reads for userdata.
     lua_pushstring(L, s_LuaTypeInfo[i].pszTypeName);
     lua_setfield(L, -2, "MetaName");
+
+    // metatable.__type is what HL2SB's own type() (luamanager.cpp) reads, and it is
+    // skipped for the types GMod implements as plain Lua tables (Color): HL2SB's
+    // type() reports __type for anything carrying a metatable, while GMod's type()
+    // short-circuits on the raw Lua type and answers "table" there.  Verified by
+    // dumping GMod: `Color() -> type = table`, and its Color metatable still has
+    // MetaName "Color" / MetaID 44.
+    if (!s_LuaTypeInfo[i].bIsTableType) {
+      lua_pushstring(L, s_LuaTypeInfo[i].pszTypeName);
+      lua_setfield(L, -2, "__type");
+    }
 
     lua_pushinteger(L, s_LuaTypeInfo[i].iTypeID);
     lua_setfield(L, -2, "MetaID");
