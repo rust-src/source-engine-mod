@@ -22,6 +22,9 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_BASECOMBATWEAPONLIBNAME, luaopen_CBaseCombatWeapon},
   {LUA_BASEENTITYLIBNAME, luaopen_CBaseEntity},
   {LUA_BASEENTITYLIBNAME, luaopen_CBaseEntity_shared},
+  // HL2SB: ported from Experiment: Source.  Registered after luaopen_Entities so it
+  // merges its Entities.CreateClientEntity into the same `ents` table.
+  {LUA_CBASEFLEXLIBNAME, luaopen_CBaseFlex_shared},
   {LUA_BASEPLAYERLIBNAME, luaopen_CBasePlayer},
   {LUA_BASEPLAYERLIBNAME, luaopen_CBasePlayer_shared},
   {LUA_EFFECTDATALIBNAME, luaopen_CEffectData},
@@ -122,6 +125,8 @@ static const luaL_Reg luasrclibs[] = {
   // those bindings hand back, so its metatable is installed first.
   {LUA_ITEXTUREMETANAME, luaopen_ITexture},
   {LUA_RENDERSLIBNAME, luaopen_render},
+  // HL2SB: ported from Experiment: Source.  GMod's chat.* lives here.
+  {LUA_CHATSLIBNAME, luaopen_Chats},
 #endif
 #ifdef CLIENT_DLL
   {LUA_SCHEMELIBNAME, luaopen_scheme},

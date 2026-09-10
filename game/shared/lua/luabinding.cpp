@@ -65,3 +65,37 @@ void luaL_register( lua_State *L, const char *libname, CUtlVector< LuaRegEntry >
 		lua_setfield( L, -2, luaRegistry[i].name );
 	}
 }
+
+// See luabinding.h.  Merges into the existing entity table when there is one, so the
+// two contributors (the ported Entities library and the CBaseFlex bindings) both end
+// up in the same table no matter which library the engine opens first.
+void luaL_register_entity_library( lua_State *L, CUtlVector< LuaRegEntry > &luaRegistry )
+{
+	lua_getglobal( L, "ents" );				// [ents]
+	if ( !lua_istable( L, -1 ) )			// no table yet: make one
+	{
+		lua_pop( L, 1 );
+		lua_newtable( L );					// [table]
+	}
+
+	for ( int i = 0; i < luaRegistry.Count(); i++ )
+	{
+		lua_pushcfunction( L, luaRegistry[i].function );
+		lua_setfield( L, -2, luaRegistry[i].name );
+	}
+
+	lua_pushvalue( L, -1 );
+	lua_setglobal( L, "ents" );				// _G.ents = table
+	lua_pushvalue( L, -1 );
+	lua_setglobal( L, "Entities" );			// _G.Entities = table
+
+	lua_getfield( L, LUA_REGISTRYINDEX, "_LOADED" );
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_pushvalue( L, -2 );
+		lua_setfield( L, -2, "Entities" );	// require( "Entities" )
+	}
+	lua_pop( L, 1 );
+
+	// [table] left on the stack for the caller.
+}

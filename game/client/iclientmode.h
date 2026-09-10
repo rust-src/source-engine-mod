@@ -24,7 +24,10 @@ namespace vgui
 }
 
 // Message mode types
-enum
+// HL2SB: named CHAT_MESSAGE_MODE (Experiment: Source's spelling) so a Lua binding
+// can name the type; the values are unchanged.  They also add MM_SAY_PARTY, which
+// has no meaning here.
+enum CHAT_MESSAGE_MODE
 {
 	MM_NONE = 0,
 	MM_SAY,
