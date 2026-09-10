@@ -29,7 +29,10 @@ enum RESERVED {
   TK_RETURN, TK_THEN, TK_TRUE, TK_UNTIL, TK_WHILE,
   /* other terminal symbols */
   TK_CONCAT, TK_DOTS, TK_EQ, TK_GE, TK_LE, TK_NE, TK_NUMBER,
-  TK_NAME, TK_STRING, TK_EOS
+  TK_NAME, TK_STRING,
+  /* GMod/LuaJIT style C operators (see llex.c) */
+  TK_CAND, TK_COR,
+  TK_EOS
 };
 
 /* number of reserved words */

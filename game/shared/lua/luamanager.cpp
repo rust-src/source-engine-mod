@@ -505,6 +505,12 @@ void luasrc_LoadEntities (const char *path)
 #else
 				Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_ENTITIES "/%s/init.lua", path, className );
 #endif
+				// GMod compatibility: scripted entities that ship only
+				// shared.lua must still load.
+				if ( !filesystem->FileExists( filename, "MOD" ) )
+				{
+					Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_ENTITIES "/%s/shared.lua", path, className );
+				}
 				if ( filesystem->FileExists( filename, "MOD" ) )
 				{
 					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
@@ -603,6 +609,12 @@ void luasrc_LoadWeapons (const char *path)
 #else
 				Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_WEAPONS "/%s/init.lua", path, className );
 #endif
+				// GMod compatibility: SWEPs that ship only shared.lua (no
+				// init.lua / cl_init.lua) must still load.
+				if ( !filesystem->FileExists( filename, "MOD" ) )
+				{
+					Q_snprintf( filename, sizeof( filename ), "%s" LUA_PATH_WEAPONS "/%s/shared.lua", path, className );
+				}
 				if ( filesystem->FileExists( filename, "MOD" ) )
 				{
 					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );

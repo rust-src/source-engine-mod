@@ -1097,6 +1097,10 @@ bool CHL2MPScriptedWeapon::Holster( CBaseCombatWeapon *pSwitchingTo )
 void CHL2MPScriptedWeapon::ItemPostFrame( void )
 {
 #if defined ( LUA_SDK )
+	// GMod calls SWEP:Think() every frame while the weapon is active.
+	BEGIN_LUA_CALL_WEAPON_METHOD( "Think" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
 	BEGIN_LUA_CALL_WEAPON_METHOD( "ItemPostFrame" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
 

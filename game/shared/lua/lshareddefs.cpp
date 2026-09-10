@@ -83,34 +83,37 @@ LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
     info.m_vecSrc = luaL_checkvector(L, -1);
   lua_pop(L, 1);
 
-  // HL2SB GMod SWEP compat: accept GMod bullet field names as aliases.
-  // (Only set when the corresponding m_* field was left out.)
+  // HL2SB GMod SWEP compat: GMod bullet field names take priority when present.
+  // GMod's ShootBullet always passes these keys, so an explicit 0 / origin value
+  // must be honoured (the old "only if the m_* field is falsy" heuristic silently
+  // dropped e.g. Damage = 0). Missing GMod keys still fall back to the m_* values
+  // read above, so legacy HL2SB-style tables keep working.
   lua_getfield(L, idx, "Num");   // -> m_iShots
-  if (!lua_isnil(L, -1) && !info.m_iShots)
+  if (!lua_isnil(L, -1))
     info.m_iShots = luaL_checkint(L, -1);
   lua_pop(L, 1);
   lua_getfield(L, idx, "Src");   // -> m_vecSrc
-  if (!lua_isnil(L, -1) && info.m_vecSrc == vec3_origin)
+  if (!lua_isnil(L, -1))
     info.m_vecSrc = luaL_checkvector(L, -1);
   lua_pop(L, 1);
   lua_getfield(L, idx, "Dir");   // -> m_vecDirShooting
-  if (!lua_isnil(L, -1) && info.m_vecDirShooting == vec3_origin)
+  if (!lua_isnil(L, -1))
     info.m_vecDirShooting = luaL_checkvector(L, -1);
   lua_pop(L, 1);
   lua_getfield(L, idx, "Spread");  // -> m_vecSpread
-  if (!lua_isnil(L, -1) && info.m_vecSpread == vec3_origin)
+  if (!lua_isnil(L, -1))
     info.m_vecSpread = luaL_checkvector(L, -1);
   lua_pop(L, 1);
-  lua_getfield(L, idx, "Damage");  // -> m_iDamage
-  if (!lua_isnil(L, -1) && info.m_flDamage == 0)
-    info.m_flDamage = luaL_checkint(L, -1);
+  lua_getfield(L, idx, "Damage");  // -> m_flDamage
+  if (!lua_isnil(L, -1))
+    info.m_flDamage = luaL_checknumber(L, -1);
   lua_pop(L, 1);
   lua_getfield(L, idx, "Force");   // -> m_flDamageForceScale
-  if (!lua_isnil(L, -1) && info.m_flDamageForceScale == 0)
+  if (!lua_isnil(L, -1))
     info.m_flDamageForceScale = luaL_checknumber(L, -1);
   lua_pop(L, 1);
   lua_getfield(L, idx, "AmmoType"); // -> m_iAmmoType (GMod passes a string ammo name)
-  if (!lua_isnil(L, -1) && info.m_iAmmoType == 0)
+  if (!lua_isnil(L, -1))
   {
     if (lua_type(L, -1) == LUA_TSTRING)
     {
@@ -126,7 +129,7 @@ LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
   }
   lua_pop(L, 1);
   lua_getfield(L, idx, "Tracer");   // -> m_iTracerFreq
-  if (!lua_isnil(L, -1) && info.m_iTracerFreq == 0)
+  if (!lua_isnil(L, -1))
     info.m_iTracerFreq = luaL_checkint(L, -1);
   lua_pop(L, 1);
 
@@ -134,7 +137,7 @@ LUA_API lua_FireBulletsInfo_t lua_tofirebulletsinfo (lua_State *L, int idx) {
   // bullet.Inflictor).  FireBulletsInfo_t only carries m_pAttacker; ignore
   // Inflictor (HL2SB's FireBullets derives inflictor itself).
   lua_getfield(L, idx, "Attacker");  // -> m_pAttacker
-  if (!lua_isnil(L, -1) && info.m_pAttacker == NULL)
+  if (!lua_isnil(L, -1))
     info.m_pAttacker = lua_toentity(L, -1);
   lua_pop(L, 1);
 
