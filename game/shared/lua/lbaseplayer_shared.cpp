@@ -855,7 +855,7 @@ static int CBasePlayer___index (lua_State *L) {
     lua_pushinteger(L, pPlayer->m_StuckLast);
   else if (Q_strcmp(field, "m_szAnimExtension") == 0)
     lua_pushstring(L, pPlayer->m_szAnimExtension);
-  else if (pPlayer->m_nTableReference != LUA_NOREF) {
+  else if (lua_isrefvalid(L, pPlayer->m_nTableReference)) {
     lua_getref(L, pPlayer->m_nTableReference);
     lua_getfield(L, -1, field);
     if (lua_isnil(L, -1)) {

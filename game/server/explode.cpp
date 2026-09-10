@@ -309,6 +309,53 @@ void CEnvExplosion::InputExplode( inputdata_t &inputdata )
 	//Get the damage override if specified
 	int	iRadius = ( m_iRadiusOverride > 0 ) ? m_iRadiusOverride : ( m_iMagnitude * 2.5f );
 
+	// HL2SB GMod SWEP compat: Spawn() derives the fireball sprite size from
+	// m_iMagnitude, but scripts routinely Spawn() the entity first and only then
+	// call SetKeyValue("iMagnitude", ...) -- the stock GMod SWEP this port targets
+	// does exactly that.  The damage radius below picked up the new magnitude
+	// while m_spriteScale stayed at its minimum, so the explosion rendered as a
+	// tiny white puff with debris (the client skips the fireball core entirely
+	// when the scale it receives is 0).  Re-derive the scale from the live
+	// magnitude here, using the same formula and spawnflag clamps as Spawn().
+	// Only ever grows the sprite so scripted/designer values are never shrunk.
+	if ( m_iMagnitude > 0 )
+	{
+		float flSpriteScale = ( m_iMagnitude - 50 ) * 0.6f;
+
+		if ( m_spawnflags & SF_ENVEXPLOSION_NOCLAMPMIN )
+		{
+			if ( flSpriteScale < 1 )
+				flSpriteScale = 1;
+		}
+		else
+		{
+			if ( flSpriteScale < 10 )
+				flSpriteScale = 10;
+		}
+
+		if ( m_spawnflags & SF_ENVEXPLOSION_NOCLAMPMAX )
+		{
+			if ( flSpriteScale > 200 )
+				flSpriteScale = 200;
+		}
+		else
+		{
+			if ( flSpriteScale > 50 )
+				flSpriteScale = 50;
+		}
+
+		if ( (int)flSpriteScale > m_spriteScale )
+		{
+			m_spriteScale = (int)flSpriteScale;
+		}
+	}
+
+	// HL2SB EXPLOSION DEBUG (temporary)
+	Msg( "[expdbg] InputExplode magn=%d spriteScale=%d spriteIdx=%d radius=%d flags=%d origin=(%.0f %.0f %.0f)\n",
+		m_iMagnitude, m_spriteScale,
+		( m_sFireballSprite < 1 ) ? (int)g_sModelIndexFireball : (int)m_sFireballSprite,
+		iRadius, nFlags, vecExplodeOrigin.x, vecExplodeOrigin.y, vecExplodeOrigin.z );
+
 	CPASFilter filter( vecExplodeOrigin );
 	te->Explosion( filter, 0.0,
 		&vecExplodeOrigin, 

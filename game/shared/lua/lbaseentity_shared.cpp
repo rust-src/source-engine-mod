@@ -226,7 +226,60 @@ static int CBaseEntity_EmitAmbientSound (lua_State *L) {
 static int CBaseEntity_EmitSound (lua_State *L) {
   if (lua_isuserdata(L, 1) && lua_toentity(L, 1)) {
     float duration = 0;
-	luaL_checkentity(L, 1)->EmitSound(luaL_checkstring(L, 2), luaL_optnumber(L, 3, 0.0f), &duration);
+	CBaseEntity *pSoundEnt = luaL_checkentity(L, 1);
+	const char *pszSoundName = luaL_checkstring(L, 2);
+	// HL2SB SOUND DEBUG (temporary): Lua SWEPs call self:EmitSound on both realms
+	// during prediction; log every call so duplicated/dropped plays are visible.
+#ifdef CLIENT_DLL
+	Msg( "[snddbg] EmitSound CLIENT ent=%s(%d) t=%.3f sound=%s\n",
+		pSoundEnt->GetClassname(), pSoundEnt->entindex(), gpGlobals->curtime, pszSoundName );
+#else
+	Msg( "[snddbg] EmitSound SERVER ent=%s(%d) t=%.3f sound=%s\n",
+		pSoundEnt->GetClassname(), pSoundEnt->entindex(), gpGlobals->curtime, pszSoundName );
+#endif
+	float flSoundTime = luaL_optnumber(L, 3, 0.0f);
+
+	// HL2SB GMod compat #1: GMod scripts play sounds by name without ever
+	// precaching them.  SV_StartSound drops any wave that was never registered
+	// during map load ("SV_StartSound: weapons/awp/awp1.wav not precached (0)"),
+	// which is why the stock SWEP's explosion sound was silent even though the
+	// sound script name was valid.  Register the script -- or the raw wave -- the
+	// first time a script plays it.
+#ifndef CLIENT_DLL
+	if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' )	// not a sentence / user voice
+	{
+		if ( CBaseEntity::PrecacheScriptSound( pszSoundName ) <= 0 )
+		{
+			CBaseEntity::PrecacheSound( pszSoundName );
+		}
+	}
+#endif
+
+	// HL2SB GMod compat #2: emit exactly the way CBaseCombatWeapon::WeaponSound
+	// does.  A Lua SWEP runs its attack on the client during prediction *and* on
+	// the server, so plain EmitSound played every shot twice at the same
+	// timestamp (measured: identical t=6.780 for CLIENT and SERVER) and the
+	// second copy restarted the first -- rapid fire sounded like it kept losing
+	// shots.  Valve's own weapons attach prediction rules to the filter, which is
+	// what stops the networked copy from cutting off the predicted one.
+	CSoundParameters params;
+	if ( CBaseEntity::GetParametersForSound( pszSoundName, params, NULL ) )
+	{
+		CPASAttenuationFilter soundFilter( pSoundEnt, params.soundlevel );
+#ifdef CLIENT_DLL
+		// Predicted Lua weapon sounds: C_RecipientFilter::UsePredictionRules keeps
+		// the sound from being re-issued on every extra prediction pass of the
+		// same command (the copies cut each other off, which sounded like the
+		// weapon losing shots).  This mirrors what Valve's own weapons do in
+		// CBaseCombatWeapon::WeaponSound.
+		soundFilter.UsePredictionRules();
+#endif
+		pSoundEnt->EmitSound( soundFilter, pSoundEnt->entindex(), pszSoundName, NULL, flSoundTime );
+	}
+	else
+	{
+		pSoundEnt->EmitSound(pszSoundName, flSoundTime, &duration);
+	}
 	lua_pushnumber(L, duration);
 	return 1;
   } else if (lua_isuserdata(L, 1) && dynamic_cast<CRecipientFilter *>((CRecipientFilter *)lua_touserdata(L, 1))) {
@@ -1461,7 +1514,7 @@ static int CBaseEntity___index (lua_State *L) {
     lua_pushinteger(L, pEntity->m_nModelIndex);
   else if (Q_strcmp(field, "touchStamp") == 0)
     lua_pushinteger(L, pEntity->touchStamp);
-  else if (pEntity->m_nTableReference != LUA_NOREF) {
+  else if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_getfield(L, -1, field);
     if (lua_isnil(L, -1)) {

@@ -909,6 +909,21 @@ C_BaseEntity::C_BaseEntity() :
 	m_EntClientFlags = 0;
 	m_bEnableRenderingClipPlane = false;
 
+#if defined( LUA_SDK )
+	// HL2SB: the server does this in CBaseEntity's constructor
+	// (game/server/baseentity.cpp), but the client never did, so every
+	// client-side entity carried an uninitialised table reference.  The Lua
+	// __index handlers only test "!= LUA_NOREF", so they then called
+	// lua_getref() with garbage -- or with 0, which in Lua 5.1 is the free-list
+	// head slot and therefore holds an integer.  lua_getfield() on that integer
+	// raised "attempt to index a number value" *before* the metatable fallback
+	// could run, which broke every client-side field lookup that is not in the
+	// bindings' hard-coded list: self.Owner:GetShootPos() (so Lua SWEPs never
+	// fired on the client and produced no impact effects), GetPlayerLocalData()
+	// (footstep sounds), GetAimVector(), ViewPunch(), and so on.
+	m_nTableReference = LUA_NOREF;
+#endif
+
 	m_iParentAttachment = 0;
 	m_nRenderFXBlend = 255;
 

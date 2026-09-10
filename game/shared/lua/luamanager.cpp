@@ -127,6 +127,37 @@ static void base_open (lua_State *L) {
   /* open lib into global table */
   luaL_register(L, "_G", base_funcs);
   lua_pop(L, 1);
+
+  /*
+  ** Lua 5.1 standard-library compatibility.
+  **
+  ** HL2SB moved from Lua 5.1 to 5.4 (taken from Experiment: Source, which also
+  ** carries the GLua syntax extensions).  GMod runs Lua 5.1, so every GMod addon
+  ** -- and every script in this mod -- assumes the 5.1 library.  Lua 5.4 moved
+  ** or removed several of those functions, which broke the hook dispatcher
+  ** (hook.lua does `local unpack = unpack`, and unpack is gone -> every hook.call
+  ** failed with "attempt to call a nil value (upvalue 'unpack')").
+  **
+  ** Installing the aliases here fixes every script at once, including addons,
+  ** instead of patching each file.  module() and package.seeall are restored by
+  ** loadlib.c itself.
+  */
+  luasrc_dostring( L,
+    "unpack = unpack or table.unpack\n"
+    "loadstring = loadstring or load\n"
+    "table.getn = table.getn or function( t ) return #t end\n"
+    "table.setn = table.setn or function( t, n ) return t end\n"
+    "table.foreach = table.foreach or function( t, f ) for k, v in pairs( t ) do local r = f( k, v ) if r ~= nil then return r end end end\n"
+    "table.foreachi = table.foreachi or function( t, f ) for i, v in ipairs( t ) do local r = f( i, v ) if r ~= nil then return r end end end\n"
+    "string.gfind = string.gfind or string.gmatch\n"
+    "math.pow = math.pow or function( a, b ) return a ^ b end\n"
+    "math.atan2 = math.atan2 or function( y, x ) return math.atan( y, x ) end\n"
+    "math.ldexp = math.ldexp or function( m, e ) return m * 2.0 ^ e end\n"
+    "math.log10 = math.log10 or function( x ) return math.log( x, 10 ) end\n"
+    "math.cosh = math.cosh or function( x ) return ( math.exp( x ) + math.exp( -x ) ) / 2 end\n"
+    "math.sinh = math.sinh or function( x ) return ( math.exp( x ) - math.exp( -x ) ) / 2 end\n"
+    "math.tanh = math.tanh or function( x ) local e = math.exp( 2 * x ) return ( e - 1 ) / ( e + 1 ) end\n" );
+
   /* set global _E */
   lua_newtable(L);
   lua_setglobal(L, "_E");
@@ -437,8 +468,51 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
 }
 
+/*
+** HL2SB: error message handler that appends a traceback.  Experiment: Source does
+** the same via Lua 5.4's luaL_traceback; on Lua 5.1 debug.traceback works as a
+** message handler because handlers run before the stack is unwound.
+** Without it an engine -> Lua dispatch that fails prints a bare message such as
+** "attempt to index a number value" with no file and no line, which cannot be
+** traced back to a script.
+*/
+static int luasrc_traceback (lua_State *L) {
+  lua_getglobal(L, "debug");
+  if (lua_istable(L, -1)) {
+    lua_getfield(L, -1, "traceback");
+    lua_remove(L, -2);            /* drop the debug table */
+    if (lua_isfunction(L, -1)) {
+      lua_pushvalue(L, 1);        /* the error message */
+      lua_pushinteger(L, 2);      /* level: skip this handler frame */
+      lua_call(L, 2, 1);
+      return 1;
+    }
+    lua_pop(L, 1);
+  } else {
+    lua_pop(L, 1);
+  }
+  lua_pushvalue(L, 1);
+  return 1;
+}
+
 LUA_API int luasrc_pcall (lua_State *L, int nargs, int nresults, int errfunc) {
+  bool bInjectedHandler = false;
+
+  if (errfunc == 0) {
+    /* Place the handler below the function and its arguments so lua_pcall sees
+    ** it, then remove it again so the caller's stack shape is unchanged.
+    */
+    lua_pushcfunction(L, luasrc_traceback);
+    lua_insert(L, -(nargs + 2));
+    errfunc = lua_gettop(L) - nargs - 1;
+    bInjectedHandler = true;
+  }
+
   int iError = lua_pcall(L, nargs, nresults, errfunc);
+
+  if (bInjectedHandler)
+    lua_remove(L, errfunc);
+
   if (iError != 0) {
 	Warning( "%s\n", lua_tostring(L, -1) );
 	lua_pop(L, 1);
