@@ -606,7 +606,32 @@ void luasrc_LoadWeapons (const char *path)
 				if ( filesystem->FileExists( filename, "MOD" ) )
 				{
 					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
-					lua_newtable( L );
+
+					// GMod semantics: the engine seeds every SWEP with a deep copy
+					// of the base weapon table, so stock scripts can assign fields
+					// into SWEP.Primary/SWEP.Secondary at the top level without
+					// initialising those tables themselves. weapon_base is
+					// registered before derived weapons (alphabetical walk), so
+					// weapon.get resolves here.
+					char szSeed[256];
+					Q_snprintf( szSeed, sizeof( szSeed ),
+						"SWEP = table.copy( weapon.get( \"" LUA_BASE_WEAPON "\" ) or {} )" );
+					luasrc_dostring( L, szSeed );
+
+					// Fall back to an empty SWEP (with empty Primary/Secondary so
+					// stock-style top-level assignments still work) if the seed
+					// failed for any reason.
+					lua_getglobal( L, "SWEP" );
+					if ( !lua_istable( L, -1 ) )
+					{
+						lua_pop( L, 1 );
+						lua_newtable( L );
+						lua_newtable( L );
+						lua_setfield( L, -2, "Primary" );
+						lua_newtable( L );
+						lua_setfield( L, -2, "Secondary" );
+					}
+
 					char entDir[ MAX_PATH ];
 					Q_snprintf( entDir, sizeof( entDir ), "weapons/%s", className );
 					lua_pushstring( L, entDir );
