@@ -1060,6 +1060,21 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: GMod semantics: every SendWeaponAnim restarts the viewmodel
+//          animation, so automatic fire shows a kick on every shot. Stock
+//          SetIdealActivity early-outs while the same activity is already the
+//          ideal one, which leaves scripted viewmodels frozen on the first
+//          frame of the shot animation. Invalidating the cached ideal before
+//          delegating forces the restart on every call.
+//-----------------------------------------------------------------------------
+bool CHL2MPScriptedWeapon::SendWeaponAnim( int iActivity )
+{
+	m_IdealActivity = ACT_INVALID;
+	m_nIdealSequence = -1;
+	return BaseClass::SendWeaponAnim( iActivity );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 // Output : Returns true on success, false on failure.
 //-----------------------------------------------------------------------------
@@ -1084,6 +1099,24 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "ItemPostFrame" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
+
+	// Lua returning boolean false means the Lua base drives the fire buttons
+	// itself (GMod weapon_base port). The C++ button loop must not run in that
+	// case: on the server it would double fire, and on the client it fires
+	// unthrottled because the Lua SetNextPrimaryFire only writes the Lua-side
+	// field. The engine's viewmodel animation maintenance still has to run,
+	// otherwise the weapon never returns to idle and the viewmodel freezes on
+	// the last frame of the previous animation.
+	if ( lua_gettop( L ) == 1 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		if ( UsesClipsForAmmo1() )
+		{
+			CheckReload();
+		}
+		WeaponIdle();
+		return;
+	}
 
 	RETURN_LUA_NONE();
 #endif

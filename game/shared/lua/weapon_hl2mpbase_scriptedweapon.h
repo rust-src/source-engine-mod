@@ -47,6 +47,7 @@ public:
 
 	// Firing animations
 	virtual Activity		GetDrawActivity( void );
+	virtual bool			SendWeaponAnim( int iActivity );
 
 	// Default calls through to m_hOwner, but plasma weapons can override and shoot projectiles here.
 	virtual void	ItemPostFrame( void );
