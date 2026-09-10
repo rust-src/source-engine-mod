@@ -36,10 +36,39 @@ class LLabel : public Label
     LLabel( Panel *parent, const char *panelName, const char *text, lua_State *L = nullptr );
     ~LLabel();
 
+    /*
+    ** LUA_GET_REF_TABLE (luamanager.h) calls this when the panel has no Lua table
+    ** yet, so the ported bindings can store Lua-side fields on the panel before any
+    ** script has touched it.  Leaves nothing on the stack: the macro calls
+    ** lua_getref straight after.
+    */
+    void SetupRefTable( lua_State *L )
+    {
+        lua_newtable( L );
+        m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
+    }
+
+    /*
+    ** HL2SB's vgui::Label has no GetContentAlignment -- Experiment's does -- so the
+    ** value is remembered here.  The Lua binding calls SetContentAlignment, which
+    ** resolves to this overload and forwards to the base.
+    */
+    void SetContentAlignment( Label::Alignment alignment )
+    {
+        m_iContentAlignment = alignment;
+        BaseClass::SetContentAlignment( alignment );
+    }
+
+    Label::Alignment GetContentAlignment() const
+    {
+        return m_iContentAlignment;
+    }
+
     public:
 #if defined( LUA_SDK )
     lua_State          *m_lua_State;
     int                 m_nTableReference;
+    Label::Alignment    m_iContentAlignment = Label::a_center;
 #endif
 
     protected:

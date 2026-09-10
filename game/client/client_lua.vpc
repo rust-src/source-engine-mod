@@ -68,7 +68,8 @@ $Project "Client (HL2SB)"
 		// CAUTION: the waf VPC parser does not honour "//" here.  It looks for the
 		// entry keyword anywhere in a line and then requires a quoted path, so a
 		// commented-out entry is still compiled and a bare mention of the keyword in
-		// prose crashes the parser.  Add the entry back, uncommented, once it builds.
+		// prose crashes the parser.
+		$File "lua/scripted_controls/lLabel.cpp"
 		$File "lua/scripted_controls/lPropertyDialog.cpp"
 		$File "lua/scripted_controls/lPropertyPage.cpp"
 		$File "lua/scripted_controls/scriptedclientluapanel.cpp"
