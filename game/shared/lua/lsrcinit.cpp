@@ -135,8 +135,7 @@ static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Label is the base every Derma text
   // control sits on (DLabel, DButton, DTextEntry), so it has to be opened after
   // Panel, whose metatable it extends.
-  // Disabled until the lLabel port compiles -- see client_lua.vpc.
-  // {LUA_LABELMETANAME, luaopen_Label},
+  {LUA_LABELMETANAME, luaopen_Label},
 #endif
   {LUA_PHYSENVLIBNAME, luaopen_physenv},
 #ifdef CLIENT_DLL

@@ -392,17 +392,10 @@ LUA_BINDING_BEGIN( Label, __newindex, "class", "Metamethod that is called when a
         return 0;
     }
 
-    // Experiment; TODO: Didn't we already fix this? I think we did. Test this.
-    // Special case for LButtons
-    // TODO: Somehow inherit instead, but multiple inheritance is tricky with our current setup
-    // (LButton inherits from Button, which inherits from Panel, like LLabel -> Label -> Panel)
-    // This is a quick fix for now
-    LButton *plButton = dynamic_cast< LButton * >( pLabel );
-
-    LUA_GET_REF_TABLE( L, plButton );
-    lua_pushvalue( L, 3 );
-    lua_setfield( L, -2, LUA_BINDING_ARGUMENT( luaL_checkstring, 2, "field" ) );
-    lua_pop( L, 1 );
+    // HL2SB: Experiment falls through to a special case for their LButton here,
+    // because in their tree LButton does not derive from LLabel.  HL2SB's LButton
+    // has its own "Button" metatable with its own __index/__newindex (lButton.cpp),
+    // so a Button never reaches this function and the fallback is dropped.
     return 0;
 }
 LUA_BINDING_END()

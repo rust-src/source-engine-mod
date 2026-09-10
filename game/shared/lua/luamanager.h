@@ -273,6 +273,97 @@
   public:                                                                      \
     const char *GetMetatableName() const { return MetaTableName; }
 
+
+/*
+** HL2SB: ported from Experiment: Source (game/shared/luamanager.h).
+**
+** These are the helpers their scripted controls use to implement __index /
+** __newindex on a panel: they consult the panel's Lua-side reference table first,
+** then walk up to the base class metatable.  Nothing in them is Experiment
+** specific -- they need lua_isrefvalid/lua_getref, which HL2SB already has, and
+** PanelIsValid/PanelCollectGarbage, which now live in
+** public/lua/vgui_controls/lPanel.h.
+*/
+#define LUA_GET_REF_TABLE( L, Target )                     \
+    if ( !lua_isrefvalid( L, Target->m_nTableReference ) ) \
+    {                                                      \
+        Target->SetupRefTable( L );                        \
+    }                                                      \
+    lua_getref( L, Target->m_nTableReference );
+
+#define LUA_METATABLE_INDEX_CHECK_VALID( L, IsValidFunc )         \
+    /* IsValid checks before we find out if the target is NULL */ \
+    if ( Q_strcmp( luaL_checkstring( L, 2 ), "IsValid" ) == 0 )   \
+    {                                                             \
+        lua_pushcfunction( L, IsValidFunc );                      \
+        return 1;                                                 \
+    }
+
+#define LUA_METATABLE_INDEX_CHECK( L, Target )                                                                                       \
+    /* Invalid panels fail all checks */                                                                                             \
+    if ( Target == NULL )                                                                                                            \
+    {                                                                                                                                \
+        lua_Debug ar1;                                                                                                               \
+        lua_getstack( L, 1, &ar1 );                                                                                                  \
+        lua_getinfo( L, "fl", &ar1 );                                                                                                \
+        lua_Debug ar2;                                                                                                               \
+        lua_getinfo( L, ">S", &ar2 );                                                                                                \
+        if ( lua_getmetatable( L, 1 ) )                                                                                              \
+        {                                                                                                                            \
+            luaL_getmetafield( L, -1, "__name" );                                                                                    \
+            const char *__metatableName = lua_tostring( L, -1 );                                                                     \
+            lua_pop( L, 2 ); /* Pop the metatable name and the metatable */                                                          \
+            lua_pushfstring( L, "%s:%d: attempt to index an invalid %s", ar2.short_src, ar1.currentline, __metatableName );          \
+        }                                                                                                                            \
+        else                                                                                                                         \
+        {                                                                                                                            \
+            lua_pushfstring( L, "%s:%d: attempt to index an unknown type (that has no metatable)", ar2.short_src, ar1.currentline ); \
+        }                                                                                                                            \
+                                                                                                                                    \
+        return lua_error( L );                                                                                                       \
+    }
+
+// Helper macro to check table on top of the stack for __index
+#define LUA_METATABLE_INDEX_CHECK_TABLE( L ) \
+    lua_pushvalue( L, 2 );                   \
+    lua_gettable( L, -2 );                   \
+                                            \
+    if ( !lua_isnil( L, -1 ) )               \
+    {                                        \
+        return 1;                            \
+    }                                        \
+                                            \
+    lua_pop( L, 2 ); /* Pop the table and the nil value */
+
+#define LUA_METATABLE_INDEX_CHECK_REF_TABLE( L, Target )                                    \
+    /* We follow by checking if the target has any properties set in its reference table */ \
+    if ( Target && L )                                                                      \
+    {                                                                                       \
+        LUA_GET_REF_TABLE( L, Target );                                                     \
+        LUA_METATABLE_INDEX_CHECK_TABLE( L );                                               \
+    }
+
+#define LUA_METATABLE_INDEX_DERIVE_INDEX( L, DerivedFrom )         \
+    if ( luaL_getmetatable( L, DerivedFrom ) )                     \
+    {                                                              \
+        lua_getfield( L, -1, "__index" );                          \
+        if ( lua_isfunction( L, -1 ) )                             \
+        {                                                          \
+            lua_pushvalue( L, 1 );                                 \
+            lua_pushvalue( L, 2 );                                 \
+            lua_call( L, 2, 1 );                                   \
+            return 1;                                              \
+        }                                                          \
+        else if ( lua_istable( L, -1 ) )                           \
+        {                                                          \
+            lua_pushvalue( L, 2 );                                 \
+            lua_gettable( L, -2 );                                 \
+            return 1;                                              \
+        }                                                          \
+                                                                    \
+        lua_pop( L, 1 ); /* Pop the result of luaL_getmetatable */ \
+    }
+
 #define RETURN_LUA_NONE() \
   if (lua_gettop(L) == 1) { \
     if (lua_isboolean(L, -1)) { \
