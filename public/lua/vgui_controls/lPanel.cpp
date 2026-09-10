@@ -341,6 +341,52 @@ static int Panel_GetPos (lua_State *L) {
   return 2;
 }
 
+
+/*
+** HL2SB: a reference table for panels that are not LPanel.
+**
+** Only LPanel carries m_nTableReference, so Panel_GetRefTable returned nil for every
+** other control and Panel___index/__newindex had nothing to consult.  That is fatal
+** for the ported LLabel and LTextEntry, which derive from vgui::Label /
+** vgui::TextEntry rather than LPanel: vgui.Create does
+**
+**     local refTable = panel:GetRefTable()
+**     if refTable then table.merge( refTable, control ) end
+**
+** so their control table was silently never merged -- no Init, no OnMousePressed, no
+** ApplySchemeSettings.  A Derma DTextEntry therefore never called RequestFocus and
+** could not be typed into.
+**
+** For those the table lives in the Lua registry, keyed by the panel pointer.  The
+** entry is dropped when the panel is deleted by luaDroppedPanelRefTable below, which
+** lPanel.cpp's own __gc path calls.
+*/
+static void luaPushPanelRefTable ( lua_State *L, Panel *pPanel, bool bCreate )
+{
+  lua_pushlightuserdata( L, pPanel );
+  lua_rawget( L, LUA_REGISTRYINDEX );
+
+  if ( lua_isnil( L, -1 ) && bCreate && pPanel != NULL )
+  {
+    lua_pop( L, 1 );
+
+    lua_newtable( L );                       /* [tbl] */
+    lua_pushlightuserdata( L, pPanel );
+    lua_pushvalue( L, -2 );
+    lua_rawset( L, LUA_REGISTRYINDEX );      /* registry[pPanel] = tbl ; [tbl] */
+  }
+}
+
+static void luaDropPanelRefTable ( lua_State *L, Panel *pPanel )
+{
+  if ( pPanel == NULL )
+    return;
+
+  lua_pushlightuserdata( L, pPanel );
+  lua_pushnil( L );
+  lua_rawset( L, LUA_REGISTRYINDEX );
+}
+
 static int Panel_GetRefTable (lua_State *L) {
   LPanel *plPanel = dynamic_cast<LPanel *>(luaL_checkpanel(L, 1));
   if (plPanel) {
@@ -351,7 +397,10 @@ static int Panel_GetRefTable (lua_State *L) {
     lua_getref(L, plPanel->m_nTableReference);
   }
   else
-    lua_pushnil(L);
+  {
+    /* HL2SB: not an LPanel -- see luaPushPanelRefTable. */
+    luaPushPanelRefTable( L, luaL_checkpanel( L, 1 ), true );
+  }
   return 1;
 }
 
@@ -1045,6 +1094,21 @@ static int Panel___index (lua_State *L) {
       lua_gettable(L, -2);
     }
   } else {
+    /* HL2SB: non-LPanel controls keep their table in the registry. */
+    luaPushPanelRefTable( L, pPanel, false );
+    if ( !lua_isnil( L, -1 ) )
+    {
+      lua_pushvalue( L, 2 );
+      lua_gettable( L, -2 );
+      if ( !lua_isnil( L, -1 ) )
+        return 1;
+      lua_pop( L, 2 );
+    }
+    else
+    {
+      lua_pop( L, 1 );
+    }
+
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
@@ -1093,13 +1157,18 @@ static int Panel___newindex (lua_State *L) {
 	lua_pop(L, 1);
     return 0;
   } else {
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-    lua_pushfstring(L, "%s:%d: attempt to index a non-scripted panel", ar2.short_src, ar1.currentline);
-    return lua_error(L);
+    /*
+    ** HL2SB: non-LPanel controls -- LLabel and LTextEntry -- used to raise
+    ** "attempt to index a non-scripted panel" here, so nothing could be assigned to
+    ** them at all.  Garry's Mod code assigns fields to controls constantly
+    ** (label.UpdateColours = function ... , entry.OnTextChanged = ...), so they get the
+    ** registry-backed table luaPushPanelRefTable hands out instead.
+    */
+    luaPushPanelRefTable( L, pPanel, true );
+    lua_pushvalue( L, 3 );
+    lua_setfield( L, -2, luaL_checkstring( L, 2 ) );
+    lua_pop( L, 1 );
+    return 0;
   }
 }
 
