@@ -29,6 +29,7 @@
 
 ConVar gamemode( "gamemode", "sandbox", FCVAR_ARCHIVE | FCVAR_REPLICATED );
 static char contentSearchPath[MAX_PATH];
+static char baseContentSearchPath[MAX_PATH];  // HL2SB: gamemodes/base/content
 
 static void tag_error (lua_State *L, int narg, int tag) {
   luaL_typerror(L, narg, lua_typename(L, tag));
@@ -282,6 +283,7 @@ void luasrc_shutdown (void) {
   g_bLuaInitialized = false;
 
   filesystem->RemoveSearchPath( contentSearchPath, "MOD" );
+  filesystem->RemoveSearchPath( baseContentSearchPath, "MOD" );
 
   ResetConCommandDatabase();
 
@@ -836,6 +838,18 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  // HL2SB: GMod scripts refer to the gamemode table as GAMEMODE.
 	  lua_getglobal(L, "_GAMEMODE");
 	  lua_setglobal(L, "GAMEMODE");
+	  // HL2SB: the base gamemode's content directory is shared by every
+	  // gamemode (GMod keeps its base entities in gamemodes/base/entities), so
+	  // mount and scan it first - the active gamemode still wins on collisions.
+	  Q_snprintf( baseContentSearchPath, sizeof( baseContentSearchPath ), "gamemodes/%s/content", LUA_BASE_GAMEMODE );
+	  filesystem->AddSearchPath( baseContentSearchPath, "MOD" );
+	  {
+	    char baseLoadPath[MAX_PATH];
+	    Q_snprintf( baseLoadPath, sizeof( baseLoadPath ), "%s/", baseContentSearchPath );
+	    luasrc_LoadWeapons( baseLoadPath );
+	    luasrc_LoadEntities( baseLoadPath );
+	  }
+
 	  Q_snprintf( contentSearchPath, sizeof( contentSearchPath ), "gamemodes/%s/content", gamemode );
 	  filesystem->AddSearchPath( contentSearchPath, "MOD" );
 	  char loadPath[MAX_PATH];
