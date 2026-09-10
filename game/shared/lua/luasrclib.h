@@ -277,6 +277,11 @@ LUALIB_API int (luaopen_Panel) (lua_State *L);
 #define LUA_LABELMETANAME				"Label"
 LUALIB_API int (luaopen_Label) (lua_State *L);
 
+// HL2SB: ported from Experiment: Source.  Same shape as Label -- the metatable the
+// scripted TextEntry control registers under, which Derma's DTextEntry extends.
+#define LUA_TEXTENTRYMETANAME			"TextEntry"
+LUALIB_API int (luaopen_TextEntry) (lua_State *L);
+
 #define LUA_PHYSENVLIBNAME				"physenv"
 LUALIB_API int (luaopen_physenv) (lua_State *L);
 

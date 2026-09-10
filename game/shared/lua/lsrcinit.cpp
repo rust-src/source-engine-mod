@@ -136,6 +136,9 @@ static const luaL_Reg luasrclibs[] = {
   // control sits on (DLabel, DButton, DTextEntry), so it has to be opened after
   // Panel, whose metatable it extends.
   {LUA_LABELMETANAME, luaopen_Label},
+  // HL2SB: ported from Experiment: Source.  TextEntry extends Label,
+  // so it opens after it.
+  {LUA_TEXTENTRYMETANAME, luaopen_TextEntry},
 #endif
   {LUA_PHYSENVLIBNAME, luaopen_physenv},
 #ifdef CLIENT_DLL
