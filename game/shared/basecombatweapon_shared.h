@@ -577,10 +577,12 @@ public:
 	bool					SetIdealActivity( Activity ideal );
 	void					MaintainIdealActivity( void );
 
-private:
+protected:
 	Activity				m_Activity;
 	int						m_nIdealSequence;
 	Activity				m_IdealActivity;
+
+private:
 
 	bool					m_bRemoveable;
 
