@@ -23,6 +23,7 @@
 #include "tier1/lconvar.h"
 #include "licvar.h"
 #include "lgameevents.h"
+#include "activitylist.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -300,6 +301,14 @@ void luasrc_shutdown (void) {
 
 //  lcf_close(L);
   lua_close(L);
+
+  // HL2SB: ported from Experiment: Source.  luaopen_ACTIVITY owns the activity
+  // list under the Lua SDK (see the LUA_SDK branch of REGISTER_SHARED_ACTIVITY in
+  // activitylist.h and the calls guarded out of c_world.cpp / world.cpp), so it is
+  // released here together with the state that filled _E.ACTIVITY rather than per
+  // level.  Without this, a shutdown/init cycle would register all ~700 ACT_* a
+  // second time and report a shared activity collision for each one.
+  ActivityList_Free();
 
   // Clear the global state pointer: entities are destroyed after Lua shuts
   // down (C_World / C_BaseEntity destructors run from CHLClient::Shutdown),

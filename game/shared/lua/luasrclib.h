@@ -148,19 +148,45 @@ LUALIB_API int (luaopen_Localizations) (lua_State *L);
 #define LUA_SHAREDENUMNAME				""
 LUALIB_API int (luaopen_SharedEnumerations) (lua_State *L);
 
-// Enumeration table names used by the ported enumeration library.  These are not
-// libraries with their own luaopen_*; luaopen_SharedEnumerations installs each as
-// _E.<name>.
+// HL2SB: ported from Experiment: Source.  Each of these opens its own _E.<name>
+// enumeration table (FL also installs _E.ENTITY_FLAG).  The library name is the key
+// that lands in _E, which is why it does not always match the macro -- GMod spells
+// the members of ENTITY_EFFECT as EF_* and of ENGINE_FLAG as FL_*.
+#define LUA_ACTIVITYENUMNAME			"ACTIVITY"
+LUALIB_API int (luaopen_ACTIVITY) (lua_State *L);
+
+#define LUA_BUTTONENUMNAME				"BUTTON"
+LUALIB_API int (luaopen_BUTTON) (lua_State *L);
+
 #define LUA_EFLIBNAME					"ENTITY_EFFECT"
+LUALIB_API int (luaopen_EF) (lua_State *L);
+
 #define LUA_ENGINEFLAGSENUMLIBNAME		"ENGINE_FLAG"
+LUALIB_API int (luaopen_FL) (lua_State *L);
+
 #define LUA_FLEDICTLIBNAME				"EDICT_FLAG"
+LUALIB_API int (luaopen_FL_EDICT) (lua_State *L);
+
 #define LUA_GESTURESLOTLIBNAME			"GESTURE_SLOT"
+LUALIB_API int (luaopen_GESTURE_SLOT) (lua_State *L);
+
 #define LUA_LIFELIBNAME					"LIFE"
+LUALIB_API int (luaopen_LIFE) (lua_State *L);
+
 #define LUA_MOVECOLLIDELIBNAME			"MOVE_COLLIDE"
+LUALIB_API int (luaopen_MOVECOLLIDE) (lua_State *L);
+
 #define LUA_MOVETYPELIBNAME				"MOVE_TYPE"
+LUALIB_API int (luaopen_MOVETYPE) (lua_State *L);
+
 #define LUA_OBSMODELIBNAME				"OBSERVER_MODE"
+LUALIB_API int (luaopen_OBS_MODE) (lua_State *L);
+
 #define LUA_SOLIDFLAGLIBNAME			"SOLID_FLAG"
+LUALIB_API int (luaopen_SOLIDFLAG) (lua_State *L);
+
 #define LUA_SOLIDLIBNAME				"SOLID"
+LUALIB_API int (luaopen_SOLID) (lua_State *L);
 
 // HL2SB: ported from Experiment: Source.
 #define LUA_PARTICLESYSTEMLIBNAME		"ParticleSystems"
