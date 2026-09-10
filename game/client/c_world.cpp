@@ -73,7 +73,13 @@ C_World::~C_World( void )
 bool C_World::Init( int entnum, int iSerialNum )
 {
 	m_flWaveHeight = 0.0f;
+#ifndef LUA_SDK
+	// HL2SB: ported from Experiment: Source.  The activity list is owned by
+	// luaopen_ACTIVITY under the Lua SDK, so the world entity no longer resets or
+	// frees it per level (doing so would drop every ACT_* _E entry and collide
+	// with the Lua-owned registrations).
 	ActivityList_Init();
+#endif
 	EventList_Init();
 
 	return BaseClass::Init( entnum, iSerialNum );
@@ -81,7 +87,9 @@ bool C_World::Init( int entnum, int iSerialNum )
 
 void C_World::Release()
 {
+#ifndef LUA_SDK
 	ActivityList_Free();
+#endif
 	Term();
 }
 
@@ -124,7 +132,9 @@ void C_World::OnDataChanged( DataUpdateType_t updateType )
 
 void C_World::RegisterSharedActivities( void )
 {
+#ifndef LUA_SDK
 	ActivityList_RegisterSharedActivities();
+#endif
 	EventList_RegisterSharedEvents();
 }
 
@@ -164,7 +174,9 @@ void C_World::Precache( void )
 	// =================================================
 	//	Activities
 	// =================================================
+#ifndef LUA_SDK
 	ActivityList_Free();
+#endif
 	EventList_Free();
 
 	RegisterSharedActivities();

@@ -463,7 +463,13 @@ CWorld::CWorld( )
 {
 	AddEFlags( EFL_NO_AUTO_EDICT_ATTACH | EFL_KEEP_ON_RECREATE_ENTITIES );
 	NetworkProp()->AttachEdict( INDEXENT(RequiredEdictIndex()) );
+#ifndef LUA_SDK
+	// HL2SB: ported from Experiment: Source.  The activity list is owned by
+	// luaopen_ACTIVITY under the Lua SDK, so the world entity no longer resets or
+	// frees it per level (doing so would drop every ACT_* _E entry and collide
+	// with the Lua-owned registrations).
 	ActivityList_Init();
+#endif
 	EventList_Init();
 	
 	SetSolid( SOLID_BSP );
@@ -475,7 +481,9 @@ CWorld::CWorld( )
 CWorld::~CWorld( )
 {
 	EventList_Free();
+#ifndef LUA_SDK
 	ActivityList_Free();
+#endif
 	if ( g_pGameRules )
 	{
 		g_pGameRules->LevelShutdown();
@@ -510,7 +518,13 @@ void CWorld::DecalTrace( trace_t *pTrace, char const *decalName)
 
 void CWorld::RegisterSharedActivities( void )
 {
-#ifdef LUA_SDK
+#ifndef LUA_SDK
+	ActivityList_RegisterSharedActivities();
+#else
+	// HL2SB: ported from Experiment: Source.  The ACT_* registrations moved to
+	// luaopen_ACTIVITY so that _E.ACTIVITY exists before any script runs; doing it
+	// here as well would report a shared activity collision for every entry.
+	//
 	// Andrew; There's a big issue with including the Activity enumeration
 	// library, and that issue is that it's massive. While we clean up _G by
 	// placing it in it's own library and increase lookup times across nearly
@@ -519,11 +533,6 @@ void CWorld::RegisterSharedActivities( void )
 	// as-needed basis, and store them as locals in their relative files, or
 	// simply use the raw value of that enumeration in scripts, which is the
 	// most performance efficient option.
-	// BEGIN_LUA_SET_ENUM_LIB( "Activity" );
-#endif
-	ActivityList_RegisterSharedActivities();
-#ifdef LUA_SDK
-	// END_LUA_SET_ENUM_LIB();
 #endif
 }
 
@@ -627,7 +636,9 @@ void CWorld::Precache( void )
 	// =================================================
 	//	Activities
 	// =================================================
+#ifndef LUA_SDK
 	ActivityList_Free();
+#endif
 	RegisterSharedActivities();
 
 	EventList_Free();

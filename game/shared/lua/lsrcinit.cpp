@@ -18,6 +18,24 @@
 static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
   {LUA_SHAREDENUMNAME, luaopen_SharedEnumerations},
+  // HL2SB: ported from Experiment: Source.  The rest of the _E tables.  They are
+  // opened right after luaopen_SharedEnumerations because each one does
+  // lua_getglobal("_E") + lua_setfield, and Experiment's gmod_compatibility shim
+  // reads them -- sh_enumerations.lua error()s on a missing key.  luaopen_ACTIVITY
+  // additionally takes ownership of the activity list away from the world entity
+  // (see the LUA_SDK branch of REGISTER_SHARED_ACTIVITY in activitylist.h).
+  {LUA_ACTIVITYENUMNAME, luaopen_ACTIVITY},
+  {LUA_BUTTONENUMNAME, luaopen_BUTTON},
+  {LUA_EFLIBNAME, luaopen_EF},
+  {LUA_ENGINEFLAGSENUMLIBNAME, luaopen_FL},
+  {LUA_FLEDICTLIBNAME, luaopen_FL_EDICT},
+  {LUA_GESTURESLOTLIBNAME, luaopen_GESTURE_SLOT},
+  {LUA_LIFELIBNAME, luaopen_LIFE},
+  {LUA_MOVECOLLIDELIBNAME, luaopen_MOVECOLLIDE},
+  {LUA_MOVETYPELIBNAME, luaopen_MOVETYPE},
+  {LUA_OBSMODELIBNAME, luaopen_OBS_MODE},
+  {LUA_SOLIDFLAGLIBNAME, luaopen_SOLIDFLAG},
+  {LUA_SOLIDLIBNAME, luaopen_SOLID},
   {LUA_BASEANIMATINGLIBNAME, luaopen_CBaseAnimating},
   {LUA_BASEANIMATINGLIBNAME, luaopen_CBaseAnimating_shared},
   {LUA_BASECOMBATWEAPONLIBNAME, luaopen_CBaseCombatWeapon},
