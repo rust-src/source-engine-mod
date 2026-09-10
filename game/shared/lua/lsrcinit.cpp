@@ -19,6 +19,7 @@ static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
   {LUA_SHAREDENUMNAME, luaopen_SharedEnumerations},
   {LUA_BASEANIMATINGLIBNAME, luaopen_CBaseAnimating},
+  {LUA_BASEANIMATINGLIBNAME, luaopen_CBaseAnimating_shared},
   {LUA_BASECOMBATWEAPONLIBNAME, luaopen_CBaseCombatWeapon},
   {LUA_BASEENTITYLIBNAME, luaopen_CBaseEntity},
   {LUA_BASEENTITYLIBNAME, luaopen_CBaseEntity_shared},
