@@ -133,6 +133,46 @@ LUALIB_API int (luaopen_IPredictionSystem) (lua_State *L);
 #define LUA_ISCHEMELIBNAME				"IScheme"
 LUALIB_API int (luaopen_IScheme) (lua_State *L);
 
+// HL2SB: ported from Experiment: Source.  Localizations backs GMod's
+// language.GetPhrase / language.Add.
+#define LUA_LOCALIZATIONLIBNAME			"Localizations"
+LUALIB_API int (luaopen_Localizations) (lua_State *L);
+
+// HL2SB: ported from Experiment: Source.  Populates _E with the shared
+// enumeration tables (ACTIVITY, BUTTON, DAMAGE_TYPE, COLLISION_GROUP, ...) that
+// GMod scripts read as _E.<LIB>.<MEMBER>.  The library name is "" because it
+// installs no global table of its own.
+#define LUA_SHAREDENUMNAME				""
+LUALIB_API int (luaopen_SharedEnumerations) (lua_State *L);
+
+// Enumeration table names used by the ported enumeration library.  These are not
+// libraries with their own luaopen_*; luaopen_SharedEnumerations installs each as
+// _E.<name>.
+#define LUA_EFLIBNAME					"ENTITY_EFFECT"
+#define LUA_ENGINEFLAGSENUMLIBNAME		"ENGINE_FLAG"
+#define LUA_FLEDICTLIBNAME				"EDICT_FLAG"
+#define LUA_GESTURESLOTLIBNAME			"GESTURE_SLOT"
+#define LUA_LIFELIBNAME					"LIFE"
+#define LUA_MOVECOLLIDELIBNAME			"MOVE_COLLIDE"
+#define LUA_MOVETYPELIBNAME				"MOVE_TYPE"
+#define LUA_OBSMODELIBNAME				"OBSERVER_MODE"
+#define LUA_SOLIDFLAGLIBNAME			"SOLID_FLAG"
+#define LUA_SOLIDLIBNAME				"SOLID"
+
+// HL2SB: ported from Experiment: Source.
+#define LUA_PARTICLESYSTEMLIBNAME		"ParticleSystems"
+LUALIB_API int (luaopen_ParticleSystem) (lua_State *L);
+
+#define LUA_SYSTEMSLIBNAME				"Systems"
+LUALIB_API int (luaopen_Systems) (lua_State *L);
+
+// Realm-specific enumeration tables (no global of their own, like the shared set).
+#define LUA_SERVERENUMNAME				""
+LUALIB_API int (luaopen_ServerEnumerations) (lua_State *L);
+
+#define LUA_CLIENTENUMNAME				""
+LUALIB_API int (luaopen_ClientEnumerations) (lua_State *L);
+
 #define LUA_STEAMFRIENDSLIBNAME			"ISteamFriends"
 LUALIB_API int (luaopen_ISteamFriends) (lua_State *L);
 
@@ -141,6 +181,25 @@ LUALIB_API int (luaopen_KeyValues) (lua_State *L);
 
 #define LUA_MASKLIBNAME					"MASK"
 LUALIB_API int (luaopen_MASK) (lua_State *L);
+
+// HL2SB: ported from Experiment: Source.  Files/FileHandle back GMod's file
+// library, Sounds/AudioChannel back sound.Play*, Entities backs ents.*.
+#define LUA_FILESLIBNAME				"Files"
+LUALIB_API int (luaopen_Files) (lua_State *L);
+
+#define LUA_FILEHANDLEMETANAME			"FileHandle"
+LUALIB_API int (luaopen_FileHandle) (lua_State *L);
+
+#define LUA_SOUNDSLIBNAME				"Sounds"
+LUALIB_API int (luaopen_Sounds) (lua_State *L);
+
+#define LUA_AUDIOCHANNELMETANAME		"AudioChannel"
+LUALIB_API int (luaopen_AudioChannel) (lua_State *L);
+
+#define LUA_ENTITIESLIBNAME				"Entities"
+LUALIB_API int (luaopen_Entities) (lua_State *L);
+
+#define LUA_SCRIPTEDENTITIESLIBNAME		"ScriptedEntities"
 
 #define LUA_MATHLIBLIBNAME				"mathlib"
 LUALIB_API int (luaopen_mathlib) (lua_State *L);
@@ -204,5 +263,9 @@ LUALIB_API int (luaopen_VMatrix) (lua_State *L);
 LUALIB_API void (luasrc_openlibs) (lua_State *L); 
 
 
+
+// HL2SB: Experiment: Source declares its binding macros in this header; they live in
+// luabinding.h so that ported binding files keep compiling unchanged.
+#include "luabinding.h"
 
 #endif // LUASRCLIB_H

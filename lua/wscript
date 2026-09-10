@@ -16,11 +16,22 @@ def configure(conf):
 	return
 
 def build(bld):
+	# Lua 5.4.6, taken from Experiment: Source (src/lua), which additionally
+	# carries the GLua syntax extensions this fork used to patch into 5.1:
+	#   * `continue` keyword
+	#   * `!` / `!=` operators
+	#   * `&&` / `||` operators
+	#   * `//` line comments and `/* ... */` block comments
+	#   * package.seeall + module() backported from 5.1
+	# bit.c is HL2SB's LuaBitOp, retargeted from the 5.1 build so existing mod
+	# scripts that call bit.band/bit.bor keep working.
 	source = [
 		"src/lapi.c",
 		"src/lauxlib.c",
 		"src/lbaselib.c",
 		"src/lcode.c",
+		"src/lcorolib.c",
+		"src/lctype.c",
 		"src/ldblib.c",
 		"src/ldebug.c",
 		"src/ldo.c",
@@ -44,9 +55,9 @@ def build(bld):
 		"src/ltablib.c",
 		"src/ltm.c",
 		"src/lundump.c",
+		"src/lutf8lib.c",
 		"src/lvm.c",
 		"src/lzio.c",
-		"src/print.c",
 		"src/bit.c",
 	]
 
@@ -65,11 +76,13 @@ def build(bld):
 		source   = source,
 		target   = PROJECT_NAME,
 		name     = PROJECT_NAME,
-		features = 'c cxx',
+		# Lua is C: compiling it as C++ changes linkage for symbols that have no
+		# prior declaration (e.g. LuaBitOp's luaopen_bit) and is not what upstream
+		# supports.  Keep this target C-only.
+		features = 'c',
 		includes = includes,
 		defines  = defines,
 		use      = libs,
 		subsystem = bld.env.MSVC_SUBSYSTEM,
 		idx      = bld.get_taskgen_count()
 	)
-

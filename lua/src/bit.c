@@ -30,6 +30,7 @@
 
 #define LUA_LIB
 #include "lua.h"
+#include "lualib.h"	/* HL2SB: declares luaopen_bit with C linkage */
 #include "lauxlib.h"
 
 #ifdef _MSC_VER
@@ -58,6 +59,14 @@ static UBits barg(lua_State *L, int idx)
 {
   BitNum bn;
   UBits b;
+#if LUA_VERSION_NUM >= 503
+  /* HL2SB: Lua 5.3+ replaced the LUA_NUMBER_* configuration macros this library
+  ** keys off, so do the conversion directly.  LuaBitOp truncates to a 32-bit
+  ** signed integer regardless of lua_Number's representation, which is also what
+  ** LuaJIT's bit library does, so GMod scripts behave the same. */
+  (void)bn;
+  b = (UBits)(SBits)(lua_Number)luaL_checknumber(L, idx);
+#else
 #if LUA_VERSION_NUM < 502
   bn.n = lua_tonumber(L, idx);
 #else
@@ -87,6 +96,7 @@ static UBits barg(lua_State *L, int idx)
     luaL_typerror(L, idx, "number");
   }
 #endif
+#endif /* LUA_VERSION_NUM >= 503 */
   return b;
 }
 

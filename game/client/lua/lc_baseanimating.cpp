@@ -818,7 +818,7 @@ static int CBaseAnimating___index (lua_State *L) {
 	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
 	return lua_error(L);
   }
-  if (pEntity->m_nTableReference != LUA_NOREF) {
+  if (lua_isrefvalid(L, pEntity->m_nTableReference)) {
     lua_getref(L, pEntity->m_nTableReference);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);

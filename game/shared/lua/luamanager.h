@@ -51,6 +51,40 @@
   lua_setfield(L, -2, lib); \
   lua_pop(L, 1);
 
+/*
+** Metatable helpers, ported from Experiment: Source so their binding files can
+** be dropped in unchanged.
+*/
+
+// Creates MetaTableName as a fresh metatable (asserting it did not exist yet).
+#define LUA_PUSH_NEW_METATABLE(L, MetaTableName)                        \
+  luaL_getmetatable(L, MetaTableName);                                  \
+  AssertMsg(lua_isnoneornil(L, -1), "Metatable already exists!");       \
+  lua_pop(L, 1);                                                        \
+  luaL_newmetatable(L, MetaTableName);
+
+// Pushes an existing metatable that the caller wants to add fields to.
+#define LUA_PUSH_METATABLE_TO_EXTEND(L, MetaTableName) \
+  luaL_getmetatable(L, MetaTableName);                 \
+  AssertMsg(lua_istable(L, -1), "Metatable doesn't exist!");
+
+// Sets the metatable on the value below the top of the stack.
+#define LUA_SAFE_SET_METATABLE(L, MetaTableName)     \
+  luaL_getmetatable(L, MetaTableName);               \
+  AssertMsg(lua_istable(L, -1), "Metatable doesn't exist!"); \
+  lua_setmetatable(L, -2);
+
+/*
+** Experiment: Source spellings of the two macros above, so their enumeration and
+** binding files can be dropped in without edits.  Their version wraps each block
+** in braces (each block declares its own `lib`), which is why the alias adds
+** them here.
+*/
+#define LUA_SET_ENUM_LIB_BEGIN(L, libraryName) \
+  { BEGIN_LUA_SET_ENUM_LIB(L, libraryName)
+#define LUA_SET_ENUM_LIB_END(L) \
+  END_LUA_SET_ENUM_LIB(L) }
+
 #define BEGIN_LUA_CALL_HOOK(functionName) \
   lua_getglobal(L, "hook"); \
   if (lua_istable(L, -1)) { \
@@ -135,7 +169,7 @@
     lua_pop(L, 1);
 
 #define BEGIN_LUA_CALL_PANEL_METHOD(functionName) \
-  if (m_nTableReference >= 0) { \
+  if (lua_isrefvalid(m_lua_State, m_nTableReference)) { \
     lua_getref(m_lua_State, m_nTableReference); \
     lua_getfield(m_lua_State, -1, functionName); \
     lua_remove(m_lua_State, -2); \

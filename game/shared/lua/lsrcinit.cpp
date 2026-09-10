@@ -16,6 +16,8 @@
 
 
 static const luaL_Reg luasrclibs[] = {
+  // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
+  {LUA_SHAREDENUMNAME, luaopen_SharedEnumerations},
   {LUA_BASEANIMATINGLIBNAME, luaopen_CBaseAnimating},
   {LUA_BASECOMBATWEAPONLIBNAME, luaopen_CBaseCombatWeapon},
   {LUA_BASEENTITYLIBNAME, luaopen_CBaseEntity},
@@ -78,6 +80,26 @@ static const luaL_Reg luasrclibs[] = {
 #endif
 //  {LUA_STEAMFRIENDSLIBNAME, luaopen_ISteamFriends},
   {LUA_KEYVALUESLIBNAME, luaopen_KeyValues},
+  // HL2SB: ported from Experiment: Source
+  {LUA_LOCALIZATIONLIBNAME, luaopen_Localizations},
+  // HL2SB: ported from Experiment: Source.
+  {LUA_PARTICLESYSTEMLIBNAME, luaopen_ParticleSystem},
+  {LUA_SYSTEMSLIBNAME, luaopen_Systems},
+  // TODO(port): Files / FileHandle / Sounds / AudioChannel / Entities are ported
+  // to disk but still need the helper layer from Experiment: Source
+  // (PushLuaInstanceSafe, CreatePredictedEntityByName, GET_FIELD_WITH_COMPATIBILITY,
+  // luaL_checkvector, SOUND_CHANNEL, bassmanager).  Re-enable them together with
+  // their $File entries in the vpcs once that layer lands.
+  // {LUA_FILESLIBNAME, luaopen_Files},
+  // {LUA_FILEHANDLEMETANAME, luaopen_FileHandle},
+  // {LUA_SOUNDSLIBNAME, luaopen_Sounds},
+  // {LUA_AUDIOCHANNELMETANAME, luaopen_AudioChannel},
+  // {LUA_ENTITIESLIBNAME, luaopen_Entities},
+#ifdef CLIENT_DLL
+  {LUA_CLIENTENUMNAME, luaopen_ClientEnumerations},
+#else
+  {LUA_SERVERENUMNAME, luaopen_ServerEnumerations},
+#endif
   {LUA_MASKLIBNAME, luaopen_MASK},
   {LUA_MATHLIBLIBNAME, luaopen_mathlib},
   {LUA_MATRIXLIBNAME, luaopen_matrix3x4_t},

@@ -538,6 +538,28 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		m_pLuaWeaponInfo->m_bAllowFlipping = true;
 	}
 	lua_pop( L, 1 );
+
+	// GMod SWEP compat: SWEP.ViewModelFlip marks a viewmodel authored mirrored
+	// (left-handed).  GMod's engine flips such models so they render
+	// right-handed; the stock "The Ultimate Admin Gun" sets ViewModelFlip = true
+	// and ships a left-handed v_ model, which is why the pistol came up
+	// left-handed.  HL2SB's equivalent switch is
+	// C_BaseViewModel::ShouldFlipViewModel(), which compares
+	// FileWeaponInfo_t::m_bBuiltRightHanded against cl_righthand, so map the GMod
+	// field onto it.  GMod SWEPs never set BuiltRightHanded/AllowFlipping, so
+	// ViewModelFlip wins whenever the script provides it.
+	lua_getref( L, m_nTableReference );
+	lua_getfield( L, -1, "ViewModelFlip" );
+	lua_remove( L, -2 );
+	if ( lua_isboolean( L, -1 ) || lua_isnumber( L, -1 ) )
+	{
+		bool bFlippedModel = lua_isboolean( L, -1 ) ? ( lua_toboolean( L, -1 ) != 0 )
+													: ( lua_tointeger( L, -1 ) != 0 );
+		m_pLuaWeaponInfo->m_bBuiltRightHanded = !bFlippedModel;
+		m_pLuaWeaponInfo->m_bAllowFlipping = true;
+	}
+	lua_pop( L, 1 );
+
 	lua_getweaponfield( L, m_nTableReference, "Primary", "MeleeWeapon", "MeleeWeapon" );
 	if ( lua_isnumber( L, -1 ) )
 	{
@@ -993,6 +1015,12 @@ const Vector &CHL2MPScriptedWeapon::GetBulletSpread( void )
 //-----------------------------------------------------------------------------
 void CHL2MPScriptedWeapon::PrimaryAttack( void )
 {
+	// HL2SB FX DEBUG (temporary)
+#ifdef CLIENT_DLL
+	Msg( "[swepdbg] C++ PrimaryAttack CLIENT %s\n", GetClassname() );
+#else
+	Msg( "[swepdbg] C++ PrimaryAttack SERVER %s\n", GetClassname() );
+#endif
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );

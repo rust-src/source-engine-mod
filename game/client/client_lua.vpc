@@ -26,6 +26,19 @@ $Project "Client (HL2SB)"
 		$File "$SRCDIR/game/shared/lua/luamanager.cpp"
 		$File "$SRCDIR/game/shared/lua/lhl2sb.cpp"
 
+		// HL2SB: Experiment-style binding framework + ported libraries
+		$File "$SRCDIR/game/shared/lua/luabinding.cpp"
+		$File "$SRCDIR/game/shared/lua/lparticle_system.cpp"
+		$File "$SRCDIR/game/shared/lua/lsystem.cpp"
+		// TODO(port): needs the entity helper layer (PushLuaInstanceSafe, Instance, CreatePredictedEntityByName)
+		$File "$SRCDIR/game/shared/lua/llocalization.cpp"
+		$File "$SRCDIR/public/lenumerations_shared.cpp"
+		$File "$SRCDIR/public/lc_enumerations.cpp"
+		// TODO(port): needs PushLuaInstanceSafe / CreatePredictedEntityByName helpers
+		// TODO(port): needs the helper layer (GET_FIELD_WITH_COMPATIBILITY, luaL_checkvector, SOUND_CHANNEL, bassmanager)
+		// Lua 5.1 API shims so the Team Sandbox era bindings build against 5.4
+		$File "$SRCDIR/public/lua_compat.cpp"
+
 		$File "lua/lc_baseanimating.cpp"
 		$File "lua/lc_baseentity.cpp"
 		$File "lua/lc_baseplayer.cpp"

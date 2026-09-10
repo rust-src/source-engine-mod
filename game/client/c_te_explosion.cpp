@@ -249,6 +249,18 @@ void C_TEExplosion::RecordExplosion( )
 //-----------------------------------------------------------------------------
 void C_TEExplosion::PostDataUpdate( DataUpdateType_t updateType )
 {
+	// HL2SB EXPLOSION DEBUG (temporary): did the server's TE_Explosion reach us?
+	if ( UTIL_PointContents( m_vecOrigin ) & CONTENTS_WATER )
+	{
+		Msg( "[expdbg] client TE arrived (WATER) scale=%.2f flags=%d model=%d\n",
+			m_fScale, m_nFlags, m_nModelIndex );
+	}
+	else
+	{
+		Msg( "[expdbg] client TE arrived scale=%.2f flags=%d model=%d\n",
+			m_fScale, m_nFlags, m_nModelIndex );
+	}
+
 	RecordExplosion();
 
 	AffectRagdolls();

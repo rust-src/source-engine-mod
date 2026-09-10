@@ -141,6 +141,19 @@ static int luasrc_util_PrecacheSound (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: util.PrecacheModel(mdl).  GMod scripts (gmod_camera, many
+// workshop SWEPs and addons) wrap model paths in Model(...) or call
+// util.PrecacheModel directly.  Precaching is a server-side operation; on the
+// client the argument is validated and dropped, matching GMod's behaviour.
+static int luasrc_util_PrecacheModel (lua_State *L) {
+#ifndef CLIENT_DLL
+  CBaseEntity::PrecacheModel(luaL_checkstring(L, 1));
+#else
+  luaL_checkstring(L, 1);
+#endif
+  return 0;
+}
+
 static const luaL_Reg util_funcs[] = {
   // {"UTIL_VecToYaw",  luasrc_UTIL_VecToYaw},
   {"VecToYaw",  luasrc_UTIL_VecToYaw},
@@ -186,6 +199,7 @@ static const luaL_Reg util_funcs[] = {
   {"PlayerByIndex",  luasrc_UTIL_PlayerByIndex},
   // HL2SB GMod SWEP compat
   {"PrecacheSound",  luasrc_util_PrecacheSound},
+  {"PrecacheModel",  luasrc_util_PrecacheModel},
   {NULL, NULL}
 };
 

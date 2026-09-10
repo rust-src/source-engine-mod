@@ -118,7 +118,7 @@ static int CHL2MP_Player___index (lua_State *L) {
     Msg("QQWEE");
   else {
 #endif
-    if (pPlayer->m_nTableReference != LUA_NOREF) {
+    if (lua_isrefvalid(L, pPlayer->m_nTableReference)) {
       lua_getref(L, pPlayer->m_nTableReference);
       lua_getfield(L, -1, field);
       if (lua_isnil(L, -1)) {
