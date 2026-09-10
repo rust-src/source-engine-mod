@@ -171,6 +171,131 @@ static const luaL_Reg luasrclibs[] = {
 };
 
 
+/*
+** ===========================================================================
+** HL2SB: metatable names.
+**
+** Garry's Mod exposes two C globals that all of its Lua framework (and the
+** Experiment: Source gmod_compatibility shim) is built on:
+**
+**   FindMetaTable( name )          -> the metatable registered under `name`
+**   RegisterMetaTable( name, tbl ) -> register one (Derma does this)
+**
+** GMod registers its metatables under the bare class names ("Entity", "Player",
+** "Weapon", "Angle", ...); the Team Sandbox era code HL2SB inherited registers
+** them under the C++ class names ("CBaseEntity", "CBasePlayer", "QAngle", ...).
+** This table bridges the two, and the aliases are mirrored into the registry so
+** that a plain `_R.Entity` works as well -- base_open already publishes the
+** registry as `_R`, and Experiment's own Lua reads `_R.Entity` directly instead
+** of going through FindMetaTable.
+**
+** A name with no entry falls through to a literal registry lookup, so classes
+** HL2SB registers under the GMod name already (Panel, Frame, Button, ...) keep
+** working, and RegisterMetaTable can add new ones ("DPanel", "DLabel", ...).
+** ===========================================================================
+*/
+struct LuaMetatableAlias_t
+{
+  const char *pszGModName;   // name GMod code asks for
+  const char *pszNativeName; // name HL2SB's libs registered it under
+};
+
+static const LuaMetatableAlias_t s_LuaMetatableAliases[] = {
+  { "Entity",            LUA_BASEENTITYLIBNAME },
+  { "Player",            LUA_BASEPLAYERLIBNAME },
+  { "Weapon",            LUA_BASECOMBATWEAPONLIBNAME },
+  { "Angle",             LUA_QANGLELIBNAME },
+  { "Vector",            LUA_VECTORLIBNAME },
+  { "Matrix",            LUA_MATRIXLIBNAME },
+  { "Color",             LUA_COLORLIBNAME },
+  { "EffectData",        LUA_EFFECTDATALIBNAME },
+  { "Trace",             LUA_GAMETRACELIBNAME },
+  { "ConsoleVariable",   LUA_CONVARLIBNAME },
+  { "ConsoleCommand",    LUA_CONCOMMANDLIBNAME },
+  { "RecipientFilter",   LUA_RECIPIENTFILTERLIBNAME },
+  { "TakeDamageInfo",    LUA_TAKEDAMAGEINFOLIBNAME },
+  { "Material",          LUA_MATERIALLIBNAME },
+  { "MoveHelper",        LUA_MOVEHELPERLIBNAME },
+  { "Texture",           LUA_ITEXTUREMETANAME },
+  { "KeyValuesHandle",   LUA_KEYVALUESLIBNAME },
+  { "FileHandle",        "FileHandle_t" },
+  { "PhysicsObject",     LUA_PHYSICSOBJECTLIBNAME },
+  { "PhysicsSurfacePropertiesHandle", LUA_PHYSICSSURFACEPROPSLIBNAME },
+  { "NetChannelInfo",    LUA_NETCHANNELINFOLIBNAME },
+  { "Panel",             "Panel" },
+  { "Frame",             "Frame" },
+  { "Button",            "Button" },
+  { "CheckButton",       "CheckButton" },
+  { "EditablePanel",     "EditablePanel" },
+  { "ModelPanel",        "ModelPanel" },
+  { "ProjectedTexture",  "ProjectedTexture" },  // TODO(port): lc_projected_texture
+  { "AudioChannel",      "AudioChannel" },      // TODO(port): needs BASS
+  { "MoveData",          "MoveData" },          // TODO(port): lmovedata
+  { "UserCommand",       "UserCommand" },       // TODO(port): lusercmd
+  { "MessageReader",     "MessageReader" },     // TODO(port): needs bf_read
+  { "MessageWriter",     "MessageWriter" },     // TODO(port): needs bf_write
+  { "Label",             "Label" },             // TODO(port): scripted_controls
+  { "Html",              "Html" },              // TODO(port): scripted_controls
+  { "TextEntry",         "TextEntry" },         // TODO(port): scripted_controls
+  { "ModelImagePanel",   "ModelImagePanel" },   // TODO(port): scripted_controls
+  { "SteamFriendsHandle", "SteamFriendsHandle" },
+  { NULL, NULL }
+};
+
+static const char *LuaNativeMetatableName (const char *pszName) {
+  for (int i = 0; s_LuaMetatableAliases[i].pszGModName; ++i) {
+    if (!Q_stricmp(s_LuaMetatableAliases[i].pszGModName, pszName))
+      return s_LuaMetatableAliases[i].pszNativeName;
+  }
+  return pszName;
+}
+
+/*
+** GMod returns nil for a metatable that is not registered yet, which is what
+** Derma relies on while it is still defining its controls.
+*/
+static int lua_FindMetaTable (lua_State *L) {
+  const char *pszName = luaL_checkstring(L, 1);
+  luaL_getmetatable(L, LuaNativeMetatableName(pszName));
+  if (lua_isnil(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  return 1;
+}
+
+static int lua_RegisterMetaTable (lua_State *L) {
+  const char *pszName = luaL_checkstring(L, 1);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  lua_pushvalue(L, 2);
+  lua_setfield(L, LUA_REGISTRYINDEX, pszName);
+  return 0;
+}
+
+static const luaL_Reg lua_metatable_funcs[] = {
+  {"FindMetaTable", lua_FindMetaTable},
+  {"RegisterMetaTable", lua_RegisterMetaTable},
+  {NULL, NULL}
+};
+
+/* Publish registry[gmodName] = the native metatable, so `_R.Entity` resolves. */
+static void luasrc_install_metatable_aliases (lua_State *L) {
+  for (int i = 0; s_LuaMetatableAliases[i].pszGModName; ++i) {
+    const char *pszGModName = s_LuaMetatableAliases[i].pszGModName;
+    const char *pszNativeName = s_LuaMetatableAliases[i].pszNativeName;
+
+    if (!Q_stricmp(pszGModName, pszNativeName))
+      continue;
+
+    luaL_getmetatable(L, pszNativeName);
+    if (lua_istable(L, -1)) {
+      lua_pushvalue(L, -1);
+      lua_setfield(L, LUA_REGISTRYINDEX, pszGModName);
+    }
+    lua_pop(L, 1);
+  }
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -178,5 +303,11 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pushstring(L, lib->name);
     lua_call(L, 1, 0);
   }
+
+  /* Every lib is open now, so the metatables exist and can be aliased. */
+  luasrc_install_metatable_aliases(L);
+
+  luaL_register(L, "_G", lua_metatable_funcs);
+  lua_pop(L, 1);
 }
 
