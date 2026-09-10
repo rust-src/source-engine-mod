@@ -1048,6 +1048,24 @@ static int Panel___index (lua_State *L) {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);
     lua_gettable(L, -2);
+
+    // HL2SB: fall back to the Panel metatable.
+    //
+    // The branch above only runs for an LPanel.  LLabel and LTextEntry derive from
+    // vgui::Label / vgui::TextEntry instead -- that is what Experiment does, and the
+    // ported bindings follow -- so they always land here, where the lookup only ever
+    // sees their own metatable.  Every Panel method was therefore unreachable on
+    // them: GetRefTable came back nil, which broke vgui.register's
+    // `table.merge( panel:GetRefTable(), helper )` and, with it, every GMod
+    // vgui.Create.  SetPos, SetSize, SetVisible and MakePopup were nil for the same
+    // reason -- which is why a console vgui.Label(...) looked fine (GetText is a
+    // Label method) while anything touching the panel API did not.
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 2);
+      luaL_getmetatable(L, "Panel");
+      lua_pushvalue(L, 2);
+      lua_gettable(L, -2);
+    }
   }
   return 1;
 }
