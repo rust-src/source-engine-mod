@@ -236,7 +236,9 @@ static const LuaMetatableAlias_t s_LuaMetatableAliases[] = {
   { "ProjectedTexture",  "ProjectedTexture" },  // TODO(port): lc_projected_texture
   { "AudioChannel",      "AudioChannel" },      // TODO(port): needs BASS
   { "MoveData",          "MoveData" },          // TODO(port): lmovedata
-  { "UserCommand",       "UserCommand" },       // TODO(port): lusercmd
+  // GMod's name for the user command metatable, confirmed by dumping its registry:
+  // "CUserCmd", with MetaID 19 (TYPE_USERCMD).
+  { "CUserCmd",          "CUserCmd" },          // TODO(port): lusercmd
   { "MessageReader",     "MessageReader" },     // TODO(port): needs bf_read
   { "MessageWriter",     "MessageWriter" },     // TODO(port): needs bf_write
   { "Label",             "Label" },             // TODO(port): scripted_controls
@@ -244,6 +246,26 @@ static const LuaMetatableAlias_t s_LuaMetatableAliases[] = {
   { "TextEntry",         "TextEntry" },         // TODO(port): scripted_controls
   { "ModelImagePanel",   "ModelImagePanel" },   // TODO(port): scripted_controls
   { "SteamFriendsHandle", "SteamFriendsHandle" },
+  // Confirmed by the registry dump: these all exist in GMod.  They resolve to nil
+  // in HL2SB until the owning class is ported, which is the same thing GMod does
+  // before the relevant library is loaded.
+  { "NPC",               "NPC" },
+  { "Vehicle",           "Vehicle" },
+  { "NextBot",           "NextBot" },
+  { "CSEnt",             "CSEnt" },
+  { "Tool",              "Tool" },
+  { "ISave",             "ISave" },
+  { "IRestore",          "IRestore" },
+  { "IMesh",             "IMesh" },
+  { "CLuaEmitter",       "CLuaEmitter" },
+  { "CLuaParticle",      "CLuaParticle" },
+  { "CNewParticleEffect", "CNewParticleEffect" },
+  { "SurfaceInfo",       "SurfaceInfo" },
+  { "PhysCollide",       "PhysCollide" },
+  { "IGModAudioChannel", "IGModAudioChannel" },
+  { "IVideoWriter",      "IVideoWriter" },
+  { "pixelvis_handle_t", "pixelvis_handle_t" },
+  { "MarkupObject",      "MarkupObject" },
   { NULL, NULL }
 };
 
@@ -354,7 +376,14 @@ static void luasrc_install_metatable_aliases (lua_State *L) {
 #define LUA_TYPE_FILE         34
 #define LUA_TYPE_PROJTEX      41
 #define LUA_TYPE_USERDATA      7
-#define LUA_TYPE_COLOR       255
+// GMod's Color metatable reports MetaID 44, not the TYPE_COLOR = 255 constant --
+// 255 is a networking hack for net.WriteType (see the TYPE enum), while the
+// metatable itself carries 44, which equals TYPE_COUNT in that enum.  Taken from
+// a dump of GMod's own registry, not from the wiki.
+#define LUA_TYPE_COLOR        44
+// Not in the TYPE enum of the dumped build (TYPE_COUNT is 44 there), but GMod
+// does register a MarkupObject metatable and reports 45 for it.
+#define LUA_TYPE_MARKUP       45
 
 struct LuaTypeInfo_t
 {
