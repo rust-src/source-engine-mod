@@ -15,6 +15,9 @@
 
 #define LUA_BASEANIMATINGLIBNAME		"CBaseAnimating"
 LUALIB_API int (luaopen_CBaseAnimating) (lua_State *L);
+// HL2SB: ported from Experiment: Source; extends the metatable the line above
+// creates (same arrangement as luaopen_CBaseEntity_shared).
+LUALIB_API int (luaopen_CBaseAnimating_shared) (lua_State *L);
 
 #define LUA_EFFECTSLIBNAME 				"Effects"
 LUALIB_API int (luaopen_Effects) (lua_State *L );
