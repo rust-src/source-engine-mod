@@ -399,6 +399,26 @@
 	  lua_pop(L, 1); \
   }
 
+// GMod semantics for Deploy/Holster: the Lua return value is a VETO only.
+//   false      -> cancel (Lua refused the deploy/holster)
+//   true / nil -> continue, the engine default MUST still run
+// Using RETURN_LUA_BOOLEAN() here is wrong: weapon_base:Deploy() returns true,
+// which would short-circuit BaseClass::Deploy() and skip DefaultDeploy() --
+// i.e. SetViewModel(), the draw animation, WeaponSound(DEPLOY),
+// SetWeaponVisible(true) and the m_flNextPrimaryAttack arming would all be
+// lost, leaving no pickup/deploy animation and an unarmed fire gate.
+#define RETURN_LUA_VETO() \
+  if (lua_gettop(L) == 1) { \
+    if (lua_isboolean(L, -1)) { \
+	  bool res = (bool)luaL_checkboolean(L, -1); \
+	  lua_pop(L, 1); \
+	  if (!res) \
+	    return false; \
+	} \
+    else \
+	  lua_pop(L, 1); \
+  }
+
 #define RETURN_LUA_PANEL_BOOLEAN() \
   if (lua_gettop(m_lua_State) == 1) { \
     if (lua_isboolean(m_lua_State, -1)) { \
