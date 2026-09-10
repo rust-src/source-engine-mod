@@ -91,7 +91,9 @@ static CUtlMap< int, CHL2SB_UndoPlayer > g_Undo( 0, 0, DefLessFunc( int ) );
 
 // The player currently recording (only relevant for the dedicated spawn commands).
 // Tracked separately so a single command can batch its entities into one action.
-static CBasePlayer *g_pRecordingOwner = NULL;
+// EHANDLE, not a raw pointer: the player can disconnect or die between
+// Begin() and End(), and a dangling CBasePlayer* here crashes UndoRecord.
+static EHANDLE g_hRecordingOwner;
 static bool g_bInTransaction = false;
 
 //-----------------------------------------------------------------------------
@@ -127,8 +129,9 @@ void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 	// The spawn commands set the recording owner; if a command is running,
 	// attribute to it.
 	CBasePlayer *pPlayer = pOwner;
-	if ( g_bInTransaction && g_pRecordingOwner )
-		pPlayer = g_pRecordingOwner;
+	CBasePlayer *pRecording = g_bInTransaction ? (CBasePlayer *)g_hRecordingOwner.Get() : NULL;
+	if ( pRecording )
+		pPlayer = pRecording;
 
 	CHL2SB_UndoPlayer *pStack = GetPlayerStack( pPlayer );
 	if ( !pStack )
@@ -151,14 +154,14 @@ void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 //-----------------------------------------------------------------------------
 void HL2SB_UndoBegin( CBasePlayer *pOwner )
 {
-	g_pRecordingOwner = pOwner;
+	g_hRecordingOwner = pOwner;
 	g_bInTransaction = true;
 }
 
 void HL2SB_UndoEnd( CBasePlayer *pOwner )
 {
 	g_bInTransaction = false;
-	g_pRecordingOwner = NULL;
+	g_hRecordingOwner = NULL;
 }
 
 //-----------------------------------------------------------------------------
