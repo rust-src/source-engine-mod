@@ -40,7 +40,9 @@ const char *const luaX_tokens [] = {
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
     "..", "...", "==", ">=", "<=", "~=",
-    "<number>", "<name>", "<string>", "<eof>",
+    "<number>", "<name>", "<string>",
+    "&&", "||",
+    "<eof>",
     NULL
 };
 
@@ -331,6 +333,42 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
 }
 
 
+/*
+** GMod/LuaJIT style C multi-line comment: skip / * ... * /
+*/
+static void read_long_c_comment (LexState *ls) {
+  int line = ls->linenumber;  /* initial line (for error message) */
+  next(ls);  /* skip '*' */
+  for (;;) {
+    switch (ls->current) {
+      case EOZ: {
+        const char *msg = luaO_pushfstring(ls->L,
+            "unfinished long comment (starting at line %d)", line);
+        luaX_lexerror(ls, msg, TK_EOS);
+        break;  /* to avoid warnings */
+      }
+      case '*': {
+        next(ls);
+        if (ls->current == '/') {
+          next(ls);  /* skip '/' */
+          return;
+        }
+        break;
+      }
+      case '\n':
+      case '\r': {
+        inclinenumber(ls);
+        break;
+      }
+      default: {
+        next(ls);
+        break;
+      }
+    }
+  }
+}
+
+
 static int llex (LexState *ls, SemInfo *seminfo) {
   luaZ_resetbuffer(ls->buff);
   for (;;) {
@@ -367,6 +405,29 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         }
         else if (sep == -1) return '[';
         else luaX_lexerror(ls, "invalid long string delimiter", TK_STRING);
+      }
+      case '/': {
+        next(ls);
+        if (ls->current == '/') {  /* GMod/LuaJIT style `//` line comment */
+          while (!currIsNewline(ls) && ls->current != EOZ)
+            next(ls);
+          continue;
+        }
+        else if (ls->current == '*') {  /* GMod/LuaJIT style C block comment */
+          read_long_c_comment(ls);
+          continue;
+        }
+        else return '/';
+      }
+      case '&': {
+        next(ls);
+        if (ls->current == '&') { next(ls); return TK_CAND; }  /* `&&` == `and` */
+        else return '&';
+      }
+      case '|': {
+        next(ls);
+        if (ls->current == '|') { next(ls); return TK_COR; }  /* `||` == `or` */
+        else return '|';
       }
       case '=': {
         next(ls);
