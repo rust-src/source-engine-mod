@@ -1065,10 +1065,15 @@ bool CHL2MPScriptedWeapon::Reload( void )
 bool CHL2MPScriptedWeapon::Deploy( void )
 {
 #if defined ( LUA_SDK )
+	// GMod: SWEP:Deploy() returning true is the NORMAL case (weapon_base
+	// returns true) and does NOT mean "skip the engine default" - only an
+	// explicit false cancels the deploy. The engine's DefaultDeploy() has to
+	// run: it sets the viewmodel, plays the draw activity, fires
+	// WeaponSound(DEPLOY), unhides the weapon and arms m_flNextPrimaryAttack.
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Deploy" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
 
-	RETURN_LUA_BOOLEAN();
+	RETURN_LUA_VETO();
 #endif
 
 	return BaseClass::Deploy();
@@ -1109,11 +1114,15 @@ bool CHL2MPScriptedWeapon::SendWeaponAnim( int iActivity )
 bool CHL2MPScriptedWeapon::Holster( CBaseCombatWeapon *pSwitchingTo )
 {
 #if defined ( LUA_SDK )
+	// Same veto-only rule as Deploy: weapon_base:Holster() returns true to say
+	// "yes, allow the switch", not "skip the engine". CBaseCombatWeapon::Holster
+	// cancels the reload, kills the think, plays ACT_VM_HOLSTER and hides the
+	// weapon - skipping it left the weapon visible and thinking.
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Holster" );
 		lua_pushweapon( L, pSwitchingTo );
 	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
 
-	RETURN_LUA_BOOLEAN();
+	RETURN_LUA_VETO();
 #endif
 
 	return BaseClass::Holster( pSwitchingTo );
