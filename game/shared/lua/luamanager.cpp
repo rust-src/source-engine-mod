@@ -833,6 +833,9 @@ bool luasrc_SetGamemode (const char *gamemode) {
 	  lua_pushstring(L, gamemode);
 	  luasrc_pcall(L, 1, 1, 0);
 	  lua_setglobal(L, "_GAMEMODE");
+	  // HL2SB: GMod scripts refer to the gamemode table as GAMEMODE.
+	  lua_getglobal(L, "_GAMEMODE");
+	  lua_setglobal(L, "GAMEMODE");
 	  Q_snprintf( contentSearchPath, sizeof( contentSearchPath ), "gamemodes/%s/content", gamemode );
 	  filesystem->AddSearchPath( contentSearchPath, "MOD" );
 	  char loadPath[MAX_PATH];
