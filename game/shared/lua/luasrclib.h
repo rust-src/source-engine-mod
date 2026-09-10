@@ -211,6 +211,16 @@ LUALIB_API int (luaopen_render) (lua_State *L);
 #define LUA_ITEXTUREMETANAME			"ITexture"
 LUALIB_API int (luaopen_ITexture) (lua_State *L);
 
+// HL2SB: ported from Experiment: Source.  Chats is GMod's `chat` library
+// (chat.AddText, chat.Print, chat.PlaySound).
+#define LUA_CHATSLIBNAME				"Chats"
+LUALIB_API int (luaopen_Chats) (lua_State *L);
+
+// HL2SB: ported from Experiment: Source.  CBaseFlex carries the flex bindings and,
+// on the client, Entities.CreateClientEntity -- the ClientsideModel backing.
+#define LUA_CBASEFLEXLIBNAME			"CBaseFlex"
+LUALIB_API int (luaopen_CBaseFlex_shared) (lua_State *L);
+
 #define LUA_MATHLIBLIBNAME				"mathlib"
 LUALIB_API int (luaopen_mathlib) (lua_State *L);
 

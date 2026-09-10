@@ -29,6 +29,7 @@ $Project "Client (HL2SB)"
 		// HL2SB: Experiment-style binding framework + ported libraries
 		$File "$SRCDIR/game/shared/lua/luabinding.cpp"
 		$File "$SRCDIR/game/shared/lua/lentities.cpp"
+		$File "$SRCDIR/game/shared/lua/lbaseflex_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lparticle_system.cpp"
 		$File "$SRCDIR/game/shared/lua/lsystem.cpp"
 		$File "$SRCDIR/public/lsounds.cpp"
@@ -50,6 +51,8 @@ $Project "Client (HL2SB)"
 		// HL2SB: ported from Experiment: Source (render.* and ITexture userdata)
 		$File "lua/litexture.cpp"
 		$File "lua/lrender.cpp"
+		// HL2SB: ported from Experiment: Source (GMod's chat.*)
+		$File "lua/lc_chat.cpp"
 		$File "lua/scripted_controls/lButton.cpp"
 		$File "lua/scripted_controls/lCheckButton.cpp"
 		$File "lua/scripted_controls/lFrame.cpp"

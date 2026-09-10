@@ -56,6 +56,13 @@ LUALIB_API lua_Color luaL_optcolor (lua_State *L, int narg, lua_Color def) {
 }
 
 
+LUALIB_API bool lua_iscolor (lua_State *L, int narg) {
+  if (!lua_isuserdata(L, narg))
+    return false;
+  return luaL_testudata(L, narg, "Color") != NULL;
+}
+
+
 static int Color_a (lua_State *L) {
   lua_pushinteger(L, luaL_checkcolor(L, 1).a());
   return 1;

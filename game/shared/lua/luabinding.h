@@ -111,6 +111,15 @@ struct LuaRegEntry
 // Overloads the Lua 5.1 luaL_register(L, libname, const luaL_Reg *).
 void luaL_register( lua_State *L, const char *libname, CUtlVector< LuaRegEntry > &luaRegistry );
 
+// Merges an entity-library registry into the one table the entity library lives in.
+// Experiment: Source calls that library `Entities`, GMod calls it `ents`, and HL2SB's
+// CBaseEntity bindings already create `ents` with Create/GetByIndex -- so every
+// contributor (lentities.cpp, lbaseflex_shared.cpp) registers through here and the
+// result is published under both globals plus package.loaded.Entities.  Registering
+// this way is order independent: whichever contributor runs first creates the table,
+// the rest merge into it.  Leaves the table on the stack.
+void luaL_register_entity_library( lua_State *L, CUtlVector< LuaRegEntry > &luaRegistry );
+
 // luaL_checkboolean / luaL_optboolean already exist in luamanager.h (Team Sandbox
 // era); the ported bindings use those.
 

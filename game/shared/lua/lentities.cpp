@@ -605,35 +605,12 @@ LUA_BINDING_END( "integer", "The number of entities in the entity list." )
 ** Open gEntList library.
 **
 ** Experiment: Source calls this library `Entities`; GMod calls the same thing
-** `ents` (ents.FindByClass, ents.GetAll, ents.FindInSphere, ...), and HL2SB's
-** CBaseEntity bindings already create `ents` with Create/GetByIndex in it.  Rather
-** than have two competing tables, both names are published onto one table: the
-** registry is merged into whichever `ents` table already exists, then the result is
-** assigned to both globals.
+** `ents` (ents.FindByClass, ents.GetAll, ents.FindInSphere, ...).  Both names are
+** published onto one table, which the CBaseFlex bindings (Entities.CreateClientEntity)
+** merge into as well -- see luaL_register_entity_library.
 */
 LUALIB_API int luaopen_Entities( lua_State *L )
 {
-    lua_getglobal( L, "ents" );                     // [ents]
-    if ( !lua_istable( L, -1 ) )                    // no prior table: make one
-    {
-        lua_pop( L, 1 );
-        lua_newtable( L );                          // [table]
-    }
-
-    LUA_REGISTRATION_COMMIT( Entities );            // [table] + all Entities.* entries
-
-    lua_pushvalue( L, -1 );
-    lua_setglobal( L, "ents" );                     // _G.ents = table
-    lua_pushvalue( L, -1 );
-    lua_setglobal( L, "Entities" );                 // _G.Entities = table
-
-    lua_getfield( L, LUA_REGISTRYINDEX, "_LOADED" );
-    if ( lua_istable( L, -1 ) )
-    {
-        lua_pushvalue( L, -2 );
-        lua_setfield( L, -2, "Entities" );          // require( "Entities" )
-    }
-    lua_pop( L, 1 );
-
+    luaL_register_entity_library( L, Entities_luaRegistry );
     return 1;
 }

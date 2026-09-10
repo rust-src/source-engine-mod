@@ -30,6 +30,7 @@ $Project "Server (HL2MP)"
 		// HL2SB: Experiment-style binding framework + ported libraries
 		$File "$SRCDIR/game/shared/lua/luabinding.cpp"
 		$File "$SRCDIR/game/shared/lua/lentities.cpp"
+		$File "$SRCDIR/game/shared/lua/lbaseflex_shared.cpp"
 		$File "$SRCDIR/game/shared/lua/lparticle_system.cpp"
 		$File "$SRCDIR/game/shared/lua/lsystem.cpp"
 		$File "$SRCDIR/public/lsounds.cpp"
