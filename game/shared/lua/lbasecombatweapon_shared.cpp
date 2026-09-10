@@ -134,6 +134,17 @@ static int CBaseCombatWeapon_Clip2 (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod SWEP compat: GMod calls self:SetClip1(n) / self:SetClip2(n).
+static int CBaseCombatWeapon_SetClip1 (lua_State *L) {
+  luaL_checkweapon(L, 1)->m_iClip1.GetForModify() = luaL_checkint(L, 2);
+  return 0;
+}
+
+static int CBaseCombatWeapon_SetClip2 (lua_State *L) {
+  luaL_checkweapon(L, 1)->m_iClip2.GetForModify() = luaL_checkint(L, 2);
+  return 0;
+}
+
 static int CBaseCombatWeapon_DefaultDeploy (lua_State *L) {
   lua_pushboolean(L, luaL_checkweapon(L, 1)->DefaultDeploy( (char*)luaL_checkstring(L, 2), (char*)luaL_checkstring(L, 3), luaL_checkint(L, 4), (char*)luaL_checkstring(L, 5) ));
   return 1;
@@ -990,6 +1001,8 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"CheckReload", CBaseCombatWeapon_CheckReload},
   {"Clip1", CBaseCombatWeapon_Clip1},
   {"Clip2", CBaseCombatWeapon_Clip2},
+  {"SetClip1", CBaseCombatWeapon_SetClip1},
+  {"SetClip2", CBaseCombatWeapon_SetClip2},
   {"DefaultDeploy", CBaseCombatWeapon_DefaultDeploy},
   {"DefaultReload", CBaseCombatWeapon_DefaultReload},
   {"DefaultTouch", CBaseCombatWeapon_DefaultTouch},
