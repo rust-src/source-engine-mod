@@ -34,12 +34,18 @@
 #endif
 
 // Included from luasrclib.h, which every Lua binding file pulls in; that header
-// is always included after cbase.h, so CUtlVector and lua_State are available.
+// is always included after cbase.h, so lua_State is available.
 // (Deliberately no #include "cbase.h" here: luasrclib.h is itself included from
 // places that would then recurse.)
+//
+// CUtlVector is needed for the registry overloads below and must be pulled in
+// explicitly.  Relying on the includer worked only for translation units that
+// happened to reach utlvector.h first; a full rebuild after a reconfigure
+// compiles the ones that do not, and they failed with
+//   error C2976: 'CUtlVector': too few template arguments
+// because strtools.h only forward-declares it.
 #include "lua.hpp"
-
-#include "lua.hpp"
+#include "tier1/utlvector.h"
 
 // One entry in a library's function table.  The standard luaL_Reg cannot be
 // used because the tables are built at static-init time (see LUA_REGISTER_METHOD).

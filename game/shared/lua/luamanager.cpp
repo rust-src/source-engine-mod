@@ -1024,6 +1024,28 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 		Msg( "Running file %s...\n", args.ArgS() );
 		luasrc_dofile( L, fullpath );
 	}
+
+	/*
+	** HL2SB: GMod's lua_run.  The only way to evaluate Lua in HL2SB used to be
+	** lua_dofile_cl, which needs the code written to a file first, so there was no
+	** way to poke at the Lua state from the console.  GMod has lua_run (server) and
+	** lua_run_cl (client); they are separated by realm for the same reason
+	** lua_dofile and lua_dofile_cl are -- both DLLs are loaded in a listen server
+	** and a bare lua_run would be registered twice.
+	*/
+	CON_COMMAND( lua_run_cl, "Run a Lua string (client)" )
+	{
+		if ( !g_bLuaInitialized )
+			return;
+
+		if ( args.ArgC() == 1 )
+		{
+			Msg( "Usage: lua_run_cl <lua code>\n" );
+			return;
+		}
+
+		luasrc_dostring( L, args.ArgS() );
+	}
 #else
 	CON_COMMAND_F_COMPLETION( lua_dofile, "Load and run a Lua file", 0, DoFileCompletion )
 	{
@@ -1065,6 +1087,24 @@ static int DoFileCompletion( const char *partial, char commands[ COMMAND_COMPLET
 		}
 		Msg( "Running file %s...\n", args.ArgS() );
 		luasrc_dofile( L, fullpath );
+	}
+
+	/* HL2SB: GMod's lua_run, server realm.  See the client one above. */
+	CON_COMMAND( lua_run, "Run a Lua string (server)" )
+	{
+		if ( !g_bLuaInitialized )
+			return;
+
+		if ( !UTIL_IsCommandIssuedByServerAdmin() )
+			return;
+
+		if ( args.ArgC() == 1 )
+		{
+			Msg( "Usage: lua_run <lua code>\n" );
+			return;
+		}
+
+		luasrc_dostring( L, args.ArgS() );
 	}
 #endif
 
