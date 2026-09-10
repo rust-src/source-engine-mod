@@ -55,6 +55,39 @@ LUALIB_API lua_KeyValues *luaL_optkeyvalues (lua_State *L, int narg,
 }
 
 
+/* HL2SB: ported from Experiment: Source (src/public/tier1/LKeyValues.cpp). */
+LUA_API void lua_pushkeyvalues_as_table (lua_State *L, lua_KeyValues *pKV) {
+  lua_newtable(L);
+
+  for (KeyValues *subKey = pKV->GetFirstSubKey(); subKey != NULL; subKey = subKey->GetNextKey()) {
+    const char *keyName = subKey->GetName();
+
+    lua_pushstring(L, keyName);
+
+    switch (subKey->GetDataType()) {
+      case KeyValues::TYPE_STRING:
+        lua_pushstring(L, subKey->GetString());
+        break;
+      case KeyValues::TYPE_INT:
+        lua_pushinteger(L, subKey->GetInt());
+        break;
+      case KeyValues::TYPE_FLOAT:
+        lua_pushnumber(L, subKey->GetFloat());
+        break;
+      case KeyValues::TYPE_COLOR:
+        lua_pushcolor(L, subKey->GetColor());
+        break;
+      default:
+        lua_pushnil(L);
+        /* Upstream leaves this as a TODO: nested sub-keyvalues are not converted. */
+        break;
+    }
+
+    lua_settable(L, -3);
+  }
+}
+
+
 static int KeyValues_AddSubKey (lua_State *L) {
   luaL_checkkeyvalues(L, 1)->AddSubKey(luaL_checkkeyvalues(L, 2));
   return 0;

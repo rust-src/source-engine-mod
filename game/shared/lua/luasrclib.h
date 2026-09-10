@@ -221,6 +221,11 @@ LUALIB_API int (luaopen_Chats) (lua_State *L);
 #define LUA_CBASEFLEXLIBNAME			"CBaseFlex"
 LUALIB_API int (luaopen_CBaseFlex_shared) (lua_State *L);
 
+// HL2SB: ported from Experiment: Source.  GameEvents is GMod's `gameevent`
+// (gameevent.Listen(name) -> the hook of that name).
+#define LUA_GAMEEVENTSLIBNAME			"GameEvents"
+LUALIB_API int (luaopen_GameEvents) (lua_State *L);
+
 #define LUA_MATHLIBLIBNAME				"mathlib"
 LUALIB_API int (luaopen_mathlib) (lua_State *L);
 

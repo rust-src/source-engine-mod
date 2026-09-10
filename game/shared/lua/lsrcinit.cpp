@@ -59,6 +59,8 @@ static const luaL_Reg luasrclibs[] = {
   {LUA_ENTLISTLIBNAME, luaopen_gEntList},
 #endif
   {LUA_GLOBALSLIBNAME, luaopen_gpGlobals},
+  // HL2SB: ported from Experiment: Source.  gameevent.Listen.
+  {LUA_GAMEEVENTSLIBNAME, luaopen_GameEvents},
   {LUA_HL2SBLIBNAME, luaopen_hl2sb},
 #ifdef CLIENT_DLL
   {LUA_CLIENTSHADOWMGRLIBNAME, luaopen_g_pClientShadowMgr},
