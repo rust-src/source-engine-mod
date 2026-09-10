@@ -133,9 +133,19 @@ static void base_open (lua_State *L) {
 #ifdef CLIENT_DLL
   lua_pushboolean(L, 1);
   lua_setglobal(L, "_CLIENT");  /* set global _CLIENT */
+  /* GMod SWEP compat: stock scripts branch on SERVER/CLIENT. */
+  lua_pushboolean(L, 0);
+  lua_setglobal(L, "SERVER");
+  lua_pushboolean(L, 1);
+  lua_setglobal(L, "CLIENT");
 #else
   lua_pushboolean(L, 1);
   lua_setglobal(L, "_GAME");  /* set global _GAME */
+  /* GMod SWEP compat: stock scripts branch on SERVER/CLIENT. */
+  lua_pushboolean(L, 1);
+  lua_setglobal(L, "SERVER");
+  lua_pushboolean(L, 0);
+  lua_setglobal(L, "CLIENT");
 #endif
 }
 
@@ -268,12 +278,128 @@ LUA_API int luasrc_dostring (lua_State *L, const char *string) {
 }
 
 LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
-  int iError = luaL_dofile(L, filename);
-  if (iError != 0) {
-    Warning( "%s\n", lua_tostring(L, -1) );
-    lua_pop(L, 1);
-  }
-  return iError;
+	// GLua syntax compat: stock GMod scripts (and many workshop SWEPs) use
+	// C-style `//` line comments and the `!=` operator, which standard Lua 5.1
+	// rejects. Rewrite them in memory before loading: `//` -> `--`,
+	// `!=` -> `~=`. String literals and comments are tracked so their
+	// contents are left untouched. Falls back to plain luaL_dofile when the
+	// file is not visible through the engine filesystem.
+	if ( !filesystem || !filesystem->FileExists( filename, "MOD" ) )
+	{
+		int iFallback = luaL_dofile(L, filename);
+		if (iFallback != 0) {
+			Warning( "%s\n", lua_tostring(L, -1) );
+			lua_pop(L, 1);
+		}
+		return iFallback;
+	}
+
+	FileHandle_t fh = g_pFullFileSystem->Open( filename, "rb", "MOD" );
+	if ( !fh )
+	{
+		Warning( "luasrc_dofile: cannot open %s\n", filename );
+		lua_pushnil( L );
+		lua_pushfstring( L, "cannot open %s: No such file or directory", filename );
+		return 2;
+	}
+	int nSize = g_pFullFileSystem->Size( fh );
+	char *pBuf = (char *)malloc( nSize + 1 );
+	int nRead = 0;
+	if ( pBuf )
+		nRead = g_pFullFileSystem->ReadEx( pBuf, nSize, nSize, fh );
+	g_pFullFileSystem->Close( fh );
+	if ( !pBuf )
+	{
+		Warning( "luasrc_dofile: out of memory reading %s\n", filename );
+		lua_pushnil( L );
+		lua_pushfstring( L, "out of memory reading %s", filename );
+		return 2;
+	}
+
+	// Normalise CRLF (Source files may be checked out either way).
+	int nClean = 0;
+	for ( int i = 0; i < nRead; i++ )
+	{
+		if ( pBuf[i] != '\r' )
+			pBuf[nClean++] = pBuf[i];
+	}
+
+	char *pOut = (char *)malloc( nClean + 1 );
+	if ( !pOut )
+	{
+		free( pBuf );
+		Warning( "luasrc_dofile: out of memory translating %s\n", filename );
+		lua_pushnil( L );
+		lua_pushfstring( L, "out of memory translating %s", filename );
+		return 2;
+	}
+
+	size_t o = 0;
+	enum EState { CODE, SQ_STR, DQ_STR, LONG_STR, LINE_COMMENT, LONG_COMMENT } state = CODE;
+	int i2 = 0;
+	while ( i2 < nClean )
+	{
+		char c = pBuf[i2];
+		switch ( state )
+		{
+		case SQ_STR:
+			pOut[o++] = c;
+			if ( c == '\\' && i2 + 1 < nClean ) { pOut[o++] = pBuf[++i2]; }
+			else if ( c == '\'' ) state = CODE;
+			i2++;
+			break;
+		case DQ_STR:
+			pOut[o++] = c;
+			if ( c == '\\' && i2 + 1 < nClean ) { pOut[o++] = pBuf[++i2]; }
+			else if ( c == '"' ) state = CODE;
+			i2++;
+			break;
+		case LONG_STR:
+			pOut[o++] = c;
+			if ( c == ']' && i2 + 1 < nClean && pBuf[i2+1] == ']' ) { pOut[o++] = pBuf[++i2]; state = CODE; }
+			i2++;
+			break;
+		case LINE_COMMENT:
+			pOut[o++] = c;
+			if ( c == '\n' ) state = CODE;
+			i2++;
+			break;
+		case LONG_COMMENT:
+			pOut[o++] = c;
+			if ( c == ']' && i2 + 1 < nClean && pBuf[i2+1] == ']' ) { pOut[o++] = pBuf[++i2]; state = CODE; }
+			i2++;
+			break;
+		default: // CODE
+			if ( c == '\'' ) { pOut[o++] = c; state = SQ_STR; i2++; }
+			else if ( c == '"' ) { pOut[o++] = c; state = DQ_STR; i2++; }
+			else if ( c == '[' && i2 + 1 < nClean && pBuf[i2+1] == '[' ) { pOut[o++] = c; pOut[o++] = pBuf[++i2]; state = LONG_STR; i2++; }
+			else if ( c == '-' && i2 + 1 < nClean && pBuf[i2+1] == '-' )
+			{
+				pOut[o++] = c; pOut[o++] = pBuf[++i2]; i2++;
+				if ( i2 < nClean && pBuf[i2] == '[' && i2 + 1 < nClean && pBuf[i2+1] == '[' )
+				{ pOut[o++] = pBuf[i2++]; pOut[o++] = pBuf[i2++]; state = LONG_COMMENT; }
+				else state = LINE_COMMENT;
+			}
+			else if ( c == '/' && i2 + 1 < nClean && pBuf[i2+1] == '/' ) { pOut[o++] = '-'; pOut[o++] = '-'; i2 += 2; state = LINE_COMMENT; }
+			else if ( c == '!' && i2 + 1 < nClean && pBuf[i2+1] == '=' ) { pOut[o++] = '~'; pOut[o++] = '='; i2 += 2; }
+			else { pOut[o++] = c; i2++; }
+			break;
+		}
+	}
+	free( pBuf );
+
+	char chunkname[ MAX_PATH + 16 ];
+	Q_snprintf( chunkname, sizeof( chunkname ), "@%s", filename );
+
+	int iError = luaL_loadbuffer( L, pOut, o, chunkname );
+	if ( iError == 0 )
+		iError = lua_pcall( L, 0, LUA_MULTRET, 0 );
+	if ( iError != 0 ) {
+		Warning( "%s\n", lua_tostring(L, -1) );
+		lua_pop(L, 1);
+	}
+	free( pOut );
+	return iError;
 }
 
 LUA_API void luasrc_dofolder (lua_State *L, const char *path)
