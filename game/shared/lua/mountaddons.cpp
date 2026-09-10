@@ -1,4 +1,4 @@
-//========== Copyleft © 2011, Team Sandbox, Some rights reserved. ===========//
+//========== Copyleft Â© 2011, Team Sandbox, Some rights reserved. ===========//
 //
 // Purpose:
 //
@@ -64,6 +64,41 @@ void MountAddons()
 				filesystem->AddSearchPath( relativepath, "MOD", PATH_ADD_TO_TAIL );
 				if ( bGetCurrentDirectory )
 					V_SetCurrentDirectory( fullpath );
+			}
+			else
+			{
+				// Not a directory: check for .gma addon files and try to mount them as pack files
+				if ( Q_stristr( addonName, ".gma" ) )
+				{
+					char gmaRelative[ MAX_PATH ];
+					Q_snprintf( gmaRelative, sizeof( gmaRelative ), LUA_PATH_ADDONS "/%s", addonName );
+
+					char cwd[ 512 ] = { 0 };
+					bool bSavedCwd = V_GetCurrentDirectory( cwd, sizeof( cwd ) );
+					if ( bSavedCwd )
+					{
+#ifdef CLIENT_DLL
+						const char *gamePath = engine->GetGameDirectory();
+#else
+						char gamePath[ 256 ];
+						engine->GetGameDir( gamePath, 256 );
+#endif
+						V_SetCurrentDirectory( gamePath );
+					}
+
+					// Try to add the .gma as a pack file to the MOD path so its contents are accessible
+					if ( filesystem->AddPackFile( gmaRelative, "MOD" ) )
+					{
+						Msg( "Mounted GMA addon: %s\n", gmaRelative );
+					}
+					else
+					{
+						Warning( "Failed to mount GMA (treated as pack file): %s\n", gmaRelative );
+					}
+
+					if ( bSavedCwd )
+						V_SetCurrentDirectory( cwd );
+				}
 			}
 		}
 
