@@ -30,7 +30,7 @@
 #define LUA_BASE_ENTITY_CLASS		"prop_scripted"
 #define LUA_BASE_ENTITY_FACTORY	"CBaseAnimating"
 #define LUA_BASE_WEAPON					"weapon_hl2mpbase_scriptedweapon"
-#define LUA_BASE_GAMEMODE				"base"
+#define LUA_BASE_GAMEMODE				"deathmatch"
 
 
 #define LUA_MAX_WEAPON_ACTIVITIES	32
@@ -246,6 +246,32 @@
     else \
       lua_pop(m_lua_State, 1); \
   }
+
+/*
+** Experiment: Source spellings, so their scripted-control files can be dropped in
+** unchanged.  BEGIN/END_LUA_CALL_PANEL_METHOD above are the same macros -- HL2SB
+** has had them all along under the unprefixed names -- so these are pure aliases.
+*/
+#define LUA_CALL_PANEL_METHOD_BEGIN(functionName) \
+  BEGIN_LUA_CALL_PANEL_METHOD(functionName)
+#define LUA_CALL_PANEL_METHOD_END(nArgs, nresults) \
+  END_LUA_CALL_PANEL_METHOD(nArgs, nresults)
+
+/* Experiment's name for LUA_PANELLIBNAME. */
+#define LUA_PANELMETANAME LUA_PANELLIBNAME
+
+/*
+** Experiment: Source's panel metatable override, reduced to the part HL2SB needs.
+**
+** Their macro also pulls in lsingleluainstance.h, whose pudata polyfill backs a
+** per-instance userdata cache.  HL2SB's scripted controls already carry their own
+** Lua table reference (m_nTableReference, pushed by their lua_push<panel> function
+** and freed in the destructor), so only the metatable-name hook is required; the
+** PushLuaInstanceSafe that their bindings call is declared per class instead.
+*/
+#define LUA_OVERRIDE_SINGLE_LUA_INSTANCE_METATABLE( ClassName, MetaTableName ) \
+  public:                                                                      \
+    const char *GetMetatableName() const { return MetaTableName; }
 
 #define RETURN_LUA_NONE() \
   if (lua_gettop(L) == 1) { \

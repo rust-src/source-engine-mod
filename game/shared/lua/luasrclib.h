@@ -270,6 +270,13 @@ LUALIB_API int (luaopen_networkstringtable) (lua_State *L);
 #define LUA_PANELLIBNAME				"Panel"
 LUALIB_API int (luaopen_Panel) (lua_State *L);
 
+// HL2SB: ported from Experiment: Source.  Label is not a library of its own in
+// either project -- it is the metatable the scripted Label control is registered
+// under, and the base Derma's text controls extend.  Declared ahead of the port
+// landing; see the commented-out registration in lsrcinit.cpp.
+#define LUA_LABELMETANAME				"Label"
+LUALIB_API int (luaopen_Label) (lua_State *L);
+
 #define LUA_PHYSENVLIBNAME				"physenv"
 LUALIB_API int (luaopen_physenv) (lua_State *L);
 
