@@ -1177,6 +1177,12 @@ static int CBaseEntity_SetOwnerEntity (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod SWEP compat: GMod names this SetOwner.
+static int CBaseEntity_SetOwner (lua_State *L) {
+  luaL_checkentity(L, 1)->SetOwnerEntity(luaL_checkentity(L, 2));
+  return 0;
+}
+
 static int CBaseEntity_SetParent (lua_State *L) {
   luaL_checkentity(L, 1)->SetParent(luaL_checkentity(L, 2), luaL_optint(L, 3, 0));
   return 0;
@@ -1719,6 +1725,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"SetMoveType", CBaseEntity_SetMoveType},
   {"SetNextThink", CBaseEntity_SetNextThink},
   {"SetOwnerEntity", CBaseEntity_SetOwnerEntity},
+  {"SetOwner", CBaseEntity_SetOwner},
   {"SetParent", CBaseEntity_SetParent},
   {"SetPlayerSimulated", CBaseEntity_SetPlayerSimulated},
   {"SetPredictionEligible", CBaseEntity_SetPredictionEligible},

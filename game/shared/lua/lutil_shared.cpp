@@ -135,6 +135,12 @@ static int luasrc_UTIL_PlayerByIndex (lua_State *L) {
 }
 
 
+// HL2SB GMod SWEP compat: stock SWEP Initialize calls util.PrecacheSound.
+static int luasrc_util_PrecacheSound (lua_State *L) {
+  CBaseEntity::PrecacheSound(luaL_checkstring(L, 1));
+  return 0;
+}
+
 static const luaL_Reg util_funcs[] = {
   // {"UTIL_VecToYaw",  luasrc_UTIL_VecToYaw},
   {"VecToYaw",  luasrc_UTIL_VecToYaw},
@@ -178,6 +184,8 @@ static const luaL_Reg util_funcs[] = {
   {"IsSpaceEmpty",  luasrc_UTIL_IsSpaceEmpty},
   // {"UTIL_PlayerByIndex",  luasrc_UTIL_PlayerByIndex},
   {"PlayerByIndex",  luasrc_UTIL_PlayerByIndex},
+  // HL2SB GMod SWEP compat
+  {"PrecacheSound",  luasrc_util_PrecacheSound},
   {NULL, NULL}
 };
 

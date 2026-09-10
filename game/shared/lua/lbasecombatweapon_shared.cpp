@@ -812,6 +812,12 @@ static int CBaseCombatWeapon___index (lua_State *L) {
 	return lua_error(L);
   }
   const char *field = luaL_checkstring(L, 2);
+  /* GMod SWEP compat: stock scripts use self.Owner instead of GetOwner(). */
+  if (Q_strcmp(field, "Owner") == 0) {
+    CBasePlayer *pOwner = (CBasePlayer *)pWeapon->GetOwner();
+    if (pOwner) lua_pushplayer(L, pOwner); else lua_pushnil(L);
+    return 1;
+  }
   if (Q_strcmp(field, "m_bAltFiresUnderwater") == 0)
     lua_pushboolean(L, pWeapon->m_bAltFiresUnderwater);
   else if (Q_strcmp(field, "m_bFireOnEmpty") == 0)
