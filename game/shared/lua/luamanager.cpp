@@ -620,22 +620,28 @@ void luasrc_LoadWeapons (const char *path)
 					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
 
 					// GMod semantics: the engine seeds every SWEP with a deep copy
-					// of the base weapon table, so stock scripts can assign fields
-					// into SWEP.Primary/SWEP.Secondary at the top level without
-					// initialising those tables themselves. weapon_base is
-					// registered before derived weapons (alphabetical walk), so
-					// weapon.get resolves here.
-					char szSeed[256];
-					Q_snprintf( szSeed, sizeof( szSeed ),
-						"SWEP = table.copy( weapon.get( \"" LUA_BASE_WEAPON "\" ) or {} )" );
-					luasrc_dostring( L, szSeed );
-
-					// Fall back to an empty SWEP (with empty Primary/Secondary so
-					// stock-style top-level assignments still work) if the seed
-					// failed for any reason.
+					// of the base weapon table before running the script, so stock
+					// scripts can assign fields into SWEP.Primary/SWEP.Secondary at
+					// the top level (`SWEP.Primary.Sound = ...`) without creating
+					// those tables themselves.
+					//
+					// The table key is the weapons/ DIRECTORY name, which for the
+					// GMod-style base is "weapon_base"; fall back to the engine's
+					// own scripted base for older layouts. Primary/Secondary are
+					// guaranteed to be tables regardless of what the seed resolved,
+					// because a base whose data lives in flat keys (clip_size, ...)
+					// has no Primary table of its own.
+					luasrc_dostring( L,
+						"local __b = weapon.get( \"weapon_base\" )"
+						" or weapon.get( \"" LUA_BASE_WEAPON "\" ) or {};"
+						"SWEP = table.copy( __b );"
+						"if type( SWEP ) ~= \"table\" then SWEP = {} end;"
+						"if type( SWEP.Primary ) ~= \"table\" then SWEP.Primary = {} end;"
+						"if type( SWEP.Secondary ) ~= \"table\" then SWEP.Secondary = {} end" );
 					lua_getglobal( L, "SWEP" );
 					if ( !lua_istable( L, -1 ) )
 					{
+						// Paranoia: the seed should always leave a table here.
 						lua_pop( L, 1 );
 						lua_newtable( L );
 						lua_newtable( L );
