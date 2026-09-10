@@ -201,6 +201,16 @@ LUALIB_API int (luaopen_Entities) (lua_State *L);
 
 #define LUA_SCRIPTEDENTITIESLIBNAME		"ScriptedEntities"
 
+// HL2SB: ported from Experiment: Source.  Renders is the `render` library GMod
+// scripts draw with; Texture is the ITexture userdata they hand to it.  Upstream
+// names the entry point luaopen_render (singular) while the library it commits is
+// called Renders -- both spellings are kept as they are.
+#define LUA_RENDERSLIBNAME				"Renders"
+LUALIB_API int (luaopen_render) (lua_State *L);
+
+#define LUA_ITEXTUREMETANAME			"ITexture"
+LUALIB_API int (luaopen_ITexture) (lua_State *L);
+
 #define LUA_MATHLIBLIBNAME				"mathlib"
 LUALIB_API int (luaopen_mathlib) (lua_State *L);
 

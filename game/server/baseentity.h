@@ -60,6 +60,7 @@ struct typedescription_t;
 class ISave;
 class IRestore;
 class CBaseEntity;
+struct lua_State;   // HL2SB: CBaseEntity::PushLuaInstanceSafe
 class CEntityMapData;
 class CBaseCombatWeapon;
 class IPhysicsObject;
@@ -757,6 +758,14 @@ public:
 	static CBaseEntity *Instance( const edict_t *pent );
 	static CBaseEntity *Instance( edict_t *pent );
 	static CBaseEntity* Instance( int iEnt );
+
+#ifdef LUA_SDK
+	// HL2SB: Experiment: Source's Lua entity push entry point.  It lives on the class
+	// so their binding files can call CBaseEntity::PushLuaInstanceSafe() unchanged;
+	// the implementation (which picks the metatable from the dynamic type) is in
+	// game/shared/lua/lbaseentity_shared.cpp.
+	static void PushLuaInstanceSafe( lua_State *L, CBaseEntity *pEntity );
+#endif
 
 	// Think function handling
 	void (CBaseEntity::*m_pfnThink)(void);

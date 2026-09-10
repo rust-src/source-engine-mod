@@ -43,6 +43,7 @@ class CPredictionCopy;
 class C_BasePlayer;
 struct studiohdr_t;
 class CStudioHdr;
+struct lua_State;   // HL2SB: C_BaseEntity::PushLuaInstanceSafe
 class CDamageModifier;
 class IRecipientFilter;
 class CUserCmd;
@@ -188,6 +189,14 @@ public:
 	virtual							~C_BaseEntity();
 
 	static C_BaseEntity				*CreatePredictedEntityByName( const char *classname, const char *module, int line, bool persist = false );
+
+#ifdef LUA_SDK
+	// HL2SB: Experiment: Source's Lua entity push entry point.  It lives on the class
+	// so their binding files can call CBaseEntity::PushLuaInstanceSafe() unchanged;
+	// the implementation (which picks the metatable from the dynamic type) is in
+	// game/shared/lua/lbaseentity_shared.cpp.
+	static void						PushLuaInstanceSafe( lua_State *L, CBaseEntity *pEntity );
+#endif
 	
 	// FireBullets uses shared code for prediction.
 	virtual void					FireBullets( const FireBulletsInfo_t &info );

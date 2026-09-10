@@ -28,14 +28,15 @@ $Project "Client (HL2SB)"
 
 		// HL2SB: Experiment-style binding framework + ported libraries
 		$File "$SRCDIR/game/shared/lua/luabinding.cpp"
+		$File "$SRCDIR/game/shared/lua/lentities.cpp"
 		$File "$SRCDIR/game/shared/lua/lparticle_system.cpp"
 		$File "$SRCDIR/game/shared/lua/lsystem.cpp"
-		// TODO(port): needs the entity helper layer (PushLuaInstanceSafe, Instance, CreatePredictedEntityByName)
+		$File "$SRCDIR/public/lsounds.cpp"
 		$File "$SRCDIR/game/shared/lua/llocalization.cpp"
 		$File "$SRCDIR/public/lenumerations_shared.cpp"
 		$File "$SRCDIR/public/lc_enumerations.cpp"
-		// TODO(port): needs PushLuaInstanceSafe / CreatePredictedEntityByName helpers
-		// TODO(port): needs the helper layer (GET_FIELD_WITH_COMPATIBILITY, luaL_checkvector, SOUND_CHANNEL, bassmanager)
+		// TODO(port): Files/FileHandle need the helper layer above plus a decision on
+		// how they coexist with the Team Sandbox era `filesystem` library.
 		// Lua 5.1 API shims so the Team Sandbox era bindings build against 5.4
 		$File "$SRCDIR/public/lua_compat.cpp"
 
@@ -46,6 +47,9 @@ $Project "Client (HL2SB)"
 		$File "lua/liclientshadowmgr.cpp"
 		$File "lua/lprediction.cpp"
 		$File "lua/lc_recipientfilter.cpp"
+		// HL2SB: ported from Experiment: Source (render.* and ITexture userdata)
+		$File "lua/litexture.cpp"
+		$File "lua/lrender.cpp"
 		$File "lua/scripted_controls/lButton.cpp"
 		$File "lua/scripted_controls/lCheckButton.cpp"
 		$File "lua/scripted_controls/lFrame.cpp"

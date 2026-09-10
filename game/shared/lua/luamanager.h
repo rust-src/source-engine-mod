@@ -85,6 +85,40 @@
 #define LUA_SET_ENUM_LIB_END(L) \
   END_LUA_SET_ENUM_LIB(L) }
 
+/*
+** Field readers, ported verbatim from Experiment: Source.  GMod spells its
+** parameter table keys in UpperCamelCase (Num, Damage, SoundName, ...) while the
+** Team Sandbox era bindings read the engine-style names (m_flDamage, ...), so
+** every ported binding accepts either: the GMod key wins, the engine key is the
+** fallback.  Both variants leave exactly one value on the stack.
+*/
+#define GET_FIELD_WITH_COMPATIBILITY(L, ArgumentIndex, FieldName, FallbackFieldName) \
+  lua_getfield(L, ArgumentIndex, FieldName); \
+  if (lua_isnil(L, -1)) { \
+    lua_pop(L, 1); /* pop the nil value */ \
+    lua_getfield(L, ArgumentIndex, FallbackFieldName); \
+  }
+
+#define CHECK_FIELD_OR_ERROR(L, ArgumentIndex, FieldName, CheckFunction) \
+  if (!CheckFunction(L, -1)) { \
+    luaL_argerror(L, ArgumentIndex, "expected field '" FieldName "'"); \
+    return 0; \
+  }
+
+#define GET_FIELD_WITH_COMPATIBILITY_OR_ERROR(L, ArgumentIndex, FieldName, FallbackFieldName, CheckFunction) \
+  GET_FIELD_WITH_COMPATIBILITY(L, ArgumentIndex, FieldName, FallbackFieldName) \
+  CHECK_FIELD_OR_ERROR(L, ArgumentIndex, FieldName, CheckFunction)
+
+/*
+** Experiment: Source brackets scripted-entity creation with this pair so a class
+** can only be instantiated from inside its own shared script library
+** (experiment-source src/game/server/util.h).  HL2SB has no such gate -- its
+** LUA_SCRIPTEDENTITIESLIBNAME is registered but nothing enforces it -- so the
+** macros stay as no-op markers and the ported binding files compile unchanged.
+*/
+#define LUA_EXPECTED_SCRIPTED_LIBRARY_BEGIN(libname)
+#define LUA_EXPECTED_SCRIPTED_LIBRARY_END(libname)
+
 #define BEGIN_LUA_CALL_HOOK(functionName) \
   lua_getglobal(L, "hook"); \
   if (lua_istable(L, -1)) { \

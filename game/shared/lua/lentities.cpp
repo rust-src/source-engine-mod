@@ -15,15 +15,15 @@ LUA_REGISTRATION_INIT( Entities );
 LUA_BINDING_BEGIN( Entities, Find, "library", "Finds the entity by its entity index" )
 {
     int iEntity = LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "entityIndex" );
-    CBaseEntity *ent = Instance( iEntity );
+    CBaseEntity *ent = CBaseEntity::Instance( iEntity );
 
     if ( !ent )
     {
-        PushLuaInstanceSafe( L, NULL );
+        CBaseEntity::PushLuaInstanceSafe( L, NULL );
         return 1;
     }
 
-    PushLuaInstanceSafe( L, ent );
+    CBaseEntity::PushLuaInstanceSafe( L, ent );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The found entity or NULL entity" )
@@ -40,7 +40,7 @@ LUA_BINDING_BEGIN( Entities, CreateByName, "library", "Creates an entity by the 
     if ( dynamic_cast< CBaseScripted * >( pEntity ) != NULL )
         DispatchSpawn( pEntity );
 
-    PushLuaInstanceSafe( L, pEntity );
+    CBaseEntity::PushLuaInstanceSafe( L, pEntity );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The created entity" )
@@ -53,7 +53,7 @@ LUA_BINDING_BEGIN( Entities, CreatePredictedEntityByName, "class", "Create predi
     int nLine = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "line" );
     bool bPersists = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optboolean, 4, false, "shouldPersist" );
 
-    PushLuaInstanceSafe( L, CreatePredictedEntityByName( pszClassName, pszModule, nLine, bPersists ) );
+    CBaseEntity::PushLuaInstanceSafe( L, CBaseEntity::CreatePredictedEntityByName( pszClassName, pszModule, nLine, bPersists ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The predicted entity." )
@@ -77,7 +77,7 @@ LUA_BINDING_BEGIN( Entities, GetAlongRay, "library", "Finds all entities along t
     for ( int i = 0; i < count; i++ )
     {
         lua_pushinteger( L, i );
-        PushLuaInstanceSafe( L, pList[i] );
+        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
         lua_settable( L, -3 );
     }
 
@@ -106,7 +106,7 @@ LUA_BINDING_BEGIN( Entities, GetInBox, "library", "Finds all entities in the giv
     for ( int i = 0; i < count; i++ )
     {
         lua_pushinteger( L, i );
-        PushLuaInstanceSafe( L, pList[i] );
+        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
         lua_settable( L, -3 );
     }
 
@@ -135,7 +135,7 @@ LUA_BINDING_BEGIN( Entities, GetInSphere, "library", "Finds all entities in the 
     for ( int i = 0; i < count; i++ )
     {
         lua_pushinteger( L, i );
-        PushLuaInstanceSafe( L, pList[i] );
+        CBaseEntity::PushLuaInstanceSafe( L, pList[i] );
         lua_settable( L, -3 );
     }
 
@@ -180,7 +180,7 @@ LUA_BINDING_BEGIN( Entities, GetInPvs, "library", "Goes through the entities and
             continue;
 
         lua_pushinteger( L, count );
-        PushLuaInstanceSafe( L, pEntity );
+        CBaseEntity::PushLuaInstanceSafe( L, pEntity );
         lua_settable( L, -3 );
         count++;
 
@@ -225,7 +225,7 @@ LUA_BINDING_BEGIN( Entities, FindByClass, "library", "Finds an entity by its cla
     const char *className = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "className" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByClassname( startEntity, className ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByClassname( startEntity, className ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -236,7 +236,7 @@ LUA_BINDING_BEGIN( Entities, FindByClassNearest, "library", "Finds the nearest e
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "position" );
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByClassnameNearest( className, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByClassnameNearest( className, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -248,7 +248,7 @@ LUA_BINDING_BEGIN( Entities, FindByClassWithin, "library", "Finds an entity by i
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 4, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByClassnameWithin( startEntity, className, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByClassnameWithin( startEntity, className, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -258,7 +258,7 @@ LUA_BINDING_BEGIN( Entities, FindByModel, "library", "Finds an entity by its mod
     const char *modelName = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "modelName" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByModel( startEntity, modelName ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByModel( startEntity, modelName ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -268,7 +268,7 @@ LUA_BINDING_BEGIN( Entities, FindByName, "library", "Finds an entity by its name
     const char *name = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "name" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByName( startEntity, name ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByName( startEntity, name ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -279,7 +279,7 @@ LUA_BINDING_BEGIN( Entities, FindByNameNearest, "library", "Finds the nearest en
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "position" );
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByNameNearest( name, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByNameNearest( name, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -291,7 +291,7 @@ LUA_BINDING_BEGIN( Entities, FindByNameWithin, "library", "Finds an entity by it
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 4, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByNameWithin( startEntity, name, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByNameWithin( startEntity, name, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -301,7 +301,7 @@ LUA_BINDING_BEGIN( Entities, FindByTarget, "library", "Finds an entity by its ta
     const char *target = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "target" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityByTarget( startEntity, target ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityByTarget( startEntity, target ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -313,7 +313,7 @@ LUA_BINDING_BEGIN( Entities, FindClassNearestFacing, "library", "Finds the neare
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
     const char *className = LUA_BINDING_ARGUMENT( luaL_checkstring, 4, "className" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityClassNearestFacing( position, direction, maxDistance, strdup( className ) ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityClassNearestFacing( position, direction, maxDistance, strdup( className ) ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -323,7 +323,7 @@ LUA_BINDING_BEGIN( Entities, FindGeneric, "library", "Finds an entity by its gen
     const char *generic = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "generic" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityGeneric( startEntity, generic ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityGeneric( startEntity, generic ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -334,7 +334,7 @@ LUA_BINDING_BEGIN( Entities, FindGenericNearest, "library", "Finds the nearest e
     Vector position = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "position" );
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityGenericNearest( generic, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityGenericNearest( generic, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -346,7 +346,7 @@ LUA_BINDING_BEGIN( Entities, FindGenericWithin, "library", "Finds an entity by i
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 4, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityGenericWithin( startEntity, generic, position, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityGenericWithin( startEntity, generic, position, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -357,7 +357,7 @@ LUA_BINDING_BEGIN( Entities, FindInSphere, "library", "Finds an entity within a 
     float radius = LUA_BINDING_ARGUMENT( luaL_checknumber, 2, "radius" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 3, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityInSphere( startEntity, position, radius ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityInSphere( startEntity, position, radius ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -368,7 +368,7 @@ LUA_BINDING_BEGIN( Entities, FindNearestFacing, "library", "Finds the nearest en
     Vector direction = LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "direction" );
     float maxDistance = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "maxDistance" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityNearestFacing( position, direction, maxDistance ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityNearestFacing( position, direction, maxDistance ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -378,7 +378,7 @@ LUA_BINDING_BEGIN( Entities, FindProcedural, "library", "Finds an entity by its 
     const char *procedural = LUA_BINDING_ARGUMENT( luaL_checkstring, 1, "procedural" );
     CBaseEntity *startEntity = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 2, NULL, "startEntity" );
 
-    PushLuaInstanceSafe( L, gEntList.FindEntityProcedural( procedural, startEntity ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FindEntityProcedural( procedural, startEntity ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -442,8 +442,8 @@ LUA_BINDING_END( "boolean", "True if the entity class can be created, false othe
 
 LUA_BINDING_BEGIN( Entities, FindByEdictNumber, "library", "Gets an entity by its edict number", "server" )
 {
-    CBaseEntity *pEntity = Instance( INDEXENT( LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "edictNumber" ) ) );
-    PushLuaInstanceSafe( L, pEntity );
+    CBaseEntity *pEntity = CBaseEntity::Instance( INDEXENT( LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "edictNumber" ) ) );
+    CBaseEntity::PushLuaInstanceSafe( L, pEntity );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -457,7 +457,7 @@ LUA_BINDING_END( "boolean", "True if the entity is NULL, false otherwise." )
 
 LUA_BINDING_BEGIN( Entities, FindByIndex, "library", "Gets an entity by its index. Might be the same as FindByEdictNumber?", "server" )
 {
-    PushLuaInstanceSafe( L, UTIL_EntityByIndex( LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "index" ) ) );
+    CBaseEntity::PushLuaInstanceSafe( L, UTIL_EntityByIndex( LUA_BINDING_ARGUMENT( luaL_checknumber, 1, "index" ) ) );
     return 1;
 }
 LUA_BINDING_END( "Entity", "The entity found, or NULL if not found." )
@@ -471,7 +471,7 @@ LUA_BINDING_END( "boolean", "True if the client PVS is expanded, false otherwise
 
 LUA_BINDING_BEGIN( Entities, FindClientInPvs, "library", "Finds a client in the PVS", "server" )
 {
-    PushLuaInstanceSafe( L,
+    CBaseEntity::PushLuaInstanceSafe( L,
                                     UTIL_FindClientInPVS(
                                         LUA_BINDING_ARGUMENT( luaL_checkvector, 1, "minimumVector" ),
                                         LUA_BINDING_ARGUMENT( luaL_checkvector, 2, "maximumVector" ) ) );
@@ -519,9 +519,9 @@ LUA_BINDING_END( "boolean", "True if the entity is valid, false otherwise." )
 LUA_BINDING_BEGIN( Entities, FirstInList, "library", "Gets the first entity in the list" )
 {
 #ifdef CLIENT_DLL
-    PushLuaInstanceSafe( L, ClientEntityList().FirstBaseEntity() );
+    CBaseEntity::PushLuaInstanceSafe( L, ClientEntityList().FirstBaseEntity() );
 #else
-    PushLuaInstanceSafe( L, gEntList.FirstEnt() );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.FirstEnt() );
 #endif
 
     return 1;
@@ -541,7 +541,7 @@ LUA_BINDING_BEGIN( Entities, GetAll, "library", "Gets all entities in the list" 
 #endif
     {
         lua_pushinteger( L, ++i );  // 1-based index for Lua
-        PushLuaInstanceSafe( L, pEnt );
+        CBaseEntity::PushLuaInstanceSafe( L, pEnt );
         lua_settable( L, -3 );
     }
 
@@ -566,7 +566,7 @@ LUA_BINDING_BEGIN( Entities, GetByClass, "library", "Gets all entities in the li
         if ( !Q_strcmp( pEnt->GetClassname(), className ) )
         {
             lua_pushinteger( L, ++i );  // 1-based index for Lua
-            PushLuaInstanceSafe( L, pEnt );
+            CBaseEntity::PushLuaInstanceSafe( L, pEnt );
             lua_settable( L, -3 );
         }
     }
@@ -580,9 +580,9 @@ LUA_BINDING_BEGIN( Entities, NextInList, "library", "Gets the next entity in the
     CBaseEntity *pCurrent = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optentity, 1, NULL, "startingEntity" );
 
 #ifdef CLIENT_DLL
-    PushLuaInstanceSafe( L, ClientEntityList().NextBaseEntity( pCurrent ) );
+    CBaseEntity::PushLuaInstanceSafe( L, ClientEntityList().NextBaseEntity( pCurrent ) );
 #else
-    PushLuaInstanceSafe( L, gEntList.NextEnt( pCurrent ) );
+    CBaseEntity::PushLuaInstanceSafe( L, gEntList.NextEnt( pCurrent ) );
 #endif
 
     return 1;
@@ -602,10 +602,38 @@ LUA_BINDING_BEGIN( Entities, GetCount, "library", "Gets the number of entities i
 LUA_BINDING_END( "integer", "The number of entities in the entity list." )
 
 /*
-** Open gEntList library
+** Open gEntList library.
+**
+** Experiment: Source calls this library `Entities`; GMod calls the same thing
+** `ents` (ents.FindByClass, ents.GetAll, ents.FindInSphere, ...), and HL2SB's
+** CBaseEntity bindings already create `ents` with Create/GetByIndex in it.  Rather
+** than have two competing tables, both names are published onto one table: the
+** registry is merged into whichever `ents` table already exists, then the result is
+** assigned to both globals.
 */
 LUALIB_API int luaopen_Entities( lua_State *L )
 {
-    LUA_REGISTRATION_COMMIT_LIBRARY( Entities );
+    lua_getglobal( L, "ents" );                     // [ents]
+    if ( !lua_istable( L, -1 ) )                    // no prior table: make one
+    {
+        lua_pop( L, 1 );
+        lua_newtable( L );                          // [table]
+    }
+
+    LUA_REGISTRATION_COMMIT( Entities );            // [table] + all Entities.* entries
+
+    lua_pushvalue( L, -1 );
+    lua_setglobal( L, "ents" );                     // _G.ents = table
+    lua_pushvalue( L, -1 );
+    lua_setglobal( L, "Entities" );                 // _G.Entities = table
+
+    lua_getfield( L, LUA_REGISTRYINDEX, "_LOADED" );
+    if ( lua_istable( L, -1 ) )
+    {
+        lua_pushvalue( L, -2 );
+        lua_setfield( L, -2, "Entities" );          // require( "Entities" )
+    }
+    lua_pop( L, 1 );
+
     return 1;
 }

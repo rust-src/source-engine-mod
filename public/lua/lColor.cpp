@@ -48,6 +48,14 @@ LUALIB_API lua_Color &luaL_checkcolor (lua_State *L, int narg) {
 }
 
 
+/* HL2SB: ported from Experiment: Source (see lColor.h for the by-value return). */
+LUALIB_API lua_Color luaL_optcolor (lua_State *L, int narg, lua_Color def) {
+  if (lua_isnoneornil(L, narg))
+    return def;
+  return luaL_checkcolor(L, narg);
+}
+
+
 static int Color_a (lua_State *L) {
   lua_pushinteger(L, luaL_checkcolor(L, 1).a());
   return 1;
