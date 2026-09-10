@@ -438,7 +438,11 @@ static int Frame_SetSmallCaption (lua_State *L) {
 }
 
 static int Frame_SetTitle (lua_State *L) {
-  luaL_checkframe(L, 1)->SetTitle(luaL_checkstring(L, 2), luaL_checkboolean(L, 3));
+  // HL2SB: the second argument is optional, because Garry's Mod's Frame:SetTitle
+  // takes only the text -- DFrame:Init does `self:SetTitle( "DFrame" )`, and the
+  // luaL_checkboolean this used to be rejected that with
+  //   bad argument #2 to 'SetTitle' (boolean expected, got no value)
+  luaL_checkframe(L, 1)->SetTitle(luaL_checkstring(L, 2), luaL_optboolean(L, 3, true));
   return 0;
 }
 
