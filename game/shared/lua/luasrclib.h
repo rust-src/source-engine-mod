@@ -310,10 +310,9 @@ LUALIB_API int (luaopen_surface) (lua_State *L);
 LUALIB_API int (luaopen_UTIL) (lua_State *L);
 LUALIB_API int (luaopen_UTIL_shared) (lua_State *L);
 
-#ifndef CLIENT_DLL
-#define LUA_UNDOLIBNAME					"hl2sb_undo"
-LUALIB_API int (luaopen_undo) (lua_State *L);
-#endif
+// HL2SB: no LUA_UNDOLIBNAME / luaopen_undo.  Undo is Garry's Mod's Lua module
+// (lua/includes/modules/undo.lua); only the spawn-command bridge in
+// game/server/hl2sb_undo.cpp is C++.
 
 #define LUA_VECTORLIBNAME				"Vector"
 LUALIB_API int (luaopen_Vector) (lua_State *L);

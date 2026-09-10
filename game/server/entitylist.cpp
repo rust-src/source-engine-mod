@@ -1277,6 +1277,15 @@ void CNotifyList::OnEntityCreated( CBaseEntity *pEntity )
 
 void CNotifyList::OnEntityDeleted( CBaseEntity *pEntity )
 {
+#if defined ( LUA_SDK )
+	// HL2SB: GMod's EntityRemoved hook.  Fired before the notify list drops its
+	// reference so Lua can still inspect the entity (that is what GMod does).
+	// undo.lua uses it to prune stale undos, and CallOnRemove is built on it.
+	BEGIN_LUA_CALL_HOOK( "EntityRemoved" );
+		lua_pushentity( L, pEntity );
+	END_LUA_CALL_HOOK( 1, 0 );
+#endif
+
 	ReportDestroyEvent( pEntity );
 	ClearEntity( pEntity );
 }
