@@ -52,11 +52,20 @@ class LTextEntry : public TextEntry
     protected:
     virtual void ApplySchemeSettings( vgui::IScheme *pScheme )
     {
-        // Not sure why this is the order that causes text to be drawn in the Lua specified colour :/
+        /*
+        ** HL2SB: base first, then Lua -- the opposite of Experiment's order.
+        **
+        ** Their order is Lua, then BaseClass, which means the scheme's default font
+        ** is applied *after* anything the script set, so a Lua SetFont was always
+        ** overwritten and the entry rendered at the scheme's size while every Label
+        ** next to it was drawn at ours.  Running the base first lets the Lua
+        ** ApplySchemeSettings hook have the last word, which is what Derma code
+        ** expects: DTextEntry:ApplySchemeSettings() is where it picks its font.
+        */
+        BaseClass::ApplySchemeSettings( pScheme );
+
         LUA_CALL_PANEL_METHOD_BEGIN( "ApplySchemeSettings" );
         LUA_CALL_PANEL_METHOD_END( 0, 0 );
-
-        BaseClass::ApplySchemeSettings( pScheme );
     }
 };
 
