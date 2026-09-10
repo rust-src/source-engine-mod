@@ -61,6 +61,7 @@ data field should not be broadcasted to clients, use the type "local".
 
 class KeyValues;
 class CGameEvent;
+class CGameEventDescriptor;  // HL2SB: engine-internal, see IGameEvent below
 
 abstract_class IGameEvent
 {
@@ -82,6 +83,19 @@ public:
 	virtual void SetInt( const char *keyName, int value ) = 0;
 	virtual void SetFloat( const char *keyName, float value ) = 0;
 	virtual void SetString( const char *keyName, const char *value ) = 0;
+
+	// HL2SB: the engine's concrete CGameEvent (engine/GameEventManager.h) stores the
+	// event's data in a KeyValues, and Lua's game event hook wants the whole thing as
+	// a table, not one typed lookup per field -- IGameEvent has no accessor for that.
+	// Experiment: Source solved it by declaring the members here and reading them
+	// through the interface; the layout is unchanged ({vtable, m_pDescriptor,
+	// m_pDataKeys}), so engine.dll stays compatible as long as its own CGameEvent does
+	// not redeclare them (it does not any more -- see that header).
+	// The alternative, a new virtual, cannot be added: the object comes from the
+	// engine, whose vtable would not have the extra slot.
+	// CGameEventDescriptor is engine-internal, so it stays a forward declaration here.
+	CGameEventDescriptor *m_pDescriptor;
+	KeyValues *m_pDataKeys;
 };
 
 

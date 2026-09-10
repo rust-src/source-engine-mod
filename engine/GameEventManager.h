@@ -71,9 +71,12 @@ public:
 	void SetInt( const char *keyName, int value );
 	void SetFloat( const char *keyName, float value );
 	void SetString( const char *keyName, const char *value );
-	
-	CGameEventDescriptor	*m_pDescriptor;
-	KeyValues				*m_pDataKeys;
+
+	// HL2SB: m_pDescriptor / m_pDataKeys now come from IGameEvent, which declares
+	// them so the game DLL can read an event's KeyValues through the interface (see
+	// public/igameevents.h).  They are deliberately not redeclared here: a second
+	// copy would change CGameEvent's layout, and the object crosses the engine/game
+	// DLL boundary.
 };
 
 class CGameEventManager : public IGameEventManager2

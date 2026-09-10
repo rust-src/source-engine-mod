@@ -22,6 +22,7 @@
 #include "luacachefile.h"
 #include "tier1/lconvar.h"
 #include "licvar.h"
+#include "lgameevents.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -267,6 +268,10 @@ void luasrc_init (void) {
 
   luasrc_openlibs(L);
 
+  // HL2SB: gameevent.Listen() needs an engine-side listener; it lives as long as the
+  // state does (Experiment: Source does the same in their Lua init).
+  InitializeLuaGameEventHandler(L);
+
   Msg( "Lua initialized (" LUA_VERSION ")\n" );
 }
 
@@ -288,6 +293,8 @@ void luasrc_shutdown (void) {
 #endif
   ResetEntityFactoryDatabase();
   ResetWeaponFactoryDatabase();
+
+  ShutdownLuaGameEventHandler(L);
 
 //  lcf_close(L);
   lua_close(L);

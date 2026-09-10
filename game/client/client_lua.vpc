@@ -39,6 +39,7 @@ $Project "Client (HL2SB)"
 		// TODO(port): Files/FileHandle need the helper layer above plus a decision on
 		// how they coexist with the Team Sandbox era `filesystem` library.
 		// Lua 5.1 API shims so the Team Sandbox era bindings build against 5.4
+		$File "$SRCDIR/public/lgameevents.cpp"
 		$File "$SRCDIR/public/lua_compat.cpp"
 
 		$File "lua/lc_baseanimating.cpp"
