@@ -4,33 +4,14 @@
 #pragma once
 #endif
 
-#ifdef CLIENT_DLL
-#include <util/bassmanager.h>
-
-/* type for IAudioChannel functions */
-typedef IAudioChannel lua_IAudioChannel;
-
 /*
-** access functions (stack -> C)
+** Ported from Experiment: Source (src/public/lsounds.h).
+**
+** Upstream this header also declares the AudioChannel userdata, which wraps
+** IAudioChannel from their util/bassmanager -- a binding layer over the BASS audio
+** library for streaming URLs and files (Sounds.PlayUrl / Sounds.PlayFile).  HL2SB
+** does not ship BASS or that manager, so only the Sounds library was ported; see
+** public/lsounds.cpp for what was kept and what was dropped.
 */
-
-LUA_API lua_IAudioChannel *( lua_toaudiochannel )( lua_State *L, int idx );
-
-/*
-** push functions (C -> stack)
-*/
-LUA_API void( lua_pushaudiochannel )( lua_State *L, lua_IAudioChannel *pData );
-
-LUALIB_API lua_IAudioChannel *( luaL_checkaudiochannel )( lua_State *L, int narg );
-
-class CPlayUrlCallbackData : public IBassManagerCallbackData
-{
-    public:
-    virtual void Release() OVERRIDE;
-
-    lua_State *L;
-    int callbackRef;
-};
-#endif
 
 #endif  // LSOUNDS_H

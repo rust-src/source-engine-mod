@@ -25,6 +25,7 @@
 #include "lrecipientfilter.h"
 #endif
 #include "lbaseplayer_shared.h"
+#include "lbasecombatweapon_shared.h"
 #include "lgametrace.h"
 #include "SoundEmitterSystem/lisoundemittersystembase.h"
 #include "lshareddefs.h"
@@ -61,6 +62,54 @@ LUA_API void lua_pushentity (lua_State *L, CBaseEntity *pEntity) {
   luaL_getmetatable(L, "CBaseEntity");
   lua_setmetatable(L, -2);
 }
+
+
+/* True when luaopen_* for that class has already installed its metatable. */
+static bool lua_hasmetatable (lua_State *L, const char *pszMetatableName) {
+  luaL_getmetatable(L, pszMetatableName);
+  bool bExists = lua_istable(L, -1);
+  lua_pop(L, 1);
+  return bExists;
+}
+
+
+/*
+** Experiment: Source entry point for pushing an entity to Lua (see
+** lbaseentity_shared.h and the declaration on CBaseEntity).  It resolves the
+** metatable from the dynamic type, so a player or a weapon that reaches Lua through
+** a generic API still carries the methods of its own class.  Falls back to the plain
+** entity push, which is also what NULL needs.
+*/
+#ifdef LUA_SDK
+void CBaseEntity::PushLuaInstanceSafe (lua_State *L, CBaseEntity *pEntity) {
+  if (pEntity == NULL) {
+    lua_pushentity(L, NULL);
+    return;
+  }
+
+  if (pEntity->IsPlayer()) {
+    CBasePlayer *pPlayer = ToBasePlayer(pEntity);
+    if (pPlayer != NULL && lua_hasmetatable(L, "CBasePlayer")) {
+      lua_pushplayer(L, pPlayer);
+      return;
+    }
+  }
+  else if (pEntity->IsWeapon()) {
+    if (lua_hasmetatable(L, "CBaseCombatWeapon")) {
+      lua_pushweapon(L, static_cast<CBaseCombatWeapon *>(pEntity));
+      return;
+    }
+  }
+  else if (pEntity->GetBaseAnimating() != NULL) {
+    if (lua_hasmetatable(L, "CBaseAnimating")) {
+      lua_pushanimating(L, pEntity->GetBaseAnimating());
+      return;
+    }
+  }
+
+  lua_pushentity(L, pEntity);
+}
+#endif  // LUA_SDK
 
 
 LUALIB_API lua_CBaseEntity *luaL_checkentity (lua_State *L, int narg) {

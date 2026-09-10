@@ -85,16 +85,17 @@ static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.
   {LUA_PARTICLESYSTEMLIBNAME, luaopen_ParticleSystem},
   {LUA_SYSTEMSLIBNAME, luaopen_Systems},
-  // TODO(port): Files / FileHandle / Sounds / AudioChannel / Entities are ported
-  // to disk but still need the helper layer from Experiment: Source
-  // (PushLuaInstanceSafe, CreatePredictedEntityByName, GET_FIELD_WITH_COMPATIBILITY,
-  // luaL_checkvector, SOUND_CHANNEL, bassmanager).  Re-enable them together with
-  // their $File entries in the vpcs once that layer lands.
+  // HL2SB: ported from Experiment: Source.  `Entities` is merged onto the same
+  // global table as the Team Sandbox era `ents` (Create/GetByIndex).
+  {LUA_ENTITIESLIBNAME, luaopen_Entities},
+  // HL2SB: ported from Experiment: Source.  AudioChannel and the URL/file
+  // streaming bindings were dropped -- they depend on their BASS manager.
+  {LUA_SOUNDSLIBNAME, luaopen_Sounds},
+  // TODO(port): Files / FileHandle still need a decision on how they coexist with
+  // the Team Sandbox era `filesystem` library (LUA_FILESYSTEMLIBNAME) before they
+  // can be registered.
   // {LUA_FILESLIBNAME, luaopen_Files},
   // {LUA_FILEHANDLEMETANAME, luaopen_FileHandle},
-  // {LUA_SOUNDSLIBNAME, luaopen_Sounds},
-  // {LUA_AUDIOCHANNELMETANAME, luaopen_AudioChannel},
-  // {LUA_ENTITIESLIBNAME, luaopen_Entities},
 #ifdef CLIENT_DLL
   {LUA_CLIENTENUMNAME, luaopen_ClientEnumerations},
 #else
@@ -114,6 +115,14 @@ static const luaL_Reg luasrclibs[] = {
 #endif
   {LUA_QANGLELIBNAME, luaopen_QAngle},
   {LUA_RANDOMLIBNAME, luaopen_random},
+#ifdef CLIENT_DLL
+  // HL2SB: ported from Experiment: Source.  `Renders` carries GMod's render.*
+  // (render.SetColorModulation, render.DrawSprite, render.PushRenderTarget, ...);
+  // the Lua content aliases the global `render` onto it.  ITexture is the userdata
+  // those bindings hand back, so its metatable is installed first.
+  {LUA_ITEXTUREMETANAME, luaopen_ITexture},
+  {LUA_RENDERSLIBNAME, luaopen_render},
+#endif
 #ifdef CLIENT_DLL
   {LUA_SCHEMELIBNAME, luaopen_scheme},
 #endif

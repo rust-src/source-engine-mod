@@ -16,7 +16,9 @@
 //-----------------------------------------------------------------------------
 // channels
 //-----------------------------------------------------------------------------
-enum
+// Named by Experiment: Source so the same enum can be used in a binding
+// signature; anonymous enums have no type to cast to (see lsounds.cpp).
+enum SOUND_CHANNEL
 {
 	CHAN_REPLACE	= -1,
 	CHAN_AUTO		= 0,
