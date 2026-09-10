@@ -67,6 +67,24 @@ class LTextEntry : public TextEntry
         LUA_CALL_PANEL_METHOD_BEGIN( "ApplySchemeSettings" );
         LUA_CALL_PANEL_METHOD_END( 0, 0 );
     }
+
+    /*
+    ** HL2SB: forward the mouse press to Lua.
+    **
+    ** LPanel does this and the scripted controls rely on it, but the ported TextEntry
+    ** only ever overrode ApplySchemeSettings, so a Lua OnMousePressed never ran on it.
+    ** That is what stopped Derma-style code from calling RequestFocus() -- and a vgui
+    ** control only receives typed characters once it is the focused panel, so the entry
+    ** selected its text on click and then ignored every keystroke.
+    */
+    virtual void OnMousePressed( MouseCode code )
+    {
+        BaseClass::OnMousePressed( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMousePressed" );
+            lua_pushinteger( m_lua_State, ( int )code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
 };
 
 }  // namespace vgui
