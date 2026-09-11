@@ -13,6 +13,10 @@
 #include "iclientmode.h"
 #include "ienginevgui.h"
 #include <vgui/IVGui.h>
+#include <vgui/IInput.h>
+#include <vgui/ISurface.h>
+#include <vgui/IPanel.h>
+#include <vgui/Cursor.h>
 #include "panelmetaclassmgr.h"
 #include <vgui_controls/PHandle.h>
 #include "luamanager.h"
@@ -1061,6 +1065,144 @@ static int Panel_SetZPos (lua_State *L) {
   return 0;
 }
 
+/*
+** ===========================================================================
+** HL2SB: the Panel methods GMod's own Derma controls call.
+**
+** lua/vgui/DFrame.lua (Garry's Mod's window class, shipped here byte for byte)
+** failed on the very first line of its Init:
+**
+**     ConCommand 'hl2sb_playermodel_gmod' Failed:
+**       lua/vgui/DFrame.lua:18: attempt to call a nil value (method 'SetFocusTopLevel')
+**     lua/vgui/DFrame.lua:246: attempt to index a nil value (field 'btnClose')
+**
+** The second error is the cascade: Init threw before btnClose was created, so
+** PerformLayout had nothing to position.  The rest of this block is the other
+** half of what DFrame (and every Derma panel that has a title bar) touches.
+** ===========================================================================
+*/
+
+// GMod's name; the engine call behind it is ISurface::SetTopLevelFocus( VPANEL ).
+static int Panel_SetFocusTopLevel (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  bool bTopLevel = luaL_optboolean(L, 2, 1);
+
+  if ( vgui::surface() ) {
+    vgui::surface()->SetTopLevelFocus(bTopLevel ? pPanel->GetVPanel() : (VPANEL)0);
+  }
+
+  return 0;
+}
+
+// GMod's cursors are named ("arrow", "sizeall", "sizenwse", ...); the engine
+// wants an HCursor.  Unknown names fall back to the normal arrow.
+static HCursor Panel_CursorFromName (const char *pName) {
+  if ( !pName || !pName[0] || !V_stricmp(pName, "arrow") ) return vgui::dc_arrow;
+  if ( !V_stricmp(pName, "hand") )      return vgui::dc_hand;
+  if ( !V_stricmp(pName, "sizeall") )   return vgui::dc_sizeall;
+  if ( !V_stricmp(pName, "sizenwse") )  return vgui::dc_sizenwse;
+  if ( !V_stricmp(pName, "sizenesw") )  return vgui::dc_sizenesw;
+  if ( !V_stricmp(pName, "sizewe") )    return vgui::dc_sizewe;
+  if ( !V_stricmp(pName, "sizens") )    return vgui::dc_sizens;
+  if ( !V_stricmp(pName, "text") )      return vgui::dc_ibeam;
+  if ( !V_stricmp(pName, "ibeam") )     return vgui::dc_ibeam;
+  if ( !V_stricmp(pName, "hourglass") ) return vgui::dc_hourglass;
+  if ( !V_stricmp(pName, "wait") )      return vgui::dc_hourglass;
+  if ( !V_stricmp(pName, "crosshair") ) return vgui::dc_crosshair;
+  if ( !V_stricmp(pName, "no") )        return vgui::dc_no;
+  return vgui::dc_arrow;
+}
+
+static int Panel_SetCursor (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+
+  if ( lua_type(L, 2) == LUA_TNUMBER ) {
+    pPanel->SetCursor((HCursor)lua_tointeger(L, 2));
+  } else {
+    pPanel->SetCursor(Panel_CursorFromName(luaL_checkstring(L, 2)));
+  }
+
+  return 0;
+}
+
+// Panel:MouseCapture( b ) -- what DFrame uses while dragging/resizing.
+static int Panel_MouseCapture (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  bool bCapture = luaL_optboolean(L, 2, 1);
+
+  if ( vgui::input() ) {
+    vgui::input()->SetMouseCapture(bCapture ? pPanel->GetVPanel() : (VPANEL)0);
+  }
+
+  return 0;
+}
+
+// GMod's Panel:Remove().  Panel::DeletePanel() is an immediate "delete this",
+// which is not safe to run from a Lua callback, so defer it like the engine's
+// own panels do.
+static int Panel_Remove (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+
+  if ( pPanel && vgui::ivgui() ) {
+    vgui::ivgui()->MarkPanelForDeletion(pPanel->GetVPanel());
+  }
+
+  return 0;
+}
+
+// GMod's global IsValid( object ) reads object.IsValid, so every metatable GMod
+// code passes to it needs the method (see lua/includes/extensions/gmod_isvalid.lua
+// for entities and players).  Reaching this method at all means the userdata
+// resolved to a live panel.
+static int Panel_IsValid (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  lua_pushboolean(L, pPanel != NULL && pPanel->GetVPanel() != 0);
+  return 1;
+}
+
+static void Panel_CenterParentSize (Panel *pPanel, int &nWide, int &nTall) {
+  nWide = nTall = 0;
+
+  VPANEL hParent = pPanel ? pPanel->GetVParent() : 0;
+  if ( hParent && vgui::ipanel() ) {
+    vgui::ipanel()->GetSize(hParent, nWide, nTall);
+  }
+
+  // Top level panels have the popup (the whole screen) as their parent, so this
+  // also covers "center on screen".
+  if ( (nWide <= 0 || nTall <= 0) && vgui::surface() ) {
+    vgui::surface()->GetScreenSize(nWide, nTall);
+  }
+}
+
+static int Panel_CenterVertical (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  float flFraction = (float)luaL_optnumber(L, 2, 0.5);
+  int nOffset = luaL_optint(L, 3, 0);
+
+  int nWide = 0, nTall = 0;
+  Panel_CenterParentSize(pPanel, nWide, nTall);
+
+  int x = 0, y = 0;
+  pPanel->GetPos(x, y);
+  pPanel->SetPos(x, (int)(nTall * flFraction - pPanel->GetTall() * flFraction) + nOffset);
+  return 0;
+}
+
+static int Panel_CenterHorizontal (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+  float flFraction = (float)luaL_optnumber(L, 2, 0.5);
+  int nOffset = luaL_optint(L, 3, 0);
+
+  int nWide = 0, nTall = 0;
+  Panel_CenterParentSize(pPanel, nWide, nTall);
+
+  int x = 0, y = 0;
+  pPanel->GetPos(x, y);
+  pPanel->SetPos((int)(nWide * flFraction - pPanel->GetWide() * flFraction) + nOffset, y);
+  return 0;
+}
+
 static int Panel_ShouldHandleInputMessage (lua_State *L) {
   lua_pushboolean(L, luaL_checkpanel(L, 1)->ShouldHandleInputMessage());
   return 1;
@@ -1079,8 +1221,13 @@ static int Panel___index (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+	/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LPanel *plPanel = dynamic_cast<LPanel *>(pPanel);
   if (plPanel && plPanel->m_nTableReference != LUA_NOREF) {
@@ -1142,8 +1289,13 @@ static int Panel___newindex (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-    lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-    return lua_error(L);
+    /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LPanel *plPanel = dynamic_cast<LPanel *>(pPanel);
   if (plPanel) {
@@ -1438,6 +1590,14 @@ static const luaL_Reg Panelmeta[] = {
   {"SetVisible", Panel_SetVisible},
   {"SetWide", Panel_SetWide},
   {"SetZPos", Panel_SetZPos},
+  // HL2SB: GMod's names for the rest of what Derma controls call.
+  {"SetFocusTopLevel", Panel_SetFocusTopLevel},
+  {"SetCursor", Panel_SetCursor},
+  {"MouseCapture", Panel_MouseCapture},
+  {"Remove", Panel_Remove},
+  {"IsValid", Panel_IsValid},
+  {"CenterVertical", Panel_CenterVertical},
+  {"CenterHorizontal", Panel_CenterHorizontal},
   {"ShouldHandleInputMessage", Panel_ShouldHandleInputMessage},
   {"StringToKeyCode", Panel_StringToKeyCode},
   {"__index", Panel___index},

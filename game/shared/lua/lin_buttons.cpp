@@ -25,8 +25,11 @@ LUALIB_API int luaopen_IN (lua_State *L) {
     lua_pushenum(L, IN_BACK, "BACK");
     lua_pushenum(L, IN_USE, "USE");
     lua_pushenum(L, IN_CANCEL, "CANCEL");
-    lua_pushenum(L, IN_LEFT, "LEFT");
-    lua_pushenum(L, IN_RIGHT, "RIGHT");
+    // HL2SB: published WITHOUT the bare shortname -- bare LEFT/RIGHT are GMod's
+    // DOCK enum (2 and 3), and every `panel:Dock( LEFT )` in Derma passes them.
+    // IN_LEFT / IN_RIGHT are still set.
+    lua_pushenum_nobare(L, IN_LEFT, "LEFT");
+    lua_pushenum_nobare(L, IN_RIGHT, "RIGHT");
     lua_pushenum(L, IN_MOVELEFT, "MOVELEFT");
     lua_pushenum(L, IN_MOVERIGHT, "MOVERIGHT");
     lua_pushenum(L, IN_ATTACK2, "ATTACK2");

@@ -30,7 +30,29 @@ using namespace vgui;
 CScriptedClientLuaPanel::CScriptedClientLuaPanel() : vgui::EditablePanel( NULL, "CScriptedClientLuaPanel")
 {
 	SetKeyBoardInputEnabled( false );
-	SetMouseInputEnabled( false );
+
+	// HL2SB: MOUSE input has to stay enabled on this panel.
+	//
+	// vgui2/vgui_controls/Panel.cpp::IsWithinTraverse() refuses to recurse into
+	// the children of a panel that does not take mouse input:
+	//
+	//     // also if it doesn't want mouse input its children can't get it either
+	//     if (!IsVisible() || !IsMouseInputEnabled()) return NULL;
+	//
+	// This panel is the parent of every scripted Lua panel.  Measured in game,
+	// the ancestor chain of a vgui.Create( "DFrame" ) is
+	//
+	//     DFrame -> CScriptedClientLuaPanel
+	//
+	// so with mouse input off -- what this constructor used to do -- every Derma
+	// panel drew perfectly and yet nothing inside it could be clicked: the player
+	// model list, its Apply button and every GMod addon panel were dead to the
+	// mouse.
+	//
+	// DisableMouseInputForThisPanel( true ) keeps this panel from ever becoming
+	// the mouse-over target itself, so it stays a pure pass-through container.
+	SetMouseInputEnabled( true );
+	DisableMouseInputForThisPanel( true );
 
 	SetProportional( true );
 }

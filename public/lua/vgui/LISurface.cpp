@@ -17,6 +17,8 @@
 #include "vgui_controls/lPanel.h"
 #include "materialsystem/imaterial.h"
 #include "lua/materialsystem/limaterial.h"
+#include "vgui/IInput.h"
+#include "ienginevgui.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -337,9 +339,100 @@ static int surface_SetMaterial (lua_State *L) {
   }
 
   IMaterial *pMaterial = luaL_checkmaterial(L, 1);
+
+  // NOTE: IMatSystemSurface::DrawSetTextureMaterial would be the direct call, but
+  // going through the g_pMatSystemSurface global from client.dll access-violates
+  // this fork (the deployed vgui2/MatSystemSurface is an older interface version,
+  // so the virtual slot does not match) -- verified with a minidump.  Bind by
+  // name instead: DrawSetTextureFile resolves the material through FindMaterial
+  // and hands that very material to the dictionary slot.
   surface()->DrawSetTextureFile( nMaterialDrawTextureID, pMaterial->GetName(), true, false );
   surface()->DrawSetTexture( nMaterialDrawTextureID );
   return 0;
+}
+
+// GMod: DisableClipping( bDisable ) -> boolean (the PREVIOUS state).
+//
+// lua/skins/default.lua:344 draws the DFrame shadow outside the panel with
+//
+//     local wasEnabled = DisableClipping( true )
+//     self.tex.Shadow( -4, -4, w + 10, h + 10 )
+//     DisableClipping( wasEnabled )
+//
+// so the return value matters.  The engine side of this is
+// IMatSystemSurface::DisableClipping, and reaching it through the
+// g_pMatSystemSurface global from client.dll access-violates (older interface
+// version in the deployed vgui2 -- same crash as DrawSetTextureMaterial above),
+// so the state is tracked here and reported back faithfully.  The only casualty
+// is that the 10px shadow bleed gets clipped at the frame's bounds.
+static int HL2SB_DisableClipping (lua_State *L) {
+  static bool s_bClippingDisabled = false;
+
+  bool bDisable = luaL_checkboolean(L, 1);
+  bool bWasDisabled = s_bClippingDisabled;
+
+  s_bClippingDisabled = bDisable;
+  lua_pushboolean(L, bWasDisabled ? 1 : 0);
+  return 1;
+}
+
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's gui.* library (client only).  See luaopen_surface.
+// ---------------------------------------------------------------------------
+static void HL2SB_GetCursorPos (int &x, int &y) {
+  x = y = 0;
+
+  if ( vgui::input() != NULL ) {
+    vgui::input()->GetCursorPos(x, y);
+  }
+}
+
+static int HL2SB_gui_MouseX (lua_State *L) {
+  int x = 0, y = 0;
+  HL2SB_GetCursorPos(x, y);
+  lua_pushinteger(L, x);
+  return 1;
+}
+
+static int HL2SB_gui_MouseY (lua_State *L) {
+  int x = 0, y = 0;
+  HL2SB_GetCursorPos(x, y);
+  lua_pushinteger(L, y);
+  return 1;
+}
+
+static int HL2SB_gui_ScreenWidth (lua_State *L) {
+  int w = 0, h = 0;
+
+  if ( surface() != NULL ) {
+    surface()->GetScreenSize(w, h);
+  }
+
+  lua_pushinteger(L, w);
+  return 1;
+}
+
+static int HL2SB_gui_ScreenHeight (lua_State *L) {
+  int w = 0, h = 0;
+
+  if ( surface() != NULL ) {
+    surface()->GetScreenSize(w, h);
+  }
+
+  lua_pushinteger(L, h);
+  return 1;
+}
+
+static int HL2SB_gui_IsConsoleVisible (lua_State *L) {
+  // GMod scripts use this to stop drawing while the console is up; the engine
+  // console's visibility is not exposed through ISurface, so answer "no".
+  lua_pushboolean(L, 0);
+  return 1;
+}
+
+static int HL2SB_gui_IsGameUIVisible (lua_State *L) {
+  lua_pushboolean(L, (enginevgui != NULL && enginevgui->IsGameUIVisible()) ? 1 : 0);
+  return 1;
 }
 
 static int surface_DrawSetTextureFile (lua_State *L) {
@@ -865,6 +958,35 @@ static const luaL_Reg surfacelib[] = {
 */
 LUALIB_API int luaopen_surface (lua_State *L) {
   luaL_register(L, LUA_SURFACELIBNAME, surfacelib);
+
+  // HL2SB: GMod's client global that lives on IMatSystemSurface.
+  lua_pushcfunction(L, HL2SB_DisableClipping);
+  lua_setglobal(L, "DisableClipping");
+
+  // HL2SB: GMod's gui.* library.
+  //
+  // lua/vgui/DFrame.lua:218 (DFrame:OnMousePressed) calls gui.MouseX()/MouseY()
+  // to start a drag, so a DFrame could not be dragged at all:
+  //
+  //   lua/vgui/DFrame.lua:218: attempt to index a nil value (global 'gui')
+  //
+  // Nothing else in this engine owns the name (the error above proves it was
+  // nil), so the table is built here, next to the other client-only globals.
+  lua_newtable(L);
+  lua_pushcfunction(L, HL2SB_gui_MouseX);
+  lua_setfield(L, -2, "MouseX");
+  lua_pushcfunction(L, HL2SB_gui_MouseY);
+  lua_setfield(L, -2, "MouseY");
+  lua_pushcfunction(L, HL2SB_gui_ScreenWidth);
+  lua_setfield(L, -2, "ScreenWidth");
+  lua_pushcfunction(L, HL2SB_gui_ScreenHeight);
+  lua_setfield(L, -2, "ScreenHeight");
+  lua_pushcfunction(L, HL2SB_gui_IsConsoleVisible);
+  lua_setfield(L, -2, "IsConsoleVisible");
+  lua_pushcfunction(L, HL2SB_gui_IsGameUIVisible);
+  lua_setfield(L, -2, "IsGameUIVisible");
+  lua_setglobal(L, "gui");
+
   return 1;
 }
 

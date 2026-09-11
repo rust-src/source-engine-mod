@@ -14,6 +14,14 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include <tier0/memdbgon.h>
 
+/*
+** HL2SB: the Lua callbacks for this class (Paint, PerformLayout, the mouse and
+** keyboard handlers, ...) are declared inline in scripted_controls/lLabel.h --
+** see the note there for why a missing dispatch makes every DButton unclickable.
+** They are inline so that this one translation unit, which is the only place an
+** LLabel is ever created, carries them all.
+*/
+
 using namespace vgui;
 
 //-----------------------------------------------------------------------------
@@ -376,8 +384,10 @@ LUA_BINDING_BEGIN( Label, __newindex, "class", "Metamethod that is called when a
         lua_getinfo( L, "fl", &ar1 );
         lua_Debug ar2;
         lua_getinfo( L, ">S", &ar2 );
-        lua_pushfstring( L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline );
-        return lua_error( L );
+        /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
+        (see lua/includes/util.lua:314-322, GMod's IsValid). */
+        lua_pushnil( L );
+        return 1;
     }
 
     LLabel *plLabel = dynamic_cast< LLabel * >( pLabel );

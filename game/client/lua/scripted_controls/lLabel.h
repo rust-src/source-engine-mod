@@ -79,6 +79,231 @@ class LLabel : public Label
 
         BaseClass::ApplySchemeSettings( pScheme );
     }
+
+    /*
+    ** HL2SB: the rest of the Lua callbacks for Label-derived controls.
+    **
+    ** GMod's Derma builds DLabel on this class and DButton on top of DLabel
+    ** (lua/vgui/dbutton.lua: derma.DefineControl( "DButton", ..., "DLabel" )), and
+    ** a Lua method that C++ never dispatches simply does not run.  Only
+    ** ApplySchemeSettings was wired up, so every DButton -- the player model
+    ** panel's Apply button, a DListView's drag bar, every addon button -- was
+    ** hoverable but unclickable: DButton:OnMousePressed/OnMouseReleased are what
+    ** set Depressed and call DoClick.  Measured in game before this: hovering the
+    ** button changed the cursor, clicking it produced no event at all, and
+    ** DButton:Paint (the skin background) never ran either.
+    **
+    ** Paint dispatches BEFORE BaseClass::Paint() because Label::Paint is what
+    ** draws the text: GMod's DButton:Paint paints the skin background first and
+    ** the engine text lands on top of it.
+    */
+    virtual void Paint()
+    {
+        LUA_CALL_PANEL_METHOD_BEGIN( "Paint" );
+            lua_pushinteger( m_lua_State, GetWide() );
+            lua_pushinteger( m_lua_State, GetTall() );
+        LUA_CALL_PANEL_METHOD_END( 2, 0 );
+
+        BaseClass::Paint();
+    }
+
+    virtual void PerformLayout()
+    {
+        BaseClass::PerformLayout();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "PerformLayout" );
+            lua_pushinteger( m_lua_State, GetWide() );
+            lua_pushinteger( m_lua_State, GetTall() );
+        LUA_CALL_PANEL_METHOD_END( 2, 0 );
+    }
+
+    virtual void ApplySettings( KeyValues *pKeyValues )
+    {
+        BaseClass::ApplySettings( pKeyValues );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "ApplySettings" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnThink()
+    {
+        BaseClass::OnThink();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnThink" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnMousePressed( MouseCode code )
+    {
+        BaseClass::OnMousePressed( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMousePressed" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnMouseReleased( MouseCode code )
+    {
+        BaseClass::OnMouseReleased( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseReleased" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnMouseDoublePressed( MouseCode code )
+    {
+        BaseClass::OnMouseDoublePressed( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseDoublePressed" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnMouseTriplePressed( MouseCode code )
+    {
+        BaseClass::OnMouseTriplePressed( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseTriplePressed" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    // Panel::OnMouseWheeled returns void in this fork (LPanel's override matches).
+    virtual void OnMouseWheeled( int delta )
+    {
+        BaseClass::OnMouseWheeled( delta );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseWheeled" );
+            lua_pushinteger( m_lua_State, delta );
+        LUA_CALL_PANEL_METHOD_END( 1, 1 );
+
+        RETURN_LUA_PANEL_NONE();
+    }
+
+    virtual void OnCursorEntered()
+    {
+        BaseClass::OnCursorEntered();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnCursorEntered" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnCursorExited()
+    {
+        BaseClass::OnCursorExited();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnCursorExited" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnCursorMoved( int x, int y )
+    {
+        BaseClass::OnCursorMoved( x, y );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnCursorMoved" );
+            lua_pushinteger( m_lua_State, x );
+            lua_pushinteger( m_lua_State, y );
+        LUA_CALL_PANEL_METHOD_END( 2, 0 );
+    }
+
+    virtual void OnKeyCodePressed( ButtonCode_t code )
+    {
+        BaseClass::OnKeyCodePressed( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnKeyCodePressed" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnKeyCodeReleased( ButtonCode_t code )
+    {
+        BaseClass::OnKeyCodeReleased( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnKeyCodeReleased" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnKeyCodeTyped( ButtonCode_t code )
+    {
+        BaseClass::OnKeyCodeTyped( code );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnKeyCodeTyped" );
+            lua_pushinteger( m_lua_State, code );
+        LUA_CALL_PANEL_METHOD_END( 1, 0 );
+    }
+
+    virtual void OnSetFocus()
+    {
+        BaseClass::OnSetFocus();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnSetFocus" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnKillFocus()
+    {
+        BaseClass::OnKillFocus();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnKillFocus" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnMouseFocusTicked()
+    {
+        BaseClass::OnMouseFocusTicked();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseFocusTicked" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnKeyFocusTicked()
+    {
+        BaseClass::OnKeyFocusTicked();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnKeyFocusTicked" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnMouseCaptureLost()
+    {
+        BaseClass::OnMouseCaptureLost();
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnMouseCaptureLost" );
+        LUA_CALL_PANEL_METHOD_END( 0, 0 );
+    }
+
+    virtual void OnSizeChanged( int nNewWide, int nNewTall )
+    {
+        BaseClass::OnSizeChanged( nNewWide, nNewTall );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnSizeChanged" );
+            lua_pushinteger( m_lua_State, nNewWide );
+            lua_pushinteger( m_lua_State, nNewTall );
+        LUA_CALL_PANEL_METHOD_END( 2, 0 );
+    }
+
+    virtual void OnScreenSizeChanged( int nOldWide, int nOldTall )
+    {
+        BaseClass::OnScreenSizeChanged( nOldWide, nOldTall );
+
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnScreenSizeChanged" );
+            lua_pushinteger( m_lua_State, nOldWide );
+            lua_pushinteger( m_lua_State, nOldTall );
+        LUA_CALL_PANEL_METHOD_END( 2, 0 );
+    }
+
+    virtual void OnCommand( const char *command )
+    {
+        LUA_CALL_PANEL_METHOD_BEGIN( "OnCommand" );
+            lua_pushstring( m_lua_State, command );
+        LUA_CALL_PANEL_METHOD_END( 1, 1 );
+
+        RETURN_LUA_PANEL_NONE();
+
+        BaseClass::OnCommand( command );
+    }
 };
 
 }  // namespace vgui

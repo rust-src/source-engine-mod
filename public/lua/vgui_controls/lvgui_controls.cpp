@@ -8,6 +8,10 @@
 #include "cbase.h"
 #include "lua.hpp"
 #include "lControls.h"
+#include "lPanel.h"
+#include "vgui/IInput.h"
+#include "vgui/IPanel.h"
+#include "vgui_controls/Panel.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -129,9 +133,40 @@ static int lua_vgui_GetAll (lua_State *L) {
   return 1;
 }
 
+/*
+** HL2SB: vgui.FocusedHasParent( panel )
+**
+** GMod's DFrame:IsActive() (lua/vgui/DFrame.lua:115) asks whether the keyboard
+** focus currently sits on the frame or on one of its children; without this
+** every DFrame reports itself inactive and its title bar renders with the
+** "inactive" colours.  Walk up the focus chain instead of adding anything to
+** ISurface.
+*/
+static int lua_vgui_FocusedHasParent (lua_State *L) {
+  Panel *pPanel = luaL_checkpanel(L, 1);
+
+  if (!pPanel || !vgui::input() || !vgui::ipanel()) {
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+
+  VPANEL hTarget = pPanel->GetVPanel();
+  VPANEL hFocused = vgui::input()->GetFocus();
+  bool bFound = false;
+
+  while (hFocused != 0) {
+    if (hFocused == hTarget) { bFound = true; break; }
+    hFocused = vgui::ipanel()->GetParent(hFocused);
+  }
+
+  lua_pushboolean(L, bFound ? 1 : 0);
+  return 1;
+}
+
 static const luaL_Reg vgui_funcs[] = {
   {"Create", lua_vgui_Create},
   {"GetAll", lua_vgui_GetAll},
+  {"FocusedHasParent", lua_vgui_FocusedHasParent},
   {NULL, NULL}
 };
 
