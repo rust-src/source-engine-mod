@@ -163,22 +163,32 @@ static int surface_CreateFont (lua_State *L) {
   if ( bAdditive )  iFlags |= ISurface::FONTFLAG_ADDITIVE;
   if ( bOutline )   iFlags |= ISurface::FONTFLAG_OUTLINE;
 
-  // GMod's "extended" pulls in the full Unicode range instead of stopping at
-  // Latin-1; Source spells that as an explicit glyph range.
-  int iRangeMin = 0;
-  int iRangeMax = 0;
-  if ( bExtended )
-  {
-    iRangeMin = 0x0000;
-    iRangeMax = 0xFFFF;
-  }
+  // GMod's "extended" is deliberately NOT translated into an explicit glyph
+  // range here, because in this engine the range arguments mean the opposite of
+  // what they look like.  vgui2's CFontManager::SetFontGlyphSet()
+  // (vgui2/vgui_surfacelib/FontManager.cpp:121-218) builds an AMALGAM:
+  //
+  //   range 0, 0 (default)  ->  requested face covers 0x0000-0x00FF,
+  //                             the foreign fallback face covers 0x0100-0xFFFF
+  //   range 0, 0xFFFF       ->  the requested face claims the WHOLE BMP and the
+  //                             fallback is never consulted
+  //
+  // so passing the full range would make e.g. Tahoma claim CJK and render it as
+  // missing-glyph boxes -- the exact opposite of "extended".  It also skips the
+  // glyph load in FontManager.  A face that is itself foreign-language capable
+  // (Microsoft YaHei, ...) gets the full range regardless of these arguments
+  // (FontManager.cpp:162-168), so nothing is lost.
+  //
+  // Net: always 0, 0.  `extended` is accepted and ignored, as GMod code passes
+  // it habitually.
+  (void)bExtended;
 
   HFont hFont = surface()->CreateFont();
-  if ( !surface()->SetFontGlyphSet( hFont, szFace, iTall, iWeight, iBlur, iScanlines, iFlags, iRangeMin, iRangeMax ) )
+  if ( !surface()->SetFontGlyphSet( hFont, szFace, iTall, iWeight, iBlur, iScanlines, iFlags ) )
   {
-    // The face name did not resolve.  Retry with the face the rest of the mod
-    // uses so the caller still gets a visible font instead of an empty one.
-    surface()->SetFontGlyphSet( hFont, "Verdana", iTall, iWeight, iBlur, iScanlines, iFlags, iRangeMin, iRangeMax );
+    // The face name did not resolve.  Retry with a face that always exists so
+    // the caller still gets a visible font instead of an empty one.
+    surface()->SetFontGlyphSet( hFont, "Verdana", iTall, iWeight, iBlur, iScanlines, iFlags );
   }
 
   LuaFont_Store( L, szName, hFont );
