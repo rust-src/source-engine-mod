@@ -216,9 +216,31 @@ static const luaL_Reg util_funcs[] = {
 };
 
 
+/*
+** HL2SB: GMod's SysTime() as an ENGINE global, on BOTH realms.
+**
+** GMod's SysTime() is a high precision monotonic clock in seconds.  HL2SB only
+** had the client-side Lua alias in lua/includes/extensions/gmod_globals.lua
+** (SysTime = SysTime or RealTime), so on the SERVER SysTime was nil -- which
+** silently disabled the undo de-duplication in lua/includes/modules/undo.lua
+** ("fail open" then let the twice-dispatched undo run twice, deleting entities
+** the first pass had already removed, and crash in server.dll with an execute
+** access violation).
+**
+** Plat_FloatTime() is exactly that clock and exists on both realms.
+*/
+static int luasrc_SysTime (lua_State *L) {
+  lua_pushnumber(L, Plat_FloatTime());
+  return 1;
+}
+
 LUALIB_API int luaopen_UTIL_shared (lua_State *L) {
   // luaL_register(L, "_G", util_funcs);
   luaL_register(L, "util", util_funcs);
+
+  lua_pushcfunction(L, luasrc_SysTime);
+  lua_setglobal(L, "SysTime");
+
   return 1;
 }
 
