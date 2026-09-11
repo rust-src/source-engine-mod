@@ -50,7 +50,8 @@ $Configuration
 	
 	$Compiler
 	{
-		$AdditionalIncludeDirectories	"$BASE;.\;$SRCDIR\game\shared;$SRCDIR\utils\common;$SRCDIR\game\shared\econ;$SRCDIR\game\server\NextBot"
+		// $SRCDIR\game\shared\hl2sb is for hl2sb_gma.h (HL2SB .gma addon archives)
+		$AdditionalIncludeDirectories	"$BASE;.\;$SRCDIR\game\shared;$SRCDIR\game\shared\hl2sb;$SRCDIR\utils\common;$SRCDIR\game\shared\econ;$SRCDIR\game\server\NextBot"
 		$PreprocessorDefinitions		"$BASE;GAME_DLL;VECTOR;VERSION_SAFE_STEAM_API_INTERFACES;PROTECTED_THINGS_ENABLE;strncpy=use_Q_strncpy_instead;_snprintf=use_Q_snprintf_instead"
 		$PreprocessorDefinitions		"$BASE;SWDS" [$POSIX]
 		$PreprocessorDefinitions		"$BASE;" [$WINDOWS||$X360]

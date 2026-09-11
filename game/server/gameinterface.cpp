@@ -121,6 +121,7 @@ extern ConVar tf_mm_servermode;
 #include "luamanager.h"
 #include "luacachefile.h"
 #include "mountaddons.h"
+#include "hl2sb_gma.h"
 #endif
 
 #ifdef CSTRIKE_DLL // BOTPORT: TODO: move these ifdefs out
@@ -966,6 +967,13 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 
 	// Add Lua environment
 	luasrc_init();
+
+	// HL2SB: unpack and mount any addons/*.gma before a single Lua file is read,
+	// so a Garry's Mod .gma addon behaves like a plain addons/<name>/ folder and
+	// its lua/autorun, lua/weapons, materials and models all come up in this
+	// session (runtime AddSearchPath IS walked by FindFirstEx).  The client calls
+	// the same function; the .hl2sb_gma marker makes the second call cheap.
+	HL2SB_MountGMAAddons();
 
 	// HL2SB: see the client call site -- extensions/ is scanned before modules/,
 	// and extensions/util/worldpicker.lua:40 indexes `hook` at load time, so the

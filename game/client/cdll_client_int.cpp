@@ -168,6 +168,7 @@ extern vgui::IInputInternal *g_InputInternal;
 #include "luamanager.h"
 #include "luacachefile.h"
 #include "mountaddons.h"
+#include "hl2sb_gma.h"
 #endif
 
 #ifdef PORTAL
@@ -1645,6 +1646,13 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 //	}
 
 	luasrc_init();
+
+	// HL2SB: unpack and mount any addons/*.gma before a single Lua file is read,
+	// so a Garry's Mod .gma addon behaves like a plain addons/<name>/ folder and
+	// its lua/autorun, lua/weapons, materials and models all come up in this
+	// session (runtime AddSearchPath IS walked by FindFirstEx).  The server calls
+	// the same function; the .hl2sb_gma marker makes the second call cheap.
+	HL2SB_MountGMAAddons();
 
 	if ( gpGlobals->maxClients > 1 )
 	{
