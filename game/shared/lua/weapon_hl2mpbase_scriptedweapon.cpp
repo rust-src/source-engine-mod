@@ -299,6 +299,26 @@ void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 		lua_pop( L, 1 );
 	}
 
+	// HL2SB GMod SWEP compat: GMod's engine calls SWEP:SetupDataTables() while it
+	// sets a weapon up, and that is where SWEP:NetworkVar() declares the
+	// per-instance accessors the script uses (weapon_medkit declares
+	// LastAmmoRegen, for one).  Skipping the call left every such method nil, so
+	// the weapon's Think() threw "attempt to call a nil value (method
+	// 'GetLastAmmoRegen')" once per frame, forever.
+	if ( lua_istable( L, -1 ) )
+	{
+		lua_getfield( L, -1, "SetupDataTables" );
+		if ( lua_isfunction( L, -1 ) )
+		{
+			lua_pushvalue( L, -2 );		// self: the weapon's Lua table
+			luasrc_pcall( L, 1, 0, 0 );
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+
 	m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );
 #ifndef CLIENT_DLL
 	m_pLuaWeaponInfo->bParsedScript = true;
