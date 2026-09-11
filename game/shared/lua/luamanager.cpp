@@ -14,6 +14,7 @@
 #ifdef _WIN32
 extern "C" __declspec( dllimport ) int __stdcall MessageBoxA( void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType );
 extern "C" void __cdecl _exit( int nCode );
+extern "C" void __cdecl abort( void );
 #define HL2SB_MB_OK         0x00000000u
 #define HL2SB_MB_ICONERROR  0x00000010u
 #endif
@@ -369,8 +370,14 @@ static int HL2SB_LuaPanic( lua_State *pL )
 	}
 #endif
 
-	// Do not return into Lua with a broken stack.
-	_exit( 5 );
+	// Do NOT return into Lua -- the stack is unusable.
+	//
+	// abort() rather than _exit(): the Lua-side traceback above is usually empty
+	// (the CallInfo chain is already unwound by the time the panic runs), so the
+	// only way to see WHERE this came from is the NATIVE stack.  abort() reaches
+	// the SIGABRT handler in hl2sb_crash_handler.cpp, which captures that stack
+	// and writes a minidump.
+	abort();
 	return 0;
 }
 
