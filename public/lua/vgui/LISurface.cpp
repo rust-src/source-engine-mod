@@ -331,8 +331,15 @@ static int surface_DrawSetTexture (lua_State *L) {
 // through FindMaterial() and hands the dictionary slot the very material we were
 // passed.  One slot is reused for the life of the process, so painting every
 // frame does not leak texture ids.
+// HL2SB: the vgui texture slot used by surface.SetMaterial is created in
+// luaopen_surface(), NOT here: creating it lazily means doing it mid-frame while
+// a Derma panel paints (the undo notice is the first one that paints through the
+// skin), and creating surface resources inside the render context is where this
+// build faults.  The fallback below only covers "library open did not run".
+static int s_nMaterialDrawTextureID = -1;
+
 static int surface_SetMaterial (lua_State *L) {
-  static int nMaterialDrawTextureID = -1;
+  int &nMaterialDrawTextureID = s_nMaterialDrawTextureID;
 
   if ( nMaterialDrawTextureID == -1 ) {
     nMaterialDrawTextureID = surface()->CreateNewTextureID();
@@ -958,6 +965,11 @@ static const luaL_Reg surfacelib[] = {
 */
 LUALIB_API int luaopen_surface (lua_State *L) {
   luaL_register(L, LUA_SURFACELIBNAME, surfacelib);
+
+  // HL2SB: create the surface.SetMaterial texture slot here, outside of any paint.
+  if ( s_nMaterialDrawTextureID == -1 ) {
+    s_nMaterialDrawTextureID = surface()->CreateNewTextureID();
+  }
 
   // HL2SB: GMod's client global that lives on IMatSystemSurface.
   lua_pushcfunction(L, HL2SB_DisableClipping);
