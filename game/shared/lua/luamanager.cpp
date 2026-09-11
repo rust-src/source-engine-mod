@@ -551,7 +551,10 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 	{
 		int iFallback = luaL_dofile(L, filename);
 		if (iFallback != 0) {
-			Warning( "%s\n", lua_tostring(L, -1) );
+			// HL2SB: greppable marker.  Bulk-importing GMod's derma/ or vgui/
+			// (100+ files) has to be triageable from the log alone, so every
+			// load failure names its own file.
+			Warning( "[Lua] FAILED %s: %s\n", filename, lua_tostring(L, -1) );
 			lua_pop(L, 1);
 		}
 		return iFallback;
@@ -658,7 +661,7 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 	if ( iError == 0 )
 		iError = lua_pcall( L, 0, LUA_MULTRET, 0 );
 	if ( iError != 0 ) {
-		Warning( "%s\n", lua_tostring(L, -1) );
+		Warning( "[Lua] FAILED %s: %s\n", filename, lua_tostring(L, -1) );
 		lua_pop(L, 1);
 	}
 	free( pOut );
@@ -674,6 +677,12 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 
 	char const *fn = g_pFullFileSystem->FindFirstEx( searchPath, "MOD", &fh );
 	int nLoaded = 0;
+	// HL2SB: count failures, and restore the stack after every file.  A chunk
+	// that returns something at top level (LUA_MULTRET) would otherwise leave
+	// its results behind, one more slot per file -- the same class of silent
+	// stack leak that took the HUD down (see AGENTS.md 5.4.2).
+	int nFailed = 0;
+	const int nTop = lua_gettop( L );
 	while ( fn )
 	{
 		if ( fn[0] != '.' )
@@ -687,9 +696,11 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 				char loadname[ 512 ];
 				Q_snprintf( relative, sizeof( relative ), "%s/%s", path, fn );
 				filesystem->RelativePathToFullPath( relative, "MOD", loadname, sizeof( loadname ) );
-				// HL2SB: load diagnostics - "which client Lua files actually ran".
+				// HL2SB: load diagnostics - "which Lua files actually ran".
 				Msg( "[Lua]   %s\n", relative );
-				luasrc_dofile( L, loadname );
+				if ( luasrc_dofile( L, loadname ) != 0 )
+					++nFailed;
+				lua_settop( L, nTop );
 				++nLoaded;
 			}
 		}
@@ -697,7 +708,10 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 		fn = g_pFullFileSystem->FindNext( fh );
 	}
 	g_pFullFileSystem->FindClose( fh );
-	Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
+	if ( nFailed > 0 )
+		Warning( "[Lua] %s -> %d file(s), %d FAILED\n", path, nLoaded, nFailed );
+	else
+		Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
 }
 
 //-----------------------------------------------------------------------------
@@ -771,15 +785,24 @@ LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecur
 		files.Sort( CompareLuaFileNames );
 	}
 
+	int nFailed = 0;
+	const int nTop = lua_gettop( L );
 	for ( int i = 0; i < files.Count(); ++i )
 	{
 		char loadname[ 512 ];
 		filesystem->RelativePathToFullPath( files[i].Get(), "MOD", loadname, sizeof( loadname ) );
 		Msg( "[Lua]   %s\n", files[i].Get() );
-		luasrc_dofile( L, loadname );
+		if ( luasrc_dofile( L, loadname ) != 0 )
+			++nFailed;
+		// HL2SB: a chunk that returns at top level would otherwise leave one
+		// more value on the stack per file (AGENTS.md 5.4.2).
+		lua_settop( L, nTop );
 	}
 
-	Msg( "[Lua] %s -> %d file(s)%s\n", path, files.Count(), bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
+	if ( nFailed > 0 )
+		Warning( "[Lua] %s -> %d file(s), %d FAILED%s\n", path, files.Count(), nFailed, bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
+	else
+		Msg( "[Lua] %s -> %d file(s)%s\n", path, files.Count(), bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
 }
 
 /*

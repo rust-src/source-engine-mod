@@ -1656,6 +1656,19 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 
 	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
 	luasrc_dofolder( L, LUA_PATH_MODULES );
+
+	// HL2SB: GMod keeps its bootstrap files (init.lua, util.lua, vgui_base.lua)
+	// directly in lua/includes/, and its init.lua runs before everything else.
+	// Here it runs AFTER extensions/modules on purpose: GMod's Material() is a
+	// C global there, while HL2SB still provides it as a Lua shim in
+	// extensions/gmod_surface.lua, and lua/includes/util.lua captures Material
+	// at load time -- running first would make it capture nil and install a
+	// wrapper that throws on every call.
+	// TODO(port): make Material a real engine binding, then move this call back
+	// to the top of the pass (see the plan's "engine-side" rule).
+	// Sorted, non-recursive -- extensions/ and modules/ are handled above.
+	luasrc_dofolder_sorted( L, LUA_PATH_INCLUDES, false );
+
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_CLIENT );
 
