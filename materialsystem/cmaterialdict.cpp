@@ -105,6 +105,15 @@ IMaterialInternal* CMaterialDict::AddMaterial( char const* pName, const char *pT
 	IMaterialInternal *pMaterial = IMaterialInternal::CreateMaterial( pName, pTextureGroupName );
 	Assert( pMaterial && pMaterial->IsRealTimeVersion() );
 	AddMaterialToMaterialList( pMaterial );
+
+	// HL2SB diagnostic: every material the dictionary gains, so a duplicate name
+	// (a material with no shader params while another one with the same name is
+	// properly precached) can be traced to the exact creation.
+	if ( !Q_strnicmp( pName, "gwenskin", 8 ) )
+	{
+		Msg( "[HL2SB] AddMaterial( '%s' ) -> %p\n", pName, pMaterial );
+	}
+
 	return pMaterial;
 }
 
