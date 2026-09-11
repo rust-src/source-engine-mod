@@ -39,6 +39,7 @@
 #define MATSYS_INTERNAL
 #include "cmatlightmaps.h"
 #include "cmaterialsystem.h"
+#include "hl2sb_pngtexture.h"
 #undef MATSYS_INTERNAL
 
 #include "tier0/memdbgon.h"
@@ -2039,6 +2040,52 @@ ITextureInternal *CTextureManager::CreateProceduralTexture(
 //-----------------------------------------------------------------------------
 ITextureInternal *CTextureManager::LoadTexture( const char *pTextureName, const char *pTextureGroupName, int nAdditionalCreationFlags /* = 0 */, bool bDownload /* = true */  )
 {
+	// HL2SB: GMod-style image textures.  GMod content points a texture name or a
+	// $basetexture straight at a .png; stock Source on its own only ever looks
+	// for "materials/<name>.vtf" and hands back the error material instead.
+	// A .vtf still wins when both exist - this is a fallback, not a replacement.
+	char szCleanName[MAX_PATH];
+	NormalizeTextureName( pTextureName, szCleanName, sizeof( szCleanName ) );
+
+	char szVTFFile[MAX_PATH];
+	Q_snprintf( szVTFFile, sizeof( szVTFFile ), "materials/%s.vtf", szCleanName );
+
+	char szImageName[MAX_PATH];
+	if ( !g_pFullFileSystem->FileExists( szVTFFile, "GAME" ) &&
+		 HL2SB_ResolveImageTexture( pTextureName, szImageName, sizeof( szImageName ) ) )
+	{
+		int nImageWidth = 0, nImageHeight = 0;
+		ITextureRegenerator *pImageRegenerator = HL2SB_CreateImageTextureRegenerator( szImageName, &nImageWidth, &nImageHeight );
+		if ( pImageRegenerator )
+		{
+			// The regenerator supplies every mip level, so the texture is created
+			// exactly like the built-in procedural ones (error / white / black).
+			ITextureInternal *pImageTexture = ITextureInternal::CreateProceduralTexture( pTextureName, pTextureGroupName,
+				nImageWidth, nImageHeight, 1, IMAGE_FORMAT_RGBA8888, 0, pImageRegenerator );
+
+			if ( pImageTexture )
+			{
+				Msg( "[HL2SB] image texture \"%s\" (%dx%d)\n", pTextureName, nImageWidth, nImageHeight );
+
+				int iIndex = m_TextureExcludes.Find( pImageTexture->GetName() );
+				if ( m_TextureExcludes.IsValidIndex( iIndex ) )
+				{
+					int nDimensionsLimit = m_TextureExcludes[iIndex];
+					pImageTexture->MarkAsExcluded( ( nDimensionsLimit == 0 ), nDimensionsLimit );
+				}
+
+				if ( bDownload )
+					pImageTexture->Download( NULL, nAdditionalCreationFlags );
+
+				// NOTE: the caller (FindOrLoadTexture) inserts us into the texture
+				// dictionary, same as it does for file textures.
+				return pImageTexture;
+			}
+
+			pImageRegenerator->Release();
+		}
+	}
+
 	ITextureInternal *pNewTexture = ITextureInternal::CreateFileTexture( pTextureName, pTextureGroupName );
 	if ( pNewTexture )
 	{

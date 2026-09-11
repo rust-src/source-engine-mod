@@ -3,6 +3,10 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "litexture.h"
+#include "lua/materialsystem/limaterial.h"
+#include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialvar.h"
+#include "filesystem.h"
 #ifdef CLIENT_DLL
 #include "rendertexture.h"
 #include "view_scene.h"
@@ -143,6 +147,24 @@ LUA_BINDING_BEGIN( Texture, GetMappingHeight, "class", "Gets the mapping height 
 }
 LUA_BINDING_END( "integer", "The mapping height of the texture." )
 
+// HL2SB: GMod's names for the same thing.  lua/derma/derma_gwen.lua:14 calls
+// tex:Width() / tex:Height() while it builds the nine-slice skin borders.
+LUA_BINDING_BEGIN( Texture, Width, "class", "Gets the width of the texture." )
+{
+    lua_ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+    lua_pushinteger( L, pTexture->GetActualWidth() );
+    return 1;
+}
+LUA_BINDING_END( "integer", "The width of the texture." )
+
+LUA_BINDING_BEGIN( Texture, Height, "class", "Gets the height of the texture." )
+{
+    lua_ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
+    lua_pushinteger( L, pTexture->GetActualHeight() );
+    return 1;
+}
+LUA_BINDING_END( "integer", "The height of the texture." )
+
 LUA_BINDING_BEGIN( Texture, GetNumAnimationFrames, "class", "Gets the number of animation frames of the texture." )
 {
     lua_ITexture *pTexture = LUA_BINDING_ARGUMENT( luaL_checkitexture, 1, "texture" );
@@ -200,6 +222,222 @@ LUA_BINDING_BEGIN( Texture, __tostring, "class", "Returns a string representatio
 LUA_BINDING_END()
 
 /*
+** HL2SB: GMod's IMaterial surface.
+**
+** These live here instead of in the shared public/lua/materialsystem/limaterial.cpp
+** because this file is the client-only owner of the ITexture userdata that
+** IMaterial:GetTexture has to hand back.  luaopen_IMaterial() runs earlier in
+** luasrc_openLibs(), so the metatable below already exists when we extend it.
+*/
+static int HL2SB_IMaterial_GetTexture( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    const char *pTextureVarName = luaL_checkstring( L, 2 );
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial ? pMaterial->FindVar( pTextureVarName, &bFound, false ) : NULL;
+    ITexture *pTexture = ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+
+    if ( !pTexture )
+    {
+        lua_pushnil( L );
+        return 1;
+    }
+
+    lua_pushitexture( L, pTexture );
+    return 1;
+}
+
+static ITexture *HL2SB_MaterialBaseTexture( IMaterial *pMaterial )
+{
+    if ( !pMaterial )
+        return NULL;
+
+    bool bFound = false;
+    IMaterialVar *pVar = pMaterial->FindVar( "$basetexture", &bFound, false );
+    return ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+}
+
+static int HL2SB_IMaterial_Width( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    ITexture *pTexture = HL2SB_MaterialBaseTexture( pMaterial );
+    lua_pushinteger( L, pTexture ? pTexture->GetActualWidth() : 0 );
+    return 1;
+}
+
+static int HL2SB_IMaterial_Height( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    ITexture *pTexture = HL2SB_MaterialBaseTexture( pMaterial );
+    lua_pushinteger( L, pTexture ? pTexture->GetActualHeight() : 0 );
+    return 1;
+}
+
+static int HL2SB_IMaterial_IsError( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    lua_pushboolean( L, pMaterial ? pMaterial->IsErrorMaterial() : true );
+    return 1;
+}
+
+/*
+** IMaterial:GetColor( x, y )
+**
+** GMod's Derma skin samples its own atlas for every UI colour it uses
+** (lua/skins/default.lua -> GWEN.TextureColor -> mat:GetColor(x, y)), and that
+** atlas is a PNG.  The engine's IMaterial::GetLowResColorSample() only knows how
+** to read a VTF's embedded low-res image, so a .png material would sample as
+** black.  Decode the image here (stb_image, cached) and read the exact pixel;
+** anything that is not an image texture still goes through the engine.
+*/
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
+#define STBI_NO_PSD
+#define STBI_NO_GIF
+#define STBI_NO_PIC
+#define STBI_NO_PNM
+#include "../thirdparty/stb/stb_image.h"
+
+struct HL2SB_ImageColorCache_t
+{
+    char m_szTextureName[MAX_PATH];
+    int m_nWidth;
+    int m_nHeight;
+    CUtlVector< unsigned char > m_RGBA;
+};
+
+static CUtlVector< HL2SB_ImageColorCache_t * > s_ImageColorCache;
+
+static const char *s_pImageTextureExtensions[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
+
+static HL2SB_ImageColorCache_t *HL2SB_FindCachedImage( const char *pTextureName )
+{
+    for ( int i = 0; i < s_ImageColorCache.Count(); ++i )
+    {
+        if ( !Q_stricmp( s_ImageColorCache[i]->m_szTextureName, pTextureName ) )
+            return s_ImageColorCache[i];
+    }
+
+    return NULL;
+}
+
+// Returns NULL when the texture is not backed by an image file.
+static HL2SB_ImageColorCache_t *HL2SB_GetImageColorCache( const char *pTextureName )
+{
+    if ( !pTextureName || !pTextureName[0] )
+        return NULL;
+
+    HL2SB_ImageColorCache_t *pCached = HL2SB_FindCachedImage( pTextureName );
+    if ( pCached )
+        return pCached->m_nWidth > 0 ? pCached : NULL;
+
+    // Record the miss so a non-image texture is only probed for once.
+    pCached = new HL2SB_ImageColorCache_t;
+    Q_strncpy( pCached->m_szTextureName, pTextureName, sizeof( pCached->m_szTextureName ) );
+    pCached->m_nWidth = 0;
+    pCached->m_nHeight = 0;
+    s_ImageColorCache.AddToTail( pCached );
+
+    for ( int i = 0; i < ARRAYSIZE( s_pImageTextureExtensions ); ++i )
+    {
+        char szPath[MAX_PATH];
+        Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pTextureName, s_pImageTextureExtensions[i] );
+
+        if ( !g_pFullFileSystem->FileExists( szPath, "GAME" ) )
+            continue;
+
+        CUtlBuffer bufFile;
+        if ( !g_pFullFileSystem->ReadFile( szPath, "GAME", bufFile ) || bufFile.TellPut() <= 0 )
+            continue;
+
+        int nWidth = 0, nHeight = 0, nChannels = 0;
+        unsigned char *pRGBA = stbi_load_from_memory( (const stbi_uc *)bufFile.Base(), bufFile.TellPut(), &nWidth, &nHeight, &nChannels, 4 );
+
+        if ( !pRGBA || nWidth <= 0 || nHeight <= 0 )
+        {
+            if ( pRGBA )
+                stbi_image_free( pRGBA );
+            continue;
+        }
+
+        pCached->m_nWidth = nWidth;
+        pCached->m_nHeight = nHeight;
+        pCached->m_RGBA.SetSize( nWidth * nHeight * 4 );
+        Q_memcpy( pCached->m_RGBA.Base(), pRGBA, (size_t)nWidth * nHeight * 4 );
+        stbi_image_free( pRGBA );
+        return pCached;
+    }
+
+    return NULL;
+}
+
+static int HL2SB_IMaterial_GetColor( lua_State *L )
+{
+    IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
+    int x = luaL_checkint( L, 2 );
+    int y = luaL_checkint( L, 3 );
+
+    ITexture *pTexture = HL2SB_MaterialBaseTexture( pMaterial );
+
+    if ( pTexture )
+    {
+        HL2SB_ImageColorCache_t *pImage = HL2SB_GetImageColorCache( pTexture->GetName() );
+
+        if ( pImage )
+        {
+            // GMod samples with pixel coordinates and clamps out-of-range reads.
+            x = Clamp( x, 0, pImage->m_nWidth - 1 );
+            y = Clamp( y, 0, pImage->m_nHeight - 1 );
+
+            const unsigned char *pPixel = &pImage->m_RGBA[( y * pImage->m_nWidth + x ) * 4];
+            lua_pushcolor( L, Color( pPixel[0], pPixel[1], pPixel[2], pPixel[3] ) );
+            return 1;
+        }
+
+        // VTF-backed material: the engine's own low-res sampling, normalised by
+        // the texture size because GetLowResColorSample takes UVs.
+        int nWidth = pTexture->GetActualWidth();
+        int nHeight = pTexture->GetActualHeight();
+
+        if ( nWidth > 0 && nHeight > 0 )
+        {
+            float color[3] = { 0.0f, 0.0f, 0.0f };
+            pTexture->GetLowResColorSample( (float)x / (float)nWidth, (float)y / (float)nHeight, color );
+            lua_pushcolor( L, Color( (int)( color[0] * 255.0f ), (int)( color[1] * 255.0f ), (int)( color[2] * 255.0f ), 255 ) );
+            return 1;
+        }
+    }
+
+    lua_pushcolor( L, Color( 255, 255, 255, 255 ) );
+    return 1;
+}
+
+/*
+** GMod's global Material( path ).  It has to be installed before
+** lua/includes/extensions/gmod_surface.lua runs, because that file only
+** installs its Lua material proxy "if ( Material == nil )".  Missing materials
+** come back as the error material (mat:IsError() == true), which is what GMod
+** hands out too.
+*/
+static int HL2SB_Material( lua_State *L )
+{
+    const char *pMaterialName = luaL_checkstring( L, 1 );
+    IMaterial *pMaterial = materials->FindMaterial( pMaterialName, TEXTURE_GROUP_VGUI, false );
+
+    if ( !pMaterial )
+    {
+        lua_pushnil( L );
+        return 1;
+    }
+
+    lua_pushmaterial( L, pMaterial );
+    return 1;
+}
+
+/*
 ** Open render ITexture metatable
 */
 LUALIB_API int luaopen_ITexture( lua_State *L )
@@ -212,5 +450,33 @@ LUALIB_API int luaopen_ITexture( lua_State *L )
     lua_setfield( L, -2, "__index" ); /* metatable.__index = metatable */
     lua_pushstring( L, LUA_ITEXTUREMETANAME );
     lua_setfield( L, -2, "__type" ); /* metatable.__type = "Texture" */
+
+    /* HL2SB: extend the IMaterial metatable with GMod's names. */
+    luaL_getmetatable( L, LUA_MATERIALLIBNAME );
+    if ( lua_istable( L, -1 ) )
+    {
+        lua_pushcfunction( L, HL2SB_IMaterial_GetTexture );
+        lua_setfield( L, -2, "GetTexture" );
+
+        lua_pushcfunction( L, HL2SB_IMaterial_Width );
+        lua_setfield( L, -2, "Width" );
+
+        lua_pushcfunction( L, HL2SB_IMaterial_Height );
+        lua_setfield( L, -2, "Height" );
+
+        lua_pushcfunction( L, HL2SB_IMaterial_IsError );
+        lua_setfield( L, -2, "IsError" );
+
+        // Overrides limaterial.cpp's version, which can only read VTF low-res
+        // images (and therefore samples .png materials as black).
+        lua_pushcfunction( L, HL2SB_IMaterial_GetColor );
+        lua_setfield( L, -2, "GetColor" );
+    }
+    lua_pop( L, 1 );
+
+    /* HL2SB: GMod's Material( path ) constructor. */
+    lua_pushcfunction( L, HL2SB_Material );
+    lua_setglobal( L, "Material" );
+
     return 1;
 }
