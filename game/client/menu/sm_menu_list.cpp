@@ -29,6 +29,12 @@
 
 using namespace vgui;
 
+// HL2SB: the spawn menu's weapon page hands weapons/items to the player, the way
+// GMod's spawnmenu does.  Set to 0 for the engine's original behaviour, where the
+// entity was created in the world in front of the player and had to be picked up.
+// (Declared before CSMList because InitEntities() below reads it.)
+ConVar sm_menu_give("sm_menu_give", "1", FCVAR_CLIENTDLL, "SMenu: give weapons/items instead of spawning them");
+
 class CSMList : public vgui::PanelListPanel
 {
 public:
@@ -103,34 +109,52 @@ public:
 	{
 		for ( KeyValues *control = kv->GetFirstSubKey(); control != NULL; control = control->GetNextKey() )
 		{
-			const char *entname; 
+			const char *entname = NULL;
 
 			if ( !Q_strcasecmp( control->GetName(), "entity" ) )
 			{
 				entname = control->GetString();
 			}
 
-			if( Q_strncmp( entname, enttype, Q_strlen(enttype) ) == 0 )
-			{
-				if ( entname && entname[0] )
-				{
-					char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], file[MAX_PATH];
-					
-					Q_snprintf( entspawn, sizeof(entspawn), "ent_create %s", entname );
-					Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
-					Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
-					Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
-					Q_snprintf( vmt, sizeof( vmt ), "materials/vgui/smenu/%s.vmt", entname );
-					Q_snprintf( file, sizeof( file ), "hl2sb/%s", vmt );
+			// HL2SB: entname used to be left uninitialised for every key that is
+			// not an "entity" key, so the Q_strncmp() below compared garbage.
+			if ( !entname || !entname[0] )
+				continue;
 
-					if ( filesystem->FileExists( vtf ) && filesystem->FileExists( vmt ) )
-					{
-						AddImageButton( panel, normalImage, entspawn );
-						continue;
-					}
-				}
+			if ( Q_strncmp( entname, enttype, Q_strlen( enttype ) ) != 0 )
+				continue;
+
+			char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], png[MAX_PATH];
+
+			// HL2SB: a weapon/item/ammo belongs in the player's hands (GMod's
+			// spawnmenu gives them); anything else is created in the world.  The
+			// old behaviour is still reachable with sm_menu_give 0.
+			const bool bGive = sm_menu_give.GetBool() &&
+				( !Q_strnicmp( entname, "weapon_", 7 ) || !Q_strnicmp( entname, "item_", 5 ) || !Q_strnicmp( entname, "ammo_", 5 ) );
+
+			Q_snprintf( entspawn, sizeof(entspawn), "%s %s", bGive ? "give" : "ent_create", entname );
+			Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
+			Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
+			Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
+			Q_snprintf( vmt, sizeof( vmt ), "materials/vgui/smenu/%s.vmt", entname );
+			// HL2SB: GMod content (and everything ported from it) ships PNGs, not
+			// VTFs - accept either one next to the .vmt.
+			Q_snprintf( png, sizeof( png ), "materials/vgui/smenu/%s.png", entname );
+
+			if ( filesystem->FileExists( vmt ) &&
+				 ( filesystem->FileExists( vtf ) || filesystem->FileExists( png ) ) )
+			{
+				AddImageButton( panel, normalImage, entspawn );
 			}
-		}		
+			// No icon of its own (a ported SWEP, an addon weapon, ...): show the
+			// generic SWEP icon instead of dropping the entry, so everything in
+			// the list is actually spawnable.
+			else if ( filesystem->FileExists( "materials/vgui/smenu/weapon_default.vmt" ) &&
+					  filesystem->FileExists( "materials/vgui/smenu/weapon_default.png" ) )
+			{
+				AddImageButton( panel, "smenu/weapon_default", entspawn );
+			}
+		}
 	}
 
 	virtual void InitModels( CSMList *panel, const char *modeltype, const char *modelfolder, const char *mdlPath )
@@ -216,6 +240,9 @@ public:
 				weapons->InitEntities( kv, weapons, "weapon_" );
 				weapons->InitEntities( kv, weapons, "item_");
 				weapons->InitEntities( kv, weapons, "ammo_");
+				// HL2SB: SWEP class names that are not weapon_* - the ported
+				// GMod camera (gmod_camera) is one.
+				weapons->InitEntities( kv, weapons, "gmod_" );
 
 				AddPage( npces, "NPCs" );
 				AddPage( weapons, "Weapons");
