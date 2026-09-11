@@ -167,24 +167,37 @@
   else \
     lua_pop(L, 1);
 
+// HL2SB: the table check is not decoration.  m_nTableReference is LUA_NOREF for
+// a weapon that has not run InitScriptedWeapon() yet (or whose reference was
+// already unref'd), and lua_getref() then yields whatever happens to sit at that
+// registry index.  Calling lua_getfield on that raised
+//
+//     attempt to index a number value
+//
+// from an unprotected context, which aborted the process via __fastfail.  With
+// the guard the call is skipped and the BaseClass:: implementation runs instead.
 #define BEGIN_LUA_CALL_WEAPON_METHOD(functionName) \
   lua_getref(L, m_nTableReference); \
-  lua_getfield(L, -1, functionName); \
-  lua_remove(L, -2); \
-  if (lua_isfunction(L, -1)) { \
-    int args = 0; \
-	lua_pushweapon(L, this); \
-	++args;
+  if (lua_istable(L, -1)) { \
+    lua_getfield(L, -1, functionName); \
+    lua_remove(L, -2); \
+    if (lua_isfunction(L, -1)) { \
+      int args = 0; \
+	  lua_pushweapon(L, this); \
+	  ++args;
 
 #define END_LUA_CALL_WEAPON_METHOD(nArgs, nresults) \
-	args += nArgs; \
-	luasrc_pcall(L, args, nresults, 0); \
+	  args += nArgs; \
+	  luasrc_pcall(L, args, nresults, 0); \
+    } \
+    else \
+	  lua_pop(L, 1); \
   } \
   else \
     lua_pop(L, 1);
 
 #define BEGIN_LUA_CALL_WEAPON_HOOK(functionName, pWeapon) \
-  if (pWeapon->IsScripted()) { \
+  if (pWeapon->IsScripted() && lua_isrefvalid(L, pWeapon->m_nTableReference)) { \
     lua_getref(L, pWeapon->m_nTableReference); \
     lua_getfield(L, -1, functionName); \
     lua_remove(L, -2); \
