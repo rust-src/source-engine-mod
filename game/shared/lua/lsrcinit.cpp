@@ -751,11 +751,24 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   // STUDIO_SKIP_DECALS is genuinely not defined in this engine's model_types.h,
   // and halo.lua already tolerates that with "or 0", so it is NOT faked here.
   //-----------------------------------------------------------------------------
-#ifdef STUDIO_RENDER
+  // Values from public/model_types.h:16-18.  The #ifndef fallbacks matter: the
+  // first version of this block was wrapped in #ifdef STUDIO_RENDER and the
+  // whole thing compiled OUT, because model_types.h is not in this translation
+  // unit's include chain -- so the flags were never pushed and modules/halo.lua
+  // kept failing with "bad argument #1 to 'bor' (number expected, got nil)".
+#ifndef STUDIO_RENDER
+#define STUDIO_RENDER 0x00000001
+#endif
+#ifndef STUDIO_VIEWXFORMATTACHMENTS
+#define STUDIO_VIEWXFORMATTACHMENTS 0x00000002
+#endif
+#ifndef STUDIO_DRAWTRANSLUCENTSUBMODELS
+#define STUDIO_DRAWTRANSLUCENTSUBMODELS 0x00000004
+#endif
+
   lua_pushinteger( L, STUDIO_RENDER );                   lua_setglobal( L, "STUDIO_RENDER" );
   lua_pushinteger( L, STUDIO_VIEWXFORMATTACHMENTS );     lua_setglobal( L, "STUDIO_VIEWXFORMATTACHMENTS" );
   lua_pushinteger( L, STUDIO_DRAWTRANSLUCENTSUBMODELS ); lua_setglobal( L, "STUDIO_DRAWTRANSLUCENTSUBMODELS" );
-#endif
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
