@@ -77,21 +77,28 @@ static void HL2SB_FlushPendingMaterialPrecaches()
 	if ( s_HL2SBPendingPrecaches.Count() == 0 || !g_pShaderDevice || !g_pShaderDevice->IsUsingGraphics() )
 		return;
 
-	for ( int i = 0; i < s_HL2SBPendingPrecaches.Count(); ++i )
+	// Walk backwards so entries can be removed as they succeed.  Anything whose
+	// shader is still missing stays queued and is retried on the next frame --
+	// that is the case this exists for (the Lua bootstrap runs before the shader
+	// DLLs are registered).
+	for ( int i = s_HL2SBPendingPrecaches.Count() - 1; i >= 0; --i )
 	{
 		HL2SB_PendingMaterialPrecache_t &entry = s_HL2SBPendingPrecaches[i];
 
-		Msg( "[HL2SB] late precache of material \"%s\" (it was created before the shader device was ready)\n",
-			entry.m_pMaterial->GetName() );
-
 		entry.m_pMaterial->PrecacheVars( entry.m_pKeyValues, entry.m_pPatchKeyValues, NULL, entry.m_nContext );
+
+		if ( entry.m_pMaterial->GetShader() == NULL )
+			continue;
+
+		Msg( "[HL2SB] late precache of material \"%s\" (it was created before its shader was available)\n",
+			entry.m_pMaterial->GetName() );
 
 		entry.m_pKeyValues->deleteThis();
 		if ( entry.m_pPatchKeyValues )
 			entry.m_pPatchKeyValues->deleteThis();
-	}
 
-	s_HL2SBPendingPrecaches.RemoveAll();
+		s_HL2SBPendingPrecaches.Remove( i );
+	}
 }
 
 #if defined( _X360 )
@@ -2960,6 +2967,36 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 				}
 				pMat->PrecacheVars( pKeyValues, pPatchKeyValues, &includes, nContext );
 				m_pForcedTextureLoadPathID = NULL;
+
+				// HL2SB diagnostic: what a material ends up with, so a later nil
+				// texture can be traced to either "this material has no
+				// $basetexture" or "the caller holds a different material".
+				if ( !Q_strnicmp( pMat->GetName(), "gwenskin", 8 ) )
+				{
+					bool bFound = false;
+					IMaterialVar *pBaseVar = pMat->FindVar( "$basetexture", &bFound, false );
+					ITexture *pBaseTex = ( pBaseVar && bFound ) ? pBaseVar->GetTextureValue() : NULL;
+					Msg( "[HL2SB] precached '%s' mat=%p var=%p tex=%p found=%d shader='%s'\n",
+						pMat->GetName(), pMat, pBaseVar, pBaseTex, bFound, pMat->GetShaderName() );
+				}
+
+				// HL2SB: the device is using graphics but the SHADER is not
+				// there yet.  The Lua bootstrap can run before the shader DLLs
+				// ("UnlitGeneric") are registered, and then PrecacheVars() leaves
+				// the material with no shader and no shader params at all --
+				// GetShaderName() reports "shader_error" and $basetexture never
+				// exists for the rest of the level:
+				//
+				//   precached 'gwenskin/gmoddefault' mat=...6C70 found=1 shader='UnlitGeneric'
+				//   GetTexture FAILED material='gwenskin/gmoddefault' mat=...6D40
+				//                    found=0 shader='shader_error'
+				//
+				// (the skin holds the second one).  Queue it like the
+				// device-not-ready case and retry once the shaders are in.
+				if ( pMat->GetShader() == NULL )
+				{
+					HL2SB_QueuePendingMaterialPrecache( pMat, pKeyValues, pPatchKeyValues, nContext );
+				}
 			}
 			else
 			{
