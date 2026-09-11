@@ -452,35 +452,15 @@ static int HL2SB_Material( lua_State *L )
     }
 
     /*
-    ** HL2SB: self-heal a material the engine handed out without shader params.
+    ** NOTE: do NOT "self-heal" this material with Refresh().  Tried and reverted:
+    ** the image material has no .vmt on disk, so Refresh() goes to the file
+    ** system, fails, and turns the material into an error material with
     **
-    ** FindMaterial() returns CMaterial::GetQueueFriendlyVersion(), and that copy
-    ** is created lazily; if it is built while the shader DLLs are not registered
-    ** yet (the Lua bootstrap and the skin atlas load early), it ends up with
-    ** GetShaderName() == "shader_error" and NO $basetexture at all, while the
-    ** real-time material beside it is perfectly precached:
+    **   CMaterial::PrecacheVars: error loading vmt file for gwenskin/gmoddefault
     **
-    **   [HL2SB] precached 'gwenskin/gmoddefault' mat=...E5D0 found=1 shader='UnlitGeneric'
-    **   [HL2SB] GetTexture FAILED material='gwenskin/gmoddefault' mat=...E6A0
-    **                    found=0 shader='shader_error'
-    **
-    ** The Derma skin keeps that copy, so the whole panel painted nothing.
-    ** Refresh() re-runs PrecacheVars from the key values the material still holds
-    ** in memory (it is flagged manually created), which is what puts the shader
-    ** and $basetexture back.
+    ** on every frame.  The duplicate/procedural-material problem has to be
+    ** fixed in the materialsystem (see the queue in cmaterialsystem.cpp).
     */
-    bool bFound = false;
-    pMaterial->FindVar( "$basetexture", &bFound, false );
-
-    if ( !bFound && !pMaterial->IsErrorMaterial() )
-    {
-        pMaterial->Refresh();
-        pMaterial->FindVar( "$basetexture", &bFound, false );
-
-        Msg( "[HL2SB] Material( \"%s\" ) had no shader params (shader='%s'); refreshed -> found=%d shader='%s'\n",
-            pMaterialName, "shader_error", bFound, pMaterial->GetShaderName() );
-    }
-
     lua_pushmaterial( L, pMaterial );
     return 1;
 }
