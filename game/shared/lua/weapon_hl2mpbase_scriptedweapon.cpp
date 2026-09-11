@@ -254,6 +254,25 @@ static int lua_getweaponfield ( lua_State *L, int ref, const char *tblKey, const
 	return 1;
 }
 
+// Same dual lookup, as a bool / int.  Used by the engine-side GMod weapon loop
+// (SWEP.Primary.Automatic and the clip seeding) so it does not have to care
+// whether the script or the loader produced the nested or the flat spelling.
+static bool lua_getweaponbool ( lua_State *L, int ref, const char *tblKey, const char *subKey, const char *flatKey, bool bDefault )
+{
+	lua_getweaponfield( L, ref, tblKey, subKey, flatKey );
+	bool bResult = lua_isnil( L, -1 ) ? bDefault : ( lua_toboolean( L, -1 ) != 0 );
+	lua_pop( L, 1 );
+	return bResult;
+}
+
+static int lua_getweaponint ( lua_State *L, int ref, const char *tblKey, const char *subKey, const char *flatKey, int nDefault )
+{
+	lua_getweaponfield( L, ref, tblKey, subKey, flatKey );
+	int nResult = lua_isnumber( L, -1 ) ? (int)lua_tointeger( L, -1 ) : nDefault;
+	lua_pop( L, 1 );
+	return nResult;
+}
+
 void CHL2MPScriptedWeapon::InitScriptedWeapon( void )
 {
 #if defined ( LUA_SDK )
@@ -1217,28 +1236,122 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Think" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 
-	BEGIN_LUA_CALL_WEAPON_METHOD( "ItemPostFrame" );
-	END_LUA_CALL_WEAPON_METHOD( 0, 1 );
+	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
-	// Lua returning boolean false means the Lua base drives the fire buttons
-	// itself (GMod weapon_base port). The C++ button loop must not run in that
-	// case: on the server it would double fire, and on the client it fires
-	// unthrottled because the Lua SetNextPrimaryFire only writes the Lua-side
-	// field. The engine's viewmodel animation maintenance still has to run,
-	// otherwise the weapon never returns to idle and the viewmodel freezes on
-	// the last frame of the previous animation.
-	if ( lua_gettop( L ) > 0 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+	if ( pOwner != NULL && m_nTableReference >= 0 )
 	{
-		lua_pop( L, 1 );
-		if ( UsesClipsForAmmo1() )
+		const float flTime = gpGlobals->curtime;
+		const int nButtons = pOwner->m_nButtons;
+		const int nPressed = pOwner->m_afButtonPressed;
+
+		// A Lua SWEP may implement SWEP:ItemPostFrame() itself; returning false
+		// means "Lua owns the fire buttons" (the GMod base port did that).
+		BEGIN_LUA_CALL_WEAPON_METHOD( "ItemPostFrame" );
+		END_LUA_CALL_WEAPON_METHOD( 0, 1 );
+
+		if ( lua_gettop( L ) > 0 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
 		{
-			CheckReload();
+			lua_pop( L, 1 );
+			WeaponIdle();
+			return;
 		}
+
+		if ( lua_gettop( L ) > 0 )
+		{
+			lua_pop( L, 1 );
+		}
+
+		// GMod's engine drives the fire buttons from here on:
+		//
+		//   IN_ATTACK  (pressed, or held when SWEP.Primary.Automatic)    -> PrimaryAttack
+		//   IN_ATTACK2 (pressed, or held when SWEP.Secondary.Automatic)  -> SecondaryAttack
+		//   IN_RELOAD  (pressed)                                         -> Reload
+		//
+		// and it does NO clip or ammo bookkeeping: SWEP.Primary.ClipSize = -1
+		// means "no clip", and a SWEP that wants an ammo check calls
+		// CanPrimaryAttack() itself.  CBaseCombatWeapon::ItemPostFrame() does the
+		// opposite - an empty clip plays the "no ammo" click - which is why every
+		// GMod SWEP without its own Lua post-frame clicked empty instead of
+		// firing (weapon_flechettegun: ClipSize -1, Primary.Ammo "none").
+		//
+		// GMod gives a weapon its clip contents from Primary/Secondary
+		// DefaultClip.  The old Lua base seeded them; the flag lives on the
+		// weapon's Lua table because adding a member to this class would be an
+		// ABI trap (waf does not track header changes).
+		bool bClipsSeeded = false;
+		lua_getref( L, m_nTableReference );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "_hl2sb_clips_seeded" );
+			bClipsSeeded = lua_toboolean( L, -1 ) != 0;
+			lua_pop( L, 1 );
+
+			if ( !bClipsSeeded )
+			{
+				lua_pushboolean( L, true );
+				lua_setfield( L, -2, "_hl2sb_clips_seeded" );
+			}
+		}
+		lua_pop( L, 1 );
+
+		if ( !bClipsSeeded )
+		{
+			const int nClipSize1 = lua_getweaponint( L, m_nTableReference, "Primary", "ClipSize", "Primary.ClipSize", -1 );
+			if ( nClipSize1 != -1 )
+			{
+				// Same write as the SetClip1 Lua binding.
+				m_iClip1.GetForModify() = lua_getweaponint( L, m_nTableReference, "Primary", "DefaultClip", "Primary.DefaultClip", nClipSize1 );
+			}
+
+			const int nClipSize2 = lua_getweaponint( L, m_nTableReference, "Secondary", "ClipSize", "Secondary.ClipSize", -1 );
+			if ( nClipSize2 != -1 )
+			{
+				m_iClip2.GetForModify() = lua_getweaponint( L, m_nTableReference, "Secondary", "DefaultClip", "Secondary.DefaultClip", nClipSize2 );
+			}
+		}
+
+		const bool bPrimaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Primary", "Automatic", "Primary.Automatic", false );
+		const bool bSecondaryAutomatic = lua_getweaponbool( L, m_nTableReference, "Secondary", "Automatic", "Secondary.Automatic", false );
+
+		const bool bPrimaryWants = ( nButtons & IN_ATTACK ) != 0 &&
+								   ( bPrimaryAutomatic || ( nPressed & IN_ATTACK ) != 0 );
+		const bool bSecondaryWants = ( nButtons & IN_ATTACK2 ) != 0 &&
+									 ( bSecondaryAutomatic || ( nPressed & IN_ATTACK2 ) != 0 );
+
+		// Secondary first, the way the GMod base orders it.
+		if ( bSecondaryWants && flTime >= m_flNextSecondaryAttack )
+		{
+			BEGIN_LUA_CALL_WEAPON_METHOD( "SecondaryAttack" );
+			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
+			if ( m_flNextSecondaryAttack <= flTime )
+			{
+				m_flNextSecondaryAttack = flTime + 0.05f;
+			}
+		}
+		else if ( bPrimaryWants && flTime >= m_flNextPrimaryAttack )
+		{
+			BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
+			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
+			// The SWEP is expected to call SetNextPrimaryFire(); this stops a
+			// script that forgets from firing once per frame.
+			if ( m_flNextPrimaryAttack <= flTime )
+			{
+				m_flNextPrimaryAttack = flTime + 0.05f;
+			}
+		}
+		else if ( ( nPressed & IN_RELOAD ) != 0 )
+		{
+			BEGIN_LUA_CALL_WEAPON_METHOD( "Reload" );
+			END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+		}
+
+		// The engine-side upkeep the HL2 base provided (idle / viewmodel
+		// animation), and deliberately none of its ammo or empty-click handling.
 		WeaponIdle();
 		return;
 	}
-
-	RETURN_LUA_NONE();
 #endif
 	BaseClass::ItemPostFrame();
 }
