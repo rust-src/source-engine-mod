@@ -423,3 +423,145 @@ LUALIB_API int luaopen_filesystem (lua_State *L) {
   return 1;
 }
 
+
+//=============================================================================
+// HL2SB: GMod's file library -- luaopen_Files
+//
+// luaopen_Files was DECLARED in luasrclib.h:217 and LUA_FILESLIBNAME is "Files",
+// but the registration in lsrcinit.cpp was commented out and there was no
+// implementation anywhere, so the lib alias at lsrcinit.cpp:520
+// ("file" -> LUA_FILESLIBNAME) silently skipped and every GMod file that uses it
+// failed:
+//
+//     [Lua] FAILED lua/includes/extensions/file.lua:2: attempt to index a nil value (global 'file')
+//     [Lua] FAILED lua/includes/extensions/player_auth.lua:77: ... (global 'file')
+//
+// Lives in lfilesystem.cpp on purpose: that file is already listed in BOTH
+// client_lua.vpc and server_lua.vpc, so neither .vpc needs touching and both
+// realms get it.  Paths are relative to the game ("MOD") directory, which is what
+// GMod's file.* use against garrysmod/.
+//=============================================================================
+
+static IFileSystem *HL2SB_FileSystem( void )
+{
+	return g_pFullFileSystem ? g_pFullFileSystem : filesystem;
+}
+
+// file.Read( path [, gamePath] ) -> string | nil
+static int file_Read (lua_State *L) {
+  const char *pszPath = luaL_checkstring(L, 1);
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  FileHandle_t fh = pFS->Open(pszPath, "rb", "MOD");
+  if (!fh) { lua_pushnil(L); return 1; }
+
+  int nSize = pFS->Size(fh);
+  if (nSize < 0) { pFS->Close(fh); lua_pushnil(L); return 1; }
+
+  char *pBuf = (char *)malloc(nSize + 1);
+  int nRead = (nSize > 0) ? pFS->Read(pBuf, nSize, fh) : 0;
+  pFS->Close(fh);
+
+  pBuf[nRead > 0 ? nRead : 0] = '\0';
+  lua_pushlstring(L, pBuf, (nRead > 0) ? nRead : 0);
+  free(pBuf);
+  return 1;
+}
+
+static int file_WriteInternal (lua_State *L, const char *pszMode) {
+  const char *pszPath = luaL_checkstring(L, 1);
+  size_t nLen = 0;
+  const char *pszData = luaL_checklstring(L, 2, &nLen);
+
+  FileHandle_t fh = HL2SB_FileSystem()->Open(pszPath, pszMode, "MOD");
+  if (!fh) { lua_pushboolean(L, false); return 1; }
+
+  int nWritten = (nLen > 0) ? HL2SB_FileSystem()->Write(pszData, (int)nLen, fh) : 0;
+  HL2SB_FileSystem()->Close(fh);
+
+  lua_pushboolean(L, (int)nLen == nWritten);
+  return 1;
+}
+
+static int file_Write  (lua_State *L) { return file_WriteInternal(L, "wb"); }
+static int file_Append (lua_State *L) { return file_WriteInternal(L, "ab"); }
+
+static int file_Exists (lua_State *L) {
+  lua_pushboolean(L, HL2SB_FileSystem()->FileExists(luaL_checkstring(L, 1), "MOD"));
+  return 1;
+}
+
+static int file_Delete (lua_State *L) {
+  HL2SB_FileSystem()->RemoveFile(luaL_checkstring(L, 1), "MOD");
+  return 0;
+}
+
+static int file_Time (lua_State *L) {
+  lua_pushnumber(L, (double)HL2SB_FileSystem()->GetFileTime(luaL_checkstring(L, 1), "MOD"));
+  return 1;
+}
+
+static int file_Size (lua_State *L) {
+  FileHandle_t fh = HL2SB_FileSystem()->Open(luaL_checkstring(L, 1), "rb", "MOD");
+  if (!fh) { lua_pushnumber(L, 0); return 1; }
+  lua_pushnumber(L, HL2SB_FileSystem()->Size(fh));
+  HL2SB_FileSystem()->Close(fh);
+  return 1;
+}
+
+static int file_IsDir (lua_State *L) {
+  lua_pushboolean(L, HL2SB_FileSystem()->IsDirectory(luaL_checkstring(L, 1), "MOD"));
+  return 1;
+}
+
+static int file_CreateDir (lua_State *L) {
+  HL2SB_FileSystem()->CreateDirHierarchy(luaL_checkstring(L, 1), "MOD");
+  return 0;
+}
+
+// file.Find( path ) -> files, dirs   (GMod returns two tables)
+static int file_Find (lua_State *L) {
+  char szPattern[512];
+  Q_snprintf(szPattern, sizeof(szPattern), "%s/*", luaL_checkstring(L, 1));
+
+  FileFindHandle_t fh;
+  const char *pszFound = HL2SB_FileSystem()->FindFirstEx(szPattern, "MOD", &fh);
+
+  lua_newtable(L);                       // files
+  int iFiles = 0;
+  lua_newtable(L);                       // dirs
+  int iDirs = 0;
+
+  while (pszFound) {
+    if (pszFound[0] != '.') {
+      if (HL2SB_FileSystem()->FindIsDirectory(fh)) {
+        lua_pushstring(L, pszFound); lua_rawseti(L, -2, ++iDirs);
+      } else {
+        lua_pushstring(L, pszFound); lua_rawseti(L, -3, ++iFiles);
+      }
+    }
+    pszFound = HL2SB_FileSystem()->FindNext(fh);
+  }
+  HL2SB_FileSystem()->FindClose(fh);
+
+  return 2;
+}
+
+static const luaL_Reg file_funcs[] = {
+  {"Read",      file_Read},
+  {"Write",     file_Write},
+  {"Append",    file_Append},
+  {"Exists",    file_Exists},
+  {"Delete",    file_Delete},
+  {"Time",      file_Time},
+  {"Size",      file_Size},
+  {"IsDir",     file_IsDir},
+  {"CreateDir", file_CreateDir},
+  {"Find",      file_Find},
+  {NULL, NULL}
+};
+
+LUALIB_API int luaopen_Files (lua_State *L) {
+  luaL_register(L, LUA_FILESLIBNAME, file_funcs);
+  return 1;
+}
