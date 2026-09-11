@@ -483,6 +483,57 @@ static void luasrc_install_type_names (lua_State *L) {
   }
 }
 
+/*
+** ===========================================================================
+** HL2SB: GMod's lowercase library globals.
+**
+** HL2SB inherited Experiment: Source's capitalised library names for a handful
+** of libraries -- Systems, Files, UTIL, Renders, Sounds, Chats,
+** ParticleSystems, ScriptedEntities -- while Garry's Mod spells them
+** system, file, util, render, sound, chat, particle, scripted_ents.
+**
+** GMod code and every addon use the lowercase spelling exclusively; GMod's own
+** lua/derma/init.lua opens with system.IsLinux(), and its lua/vgui controls are
+** full of render.*, surface.*, draw.*.
+**
+** The alias copies a REFERENCE to the same table, never a copy of it, so adding
+** a function under either name is visible through the other.  A missing library
+** (several are realm-gated) is skipped rather than aliased to nil, so the name
+** simply stays undefined in the realm that does not have it -- which is what
+** GMod does too.
+**
+** Entities / player / gameevent are already aliased where they are opened
+** (luabinding.cpp:88, lplayer.cpp:652, lgameevents.cpp:92); this table is only
+** for the ones that had no GMod spelling at all.
+**
+** Stamped here, once, rather than in each binding file: every luaopen_* has
+** already run by the time luasrc_openlibs() reaches this, so both realms are
+** covered and the table stays the single place to audit.
+** ===========================================================================
+*/
+static const char *s_pGModLibAliases[][2] = {
+  { "system",         LUA_SYSTEMSLIBNAME },
+  { "util",           LUA_UTILLIBNAME },
+  { "file",           LUA_FILESLIBNAME },
+  { "render",         LUA_RENDERSLIBNAME },
+  { "sound",          LUA_SOUNDSLIBNAME },
+  { "chat",           LUA_CHATSLIBNAME },
+  { "particle",       LUA_PARTICLESYSTEMLIBNAME },
+  { "scripted_ents",  LUA_SCRIPTEDENTITIESLIBNAME },
+  { NULL, NULL }
+};
+
+static void luasrc_install_lib_aliases (lua_State *L) {
+  for (int i = 0; s_pGModLibAliases[i][0]; ++i) {
+    lua_getglobal(L, s_pGModLibAliases[i][1]);
+    if (lua_istable(L, -1)) {
+      lua_setglobal(L, s_pGModLibAliases[i][0]);
+    } else {
+      lua_pop(L, 1);
+    }
+  }
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -494,6 +545,9 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   /* Every lib is open now, so the metatables exist and can be aliased. */
   luasrc_install_metatable_aliases(L);
   luasrc_install_type_names(L);
+
+  /* ...and the library tables themselves can be reachable under GMod's names. */
+  luasrc_install_lib_aliases(L);
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
