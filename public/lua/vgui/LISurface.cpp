@@ -22,6 +22,55 @@
 using namespace vgui;
 
 
+// ---------------------------------------------------------------------------
+// HL2SB: fonts created through GMod's surface.CreateFont( name, fontData ).
+//
+// GMod keeps a global name -> font table so that surface.SetFont( name ) and
+// draw.SimpleText( text, name, ... ) can resolve a font made at runtime.  Its
+// engine also lets the font be found by name later.  Ours has no such registry,
+// so this file keeps one and surface_SetFont() consults it first.
+//
+// There is one table per Lua state (client.dll's in-game state and GameUI.dll's
+// menu state each have their own), which is what GMod does too -- a font created
+// in the menu state is not visible in game and vice versa.
+//
+// Kept in the Lua registry rather than in a C++ container: it follows the state
+// automatically, needs no cleanup at shutdown, and avoids constructing anything
+// during DLL load.
+// ---------------------------------------------------------------------------
+#define LUA_FONTS_REGISTRY_KEY  "hl2sb_lua_fonts"
+
+// Leaves the name -> HFont table on the stack, creating it on first use.
+static void LuaFonts_Push (lua_State *L) {
+  lua_getfield( L, LUA_REGISTRYINDEX, LUA_FONTS_REGISTRY_KEY );
+  if ( !lua_istable( L, -1 ) ) {
+    lua_pop( L, 1 );
+    lua_newtable( L );
+    lua_pushvalue( L, -1 );
+    lua_setfield( L, LUA_REGISTRYINDEX, LUA_FONTS_REGISTRY_KEY );
+  }
+}
+
+// 0 == INVALID_FONT (vgui/VGUI.h) when the name was never created here.
+static HFont LuaFont_Find (lua_State *L, const char *szName) {
+  if ( L == NULL )
+    return 0;
+
+  LuaFonts_Push( L );
+  lua_getfield( L, -1, szName );
+  HFont hFont = lua_isnumber( L, -1 ) ? (HFont)lua_tointeger( L, -1 ) : 0;
+  lua_pop( L, 2 );
+  return hFont;
+}
+
+static void LuaFont_Store (lua_State *L, const char *szName, HFont hFont) {
+  LuaFonts_Push( L );
+  lua_pushinteger( L, (lua_Integer)hFont );
+  lua_setfield( L, -2, szName );
+  lua_pop( L, 1 );
+}
+
+
 
 static int surface_AddBitmapFontFile (lua_State *L) {
   lua_pushboolean(L, surface()->AddBitmapFontFile(luaL_checkstring(L, 1)));
@@ -60,8 +109,81 @@ static int surface_ClearTemporaryFontCache (lua_State *L) {
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// HL2SB: two calling conventions, matching GMod and the legacy HL2SB one.
+//
+//   surface.CreateFont( name, fontData )   -- GMod.  fontData is the FontData
+//       structure (https://wiki.facepunch.com/gmod/Structures/FontData):
+//         font (string, "Arial"), size (13), weight (500), blursize (0),
+//         scanlines (0), antialias (true), and the booleans extended /
+//         underline / italic / strikeout / symbol / rotary / shadow /
+//         additive / outline (all false).
+//       The resulting handle is filed under `name` so surface.SetFont( name )
+//       and draw.* resolve it.  Returns the HFont as well (GMod returns
+//       nothing; handing the handle back is a harmless superset).
+//
+//   surface.CreateFont()                   -- legacy HL2SB/Experiment form.
+//       Returns a bare HFont for the caller to fill in with
+//       surface.SetFontGlyphSet().  In-tree Lua still uses it
+//       (lua/includes/modules/gmod_vgui.lua), so both forms have to live here.
+// ---------------------------------------------------------------------------
 static int surface_CreateFont (lua_State *L) {
-  lua_pushfont(L, surface()->CreateFont());
+  if ( !lua_istable( L, 2 ) )
+  {
+    lua_pushfont( L, surface()->CreateFont() );
+    return 1;
+  }
+
+  const char *szName = luaL_checkstring( L, 1 );
+
+  lua_getfield( L, 2, "font" );       const char *szFace  = luaL_optstring( L, -1, "Arial" ); lua_pop( L, 1 );
+  lua_getfield( L, 2, "size" );       int iTall           = luaL_optint( L, -1, 13 );           lua_pop( L, 1 );
+  lua_getfield( L, 2, "weight" );     int iWeight         = luaL_optint( L, -1, 500 );          lua_pop( L, 1 );
+  lua_getfield( L, 2, "blursize" );   int iBlur           = luaL_optint( L, -1, 0 );            lua_pop( L, 1 );
+  lua_getfield( L, 2, "scanlines" );  int iScanlines      = luaL_optint( L, -1, 0 );            lua_pop( L, 1 );
+  lua_getfield( L, 2, "antialias" );  bool bAntialias     = luaL_optboolean( L, -1, true );     lua_pop( L, 1 );
+  lua_getfield( L, 2, "extended" );   bool bExtended      = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "underline" );  bool bUnderline     = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "italic" );     bool bItalic        = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "strikeout" );  bool bStrikeout     = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "symbol" );     bool bSymbol        = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "rotary" );     bool bRotary        = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "shadow" );     bool bShadow        = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "additive" );   bool bAdditive      = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+  lua_getfield( L, 2, "outline" );    bool bOutline       = luaL_optboolean( L, -1, false );    lua_pop( L, 1 );
+
+  int iFlags = ISurface::FONTFLAG_NONE;
+  if ( bItalic )    iFlags |= ISurface::FONTFLAG_ITALIC;
+  if ( bUnderline ) iFlags |= ISurface::FONTFLAG_UNDERLINE;
+  if ( bStrikeout ) iFlags |= ISurface::FONTFLAG_STRIKEOUT;
+  if ( bSymbol )    iFlags |= ISurface::FONTFLAG_SYMBOL;
+  if ( bAntialias ) iFlags |= ISurface::FONTFLAG_ANTIALIAS;
+  if ( bRotary )    iFlags |= ISurface::FONTFLAG_ROTARY;
+  if ( bShadow )    iFlags |= ISurface::FONTFLAG_DROPSHADOW;
+  if ( bAdditive )  iFlags |= ISurface::FONTFLAG_ADDITIVE;
+  if ( bOutline )   iFlags |= ISurface::FONTFLAG_OUTLINE;
+
+  // GMod's "extended" pulls in the full Unicode range instead of stopping at
+  // Latin-1; Source spells that as an explicit glyph range.
+  int iRangeMin = 0;
+  int iRangeMax = 0;
+  if ( bExtended )
+  {
+    iRangeMin = 0x0000;
+    iRangeMax = 0xFFFF;
+  }
+
+  HFont hFont = surface()->CreateFont();
+  if ( !surface()->SetFontGlyphSet( hFont, szFace, iTall, iWeight, iBlur, iScanlines, iFlags, iRangeMin, iRangeMax ) )
+  {
+    // The face name did not resolve.  Retry with the face the rest of the mod
+    // uses so the caller still gets a visible font instead of an empty one.
+    surface()->SetFontGlyphSet( hFont, "Verdana", iTall, iWeight, iBlur, iScanlines, iFlags, iRangeMin, iRangeMax );
+  }
+
+  LuaFont_Store( L, szName, hFont );
+
+  lua_pushfont( L, hFont );
   return 1;
 }
 
@@ -197,6 +319,84 @@ static int surface_DrawTexturedRect (lua_State *L) {
 
 static int surface_DrawTexturedSubRect (lua_State *L) {
   surface()->DrawTexturedSubRect(luaL_checkint(L, 1), luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's surface.DrawTexturedRectUV( x, y, w, h, u0, v0, u1, v1 ).
+//
+// The stock binding DrawTexturedSubRect() takes the far CORNER instead of a
+// size, and its texture coordinates are 0..1 normalised (vguimatsurface's
+// CMatSystemSurface::DrawTexturedSubRect rescales them into the bound texture's
+// real range), which is exactly what GMod's version means -- so this is only an
+// argument-shape translation.  draw.RoundedBox() builds its corners with it.
+// ---------------------------------------------------------------------------
+static int surface_DrawTexturedRectUV (lua_State *L) {
+  int x = luaL_checkint(L, 1);
+  int y = luaL_checkint(L, 2);
+  int w = luaL_checkint(L, 3);
+  int h = luaL_checkint(L, 4);
+  surface()->DrawTexturedSubRect(x, y, x + w, y + h, luaL_checknumber(L, 5), luaL_checknumber(L, 6), luaL_checknumber(L, 7), luaL_checknumber(L, 8));
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// HL2SB: GMod's surface.DrawTexturedRectRotated( x, y, w, h, rotation ).
+//
+//   * x, y are the CENTRE of the rectangle, not its top-left corner.
+//   * rotation is in degrees.
+//     (https://wiki.facepunch.com/gmod/surface.DrawTexturedRectRotated)
+//
+// GMod's engine gained a real ISurface entry point for this; Source 2013's
+// vgui::ISurface does not have one.  It does, however, expose
+// ISurface::DrawTexturedPolygon(), so the quad is built here and handed to it
+// -- no interface change and no vguimatsurface/engine rebuild, the binding
+// lives entirely in client.dll and GameUI.dll.
+//
+// Direction: positive rotation is counter-clockwise on screen (y grows down).
+// That is not a guess -- GMod's own HUD depends on it.  cl_hudpickup.lua blits
+// the same gui/corner8 four times at 0/90/180/270 and the rounding only lands in
+// the correct screen corner with this sign; it is the same mapping
+// draw.RoundedBoxEx() gets from flipping its UVs
+// (TL 0,0,1,1 / TR 1,0,0,1 / BL 0,1,1,0 / BR 1,1,0,0).
+//
+// Texture coordinates are 0..1 from corner to corner.  That is correct here
+// because CTextureDictionary::GetTextureTexCoords() only deviates from 0..1 for
+// fonts, which live in a shared page and are never drawn through this path.
+// ---------------------------------------------------------------------------
+static int surface_DrawTexturedRectRotated (lua_State *L) {
+  const float flX  = (float)luaL_checknumber(L, 1);
+  const float flY  = (float)luaL_checknumber(L, 2);
+  const float flW  = (float)luaL_checknumber(L, 3);
+  const float flH  = (float)luaL_checknumber(L, 4);
+  const float flRot = (float)luaL_checknumber(L, 5);
+
+  const float flRad = flRot * 0.017453292519943295f;   // degrees -> radians
+  const float flCos = cosf(flRad);
+  const float flSin = sinf(flRad);
+
+  const float flHW = flW * 0.5f;
+  const float flHH = flH * 0.5f;
+
+  // Local corner offsets and their texture coordinates, clockwise from top-left.
+  static const float pflCX[4] = { -1.0f,  1.0f,  1.0f, -1.0f };
+  static const float pflCY[4] = { -1.0f, -1.0f,  1.0f,  1.0f };
+  static const float pflCU[4] = {  0.0f,  1.0f,  1.0f,  0.0f };
+  static const float pflCV[4] = {  0.0f,  0.0f,  1.0f,  1.0f };
+
+  Vertex_t verts[4];
+  for ( int i = 0; i < 4; ++i )
+  {
+    const float flPX = pflCX[i] * flHW;
+    const float flPY = pflCY[i] * flHH;
+
+    verts[i].m_Position.x = flX + ( flPX * flCos + flPY * flSin );
+    verts[i].m_Position.y = flY + ( -flPX * flSin + flPY * flCos );
+    verts[i].m_TexCoord.x = pflCU[i];
+    verts[i].m_TexCoord.y = pflCV[i];
+  }
+
+  surface()->DrawTexturedPolygon( 4, verts, true );
   return 0;
 }
 
@@ -460,9 +660,13 @@ static int surface_SetBitmapFontName (lua_State *L) {
 static int surface_SetFont (lua_State *L) {
   const char *szName = luaL_checkstring(L, 1);
 
+  // HL2SB: fonts made at runtime with the GMod form of surface.CreateFont
+  // ( name, fontData ) are filed by name and must win over the scheme -- the
+  // scheme cannot know about them.
+  HFont hFont = LuaFont_Find( L, szName );
+
   vgui::IScheme *pScheme = scheme()->GetIScheme(scheme()->GetDefaultScheme());
-  HFont hFont = 0;   // INVALID_FONT == 0 (vgui/VGUI.h)
-  if ( pScheme )
+  if ( hFont == 0 && pScheme )   // INVALID_FONT == 0 (vgui/VGUI.h)
   {
     hFont = pScheme->GetFont( szName, false );
     if ( hFont == 0 )
@@ -560,6 +764,11 @@ static const luaL_Reg surfacelib[] = {
   {"DrawSetTextureFile",   surface_DrawSetTextureFile},
   {"DrawTexturedRect",   surface_DrawTexturedRect},
   {"DrawTexturedSubRect",   surface_DrawTexturedSubRect},
+  // HL2SB: GMod spellings.  Both are pure translations onto the stock bindings
+  // (DrawTexturedSubRect / DrawTexturedPolygon), added so GMod's own draw.lua
+  // and cl_hudpickup.lua run unmodified.
+  {"DrawTexturedRectUV",   surface_DrawTexturedRectUV},
+  {"DrawTexturedRectRotated",   surface_DrawTexturedRectRotated},
   {"EnableMouseCapture",   surface_EnableMouseCapture},
   {"FlashWindow",   surface_FlashWindow},
   {"GetAbsoluteWindowBounds",   surface_GetAbsoluteWindowBounds},
