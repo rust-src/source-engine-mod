@@ -35,6 +35,37 @@ using namespace vgui;
 // (Declared before CSMList because InitEntities() below reads it.)
 ConVar sm_menu_give("sm_menu_give", "1", FCVAR_CLIENTDLL, "SMenu: give weapons/items instead of spawning them");
 
+//-----------------------------------------------------------------------------
+// HL2SB: is this class Lua content (a GMod SWEP or a scripted entity)?
+//
+// Such content never ships its own VTF/VMT icon - which is why it is the only
+// thing allowed to fall back to the generic SWEP icon.  Doing that for every
+// entry turned the hundreds of deliberately icon-less stock entity entries into
+// sheets of paper.
+//-----------------------------------------------------------------------------
+static bool SMenu_IsScriptedClass( const char *pszClass )
+{
+	static const char *s_pFolders[] = { "lua/weapons", "lua/entities" };
+	static const char *s_pFiles[] = { "shared.lua", "init.lua", "cl_init.lua" };
+
+	if ( !pszClass || !pszClass[0] )
+		return false;
+
+	for ( int i = 0; i < ARRAYSIZE( s_pFolders ); ++i )
+	{
+		for ( int j = 0; j < ARRAYSIZE( s_pFiles ); ++j )
+		{
+			char szPath[MAX_PATH];
+			Q_snprintf( szPath, sizeof( szPath ), "%s/%s/%s", s_pFolders[i], pszClass, s_pFiles[j] );
+
+			if ( filesystem->FileExists( szPath ) )
+				return true;
+		}
+	}
+
+	return false;
+}
+
 class CSMList : public vgui::PanelListPanel
 {
 public:
@@ -127,12 +158,15 @@ public:
 			char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], png[MAX_PATH];
 
 			// HL2SB: a weapon/item/ammo belongs in the player's hands (GMod's
-			// spawnmenu gives them); anything else is created in the world.  The
-			// old behaviour is still reachable with sm_menu_give 0.
+			// spawnmenu gives them).  Not the engine's "give": that one is
+			// cheat-flagged, so with sv_cheats 0 (the multiplayer default)
+			// clicking a weapon did nothing at all.  hl2sb_giveweapon is the
+			// mod's own server command and calls GiveNamedItem() directly.
+			// sm_menu_give 0 restores the old world-spawning behaviour.
 			const bool bGive = sm_menu_give.GetBool() &&
 				( !Q_strnicmp( entname, "weapon_", 7 ) || !Q_strnicmp( entname, "item_", 5 ) || !Q_strnicmp( entname, "ammo_", 5 ) );
 
-			Q_snprintf( entspawn, sizeof(entspawn), "%s %s", bGive ? "give" : "ent_create", entname );
+			Q_snprintf( entspawn, sizeof(entspawn), "%s %s", bGive ? "hl2sb_giveweapon" : "ent_create", entname );
 			Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
 			Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
 			Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
@@ -146,10 +180,11 @@ public:
 			{
 				AddImageButton( panel, normalImage, entspawn );
 			}
-			// No icon of its own (a ported SWEP, an addon weapon, ...): show the
-			// generic SWEP icon instead of dropping the entry, so everything in
-			// the list is actually spawnable.
-			else if ( filesystem->FileExists( "materials/vgui/smenu/weapon_default.vmt" ) &&
+			// No icon of its own: only Lua classes get the generic SWEP icon
+			// (they never have one).  Stock entries without an icon stay hidden,
+			// exactly as they were before.
+			else if ( SMenu_IsScriptedClass( entname ) &&
+					  filesystem->FileExists( "materials/vgui/smenu/weapon_default.vmt" ) &&
 					  filesystem->FileExists( "materials/vgui/smenu/weapon_default.png" ) )
 			{
 				AddImageButton( panel, "smenu/weapon_default", entspawn );
