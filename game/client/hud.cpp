@@ -232,6 +232,9 @@ CHudTexture::~CHudTexture()
 //  CHudElement
 //	All hud elements are derived from this class.
 //=======================================================================================================================
+// HL2SB: one-shot latch for the dirty-Lua-stack warning in ShouldDraw below.
+static bool g_bWarnedDirtyHudElementStack = false;
+
 //-----------------------------------------------------------------------------
 // Purpose: Registers the hud element in a global list, in CHud
 //-----------------------------------------------------------------------------
@@ -294,11 +297,40 @@ bool CHudElement::ShouldDraw( void )
 	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
 	if ( pPlayer )
 	{
+		// HL2SB: RETURN_LUA_BOOLEAN() only reads the result when
+		// lua_gettop(L) == 1, i.e. it silently ignores the hook's answer if any
+		// Lua call earlier in the same frame left a value on the stack.  That is
+		// exactly how the stock pickup-history element kept drawing although
+		// lua/game/client/hl2sb_cl_hudpickup.lua returns false for
+		// "CHudHistoryResource".  The dispatch below leaves exactly one result,
+		// so look at that result directly instead of assuming an empty stack,
+		// and record the depth the first time the assumption does not hold.
+		const int iStackOnEntry = lua_gettop( L );
+
+		if ( iStackOnEntry != 0 && !g_bWarnedDirtyHudElementStack )
+		{
+			g_bWarnedDirtyHudElementStack = true;
+			Warning( "[HL2SB] CHudElement::ShouldDraw( %s ): Lua stack was not empty on entry "
+			         "(%d value(s)); the RETURN_LUA_* macros ignore the Lua hook result in that "
+			         "case. Something is leaking Lua stack slots per frame.\n",
+			         GetName(), iStackOnEntry );
+		}
+
 		BEGIN_LUA_CALL_HOOK( "HudElementShouldDraw" );
 			lua_pushstring( L, GetName() );
 		END_LUA_CALL_HOOK( 1, 1 );
 
-		RETURN_LUA_BOOLEAN();
+		// The dispatch leaves exactly one result when it ran at all; when the
+		// hook table or hook.call is missing it pushes nothing.
+		if ( lua_gettop( L ) == iStackOnEntry + 1 )
+		{
+			const bool bIsBoolean = lua_isboolean( L, -1 ) != 0;
+			const bool bValue     = bIsBoolean && lua_toboolean( L, -1 ) != 0;
+			lua_pop( L, 1 );
+
+			if ( bIsBoolean )
+				return bValue;
+		}
 	}
 #endif
 

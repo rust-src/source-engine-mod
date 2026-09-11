@@ -170,11 +170,6 @@ float C_BaseExplosionEffect::ScaleForceByDeviation( Vector &deviant, Vector &sou
 //-----------------------------------------------------------------------------
 void C_BaseExplosionEffect::Create( const Vector &position, float force, float scale, int flags )
 {
-	// HL2SB EXPLOSION DEBUG (temporary): scale == 0 makes Create() skip the
-	// fireball core entirely, leaving only debris particles.
-	Msg( "[expdbg] client Create scale=%.2f flags=%d pos=(%.0f %.0f %.0f)\n",
-		scale, flags, position.x, position.y, position.z );
-
 	m_vecOrigin = position;
 	m_fFlags	= flags;
 
@@ -198,6 +193,7 @@ void C_BaseExplosionEffect::Create( const Vector &position, float force, float s
 	//FIXME: CreateDynamicLight();
 	CreateMisc();
 }
+
 
 //-----------------------------------------------------------------------------
 // Purpose: 

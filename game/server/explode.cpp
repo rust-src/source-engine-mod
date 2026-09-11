@@ -350,14 +350,33 @@ void CEnvExplosion::InputExplode( inputdata_t &inputdata )
 		}
 	}
 
-	// HL2SB EXPLOSION DEBUG (temporary)
-	Msg( "[expdbg] InputExplode magn=%d spriteScale=%d spriteIdx=%d radius=%d flags=%d origin=(%.0f %.0f %.0f)\n",
-		m_iMagnitude, m_spriteScale,
-		( m_sFireballSprite < 1 ) ? (int)g_sModelIndexFireball : (int)m_sFireballSprite,
-		iRadius, nFlags, vecExplodeOrigin.x, vecExplodeOrigin.y, vecExplodeOrigin.z );
+	CPASFilter pasFilter( vecExplodeOrigin );
 
-	CPASFilter filter( vecExplodeOrigin );
-	te->Explosion( filter, 0.0,
+	// HL2SB: tell the temp-entity dispatcher not to cull the predicting player.
+	//
+	// CTempEnts::Explosion() (game/server/te.cpp:320) calls SuppressTE() before
+	// forwarding to TE_Explosion(), and SuppressTE() throws away the recipients
+	// that are currently predicting:
+	//
+	//     if ( GetSuppressHost() ) {
+	//         if ( !_filter.IgnorePredictionCull() )
+	//             _filter.RemoveRecipient( GetSuppressHost() );
+	//         if ( !_filter.GetRecipientCount() )
+	//             return true;                        // suppress the whole TE
+	//     }
+	//
+	// A Lua SWEP's SecondaryAttack() runs inside prediction on the server too, so
+	// GetSuppressHost() was the local player, the PAS filter held only that
+	// player, and the entire explosion temp entity was suppressed: the blast still
+	// applied its damage, but the client never received TE_Explosion -- no
+	// fireball, no smoke, no explosion sound, and not one line in the log, because
+	// the drop happens before TE_Explosion() is even entered.
+	//
+	// Valve's own server-side effect code sets this flag for the same reason; see
+	// func_breakablesurf.cpp (filter.SetIgnorePredictionCull( true )).
+	pasFilter.SetIgnorePredictionCull( true );
+
+	te->Explosion( pasFilter, 0.0,
 		&vecExplodeOrigin, 
 		( m_sFireballSprite < 1 ) ? g_sModelIndexFireball : m_sFireballSprite,
 		!( m_spawnflags & SF_ENVEXPLOSION_NOFIREBALL ) ? ( m_spriteScale / 10.0 ) : 0.0,

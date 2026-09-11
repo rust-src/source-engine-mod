@@ -202,8 +202,20 @@ CHL2MPScriptedWeapon::~CHL2MPScriptedWeapon( void )
 #ifdef LUA_SDK
 	// Only unref a reference that was actually taken: with an uninitialised (or
 	// already-freed) value this would free a random registry slot.
-	if ( lua_isrefvalid( L, m_nTableReference ) )
+	//
+	// HL2SB: m_nTableReference is inherited from CBaseEntity and ~CBaseEntity
+	// calls lua_unref() on it again after this destructor returns.  Unref'ing
+	// twice corrupts the registry free list -- luaL_unref() writes t[ref] = t[0]
+	// (a NUMBER) into the slot and re-points the free list at it, so a later
+	// luaL_ref() hands the same slot to a second live weapon and lua_getref()
+	// then reads a number, which raises "attempt to index a number value" from
+	// an unprotected context and aborts the process.  Clearing the member makes
+	// the base-class unref a no-op (luaL_unref ignores negative refs), and the
+	// L != NULL test covers shutdown, where L has already been cleared.
+	if ( L != NULL && m_nTableReference >= 0 )
 		lua_unref( L, m_nTableReference );
+
+	m_nTableReference = LUA_NOREF;
 #endif
 }
 
@@ -868,7 +880,7 @@ bool CHL2MPScriptedWeapon::IsMeleeWeapon() const
 	lua_getfield( L, -1, "MeleeWeapon" );
 	lua_remove( L, -2 );
 
-	if ( lua_gettop( L ) == 1 )
+	if ( lua_gettop( L ) > 0 )
 	{
 		if ( lua_isnumber( L, -1 ) )
 		{
@@ -915,7 +927,7 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchTo( void ) const
 	lua_getfield( L, -1, "AutoSwitchTo" );
 	lua_remove( L, -2 );
 
-	if ( lua_gettop( L ) == 1 )
+	if ( lua_gettop( L ) > 0 )
 	{
 		if ( lua_isnumber( L, -1 ) )
 		{
@@ -952,7 +964,7 @@ bool CHL2MPScriptedWeapon::AllowsAutoSwitchFrom( void ) const
 	lua_getfield( L, -1, "AutoSwitchFrom" );
 	lua_remove( L, -2 );
 
-	if ( lua_gettop( L ) == 1 )
+	if ( lua_gettop( L ) > 0 )
 	{
 		if ( lua_isnumber( L, -1 ) )
 		{
@@ -1030,12 +1042,6 @@ const Vector &CHL2MPScriptedWeapon::GetBulletSpread( void )
 //-----------------------------------------------------------------------------
 void CHL2MPScriptedWeapon::PrimaryAttack( void )
 {
-	// HL2SB FX DEBUG (temporary)
-#ifdef CLIENT_DLL
-	Msg( "[swepdbg] C++ PrimaryAttack CLIENT %s\n", GetClassname() );
-#else
-	Msg( "[swepdbg] C++ PrimaryAttack SERVER %s\n", GetClassname() );
-#endif
 #if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "PrimaryAttack" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
@@ -1163,7 +1169,7 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 	// field. The engine's viewmodel animation maintenance still has to run,
 	// otherwise the weapon never returns to idle and the viewmodel freezes on
 	// the last frame of the previous animation.
-	if ( lua_gettop( L ) == 1 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
+	if ( lua_gettop( L ) > 0 && lua_isboolean( L, -1 ) && !lua_toboolean( L, -1 ) )
 	{
 		lua_pop( L, 1 );
 		if ( UsesClipsForAmmo1() )
