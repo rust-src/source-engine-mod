@@ -63,6 +63,12 @@
 #include "weapon_striderbuster.h"
 #include "monstermaker.h"
 #include "weapon_rpg.h"
+#ifdef HL2SB
+// HL2SB: standalone port of the hunter flechette. The in-file copy of
+// CHunterFlechette further down is compiled out for this build - see the
+// #if !defined( HL2SB ) block below.
+#include "hunter_flechette.h"
+#endif
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -302,7 +308,20 @@ bool HateThisStriderBuster( CBaseEntity *pTarget )
 
 //-----------------------------------------------------------------------------
 // The hunter can fire a volley of explosive flechettes.
+//
+// HL2SB: CHunterFlechette moved to game/server/hl2/hunter_flechette.cpp so that
+// it exists as a standalone, networked entity (DECLARE_SERVERCLASS plus a
+// matching client class) that the ported Lua weapon weapon_flechettegun can
+// spawn with ents.Create( "hunter_flechette" ).
+//
+// The copy below is compiled out for HL2SB only (the hl2mp + hl2sb builds define
+// HL2SB, the ep2/episodic build does not): leaving it live there would install a
+// second entity factory for the "hunter_flechette" class name (only one of the
+// two statics wins, and which one depends on link order), and CNPC_Hunter would
+// then cast the new object to this old C++ type (this copy has no server class
+// at all, so the client gets whatever CPhysicsProp's send table makes of it).
 //-----------------------------------------------------------------------------
+#if !defined( HL2SB )
 static const char *s_szHunterFlechetteBubbles = "HunterFlechetteBubbles";
 static const char *s_szHunterFlechetteSeekThink = "HunterFlechetteSeekThink";
 static const char *s_szHunterFlechetteDangerSoundThink = "HunterFlechetteDangerSoundThink";
@@ -925,6 +944,7 @@ void CHunterFlechette::Explode()
 	SetThink( &CBaseEntity::SUB_Remove );
 	SetNextThink( gpGlobals->curtime + 0.1f );
 }
+#endif	// !HL2SB : the live HL2SB copy is game/server/hl2/hunter_flechette.cpp
 
 
 //-----------------------------------------------------------------------------
