@@ -999,7 +999,24 @@ static int CBasePlayer_SetPlayerColor (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - Player:IsValid()
+//
+// Players have their own metatable, so the Entity one added in
+// lbaseentity_shared.cpp does not reach them -- and GMod's global IsValid()
+// (lua/includes/util.lua:314) reads `object.IsValid`.  Without this method
+// IsValid( <player> ) answered false, which made undo.lua's SetPlayer() and
+// Finish() return early ("if ( !IsValid( ply ) ) then return end"), made
+// Finish() reject every undo, and made the pickup HUD drop every pickup.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_IsValid (lua_State *L) {
+  lua_pushboolean(L, lua_toplayer(L, 1) != NULL);
+  return 1;
+}
+
+
 static const luaL_Reg CBasePlayermeta[] = {
+  {"IsValid", CBasePlayer_IsValid},
   {"AbortReload", CBasePlayer_AbortReload},
   {"AddToPlayerSimulationList", CBasePlayer_AddToPlayerSimulationList},
   {"ClearZoomOwner", CBasePlayer_ClearZoomOwner},

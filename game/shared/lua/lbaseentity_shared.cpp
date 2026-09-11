@@ -1573,14 +1573,26 @@ static int CBaseEntity_WorldToEntitySpace (lua_State *L) {
 
 static int CBaseEntity___index (lua_State *L) {
   CBaseEntity *pEntity = lua_toentity(L, 1);
-  if (pEntity == NULL) {  /* avoid extra test when d is not 0 */
-    lua_Debug ar1;
-    lua_getstack(L, 1, &ar1);
-    lua_getinfo(L, "fl", &ar1);
-    lua_Debug ar2;
-    lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index a NULL entity", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+  if (pEntity == NULL) {
+    /* HL2SB: return nil instead of raising.
+    **
+    ** GMod's engine does the same, and it matters because GMod's own
+    ** lua/includes/util.lua:314 defines the global IsValid() as
+    **
+    **     local isvalid = object.IsValid      -- its FIRST operation
+    **
+    ** so `IsValid( <entity that was removed> )` indexed a NULL entity userdata
+    ** and this used to raise
+    **
+    **     attempt to index a NULL entity
+    **
+    ** instead of returning false.  That is what made the undo command fail with
+    **     ConCommand 'undo' Failed: lua/includes/util.lua:318: attempt to index a NULL entity
+    ** once a recorded entity had been removed.  Pushing nil makes the lookup
+    ** yield nil, `isvalid` is nil, and IsValid() correctly answers false.
+    */
+    lua_pushnil(L);
+    return 1;
   }
   const char *field = luaL_checkstring(L, 2);
   if (Q_strcmp(field, "m_bAllowPrecache") == 0)
@@ -1675,7 +1687,36 @@ static int CBaseEntity___tostring (lua_State *L) {
 }
 
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - Entity:IsValid()
+//
+// GMod's lua/includes/util.lua:314 defines the global IsValid() as
+//
+//     local isvalid = object.IsValid
+//     if ( !isvalid ) then return false end
+//     return isvalid( object )
+//
+// and this engine bound no such method, so IsValid() answered FALSE for every
+// entity and every player -- including LocalPlayer().  That one wrong answer
+// broke two GMod HUDs:
+//   * lua/game/client/hl2sb_cl_hudpickup.lua gates every pickup on
+//     IsValid/Alive of the local player, so the pickup list never filled;
+//   * lua/includes/modules/undo.lua gates AddEntity/SetPlayer/Finish on
+//     "if ( !IsValid( x ) ) then return end", so every undo was dropped and the
+//     undo command always answered "no undo entry recorded".
+//
+// Reaching this method means the userdata resolved to the metatable, i.e. the
+// engine pointer is non-NULL -- a removed entity is a NULL entity userdata whose
+// field lookup now yields nil instead (see CBaseEntity___index).
+//-----------------------------------------------------------------------------
+static int CBaseEntity_IsValid (lua_State *L) {
+  lua_pushboolean(L, lua_toentity(L, 1) != NULL);
+  return 1;
+}
+
+
 static const luaL_Reg CBaseEntitymeta[] = {
+  {"IsValid", CBaseEntity_IsValid},
   {"Activate", CBaseEntity_Activate},
   {"AddDataObjectType", CBaseEntity_AddDataObjectType},
   {"AddEffects", CBaseEntity_AddEffects},
