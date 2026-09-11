@@ -678,7 +678,20 @@ static int file_Open (lua_State *L) {
   const char *pszPath = luaL_checkstring(L, 1);
   const char *pszMode = luaL_optstring(L, 2, "r");
 
-  lua_pushfilehandle(L, filesystem->Open(pszPath, pszMode, "MOD"));
+  FileHandle_t hFile = filesystem->Open(pszPath, pszMode, "MOD");
+
+  // HL2SB: GMod's file.Open returns nil when the file cannot be opened, and
+  // lua/includes/extensions/file.lua relies on that ("if ( !f ) then return nil
+  // end") before calling f:Size().  Pushing a FileHandle_t wrapping
+  // FILESYSTEM_INVALID_HANDLE turned the miss into
+  //
+  //   file.lua:10: calling 'Size' on bad self (FileHandle_t expected, got FILESYSTEM_INVALID_HANDLE)
+  if (hFile == FILESYSTEM_INVALID_HANDLE) {
+    lua_pushnil(L);
+    return 1;
+  }
+
+  lua_pushfilehandle(L, hFile);
   return 1;
 }
 
