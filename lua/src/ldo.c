@@ -50,6 +50,28 @@
 ** C++ code, with _longjmp/_setjmp when asked to use them, and with
 ** longjmp/setjmp otherwise.
 */
+/*
+** HL2SB: force the longjmp error path.
+**
+** Lua is compiled as C++ here, so the default is LUAI_THROW == throw(c) (C++
+** exceptions).  On Windows-on-ARM (ARM64EC host + x64 emulation) throwing and
+** catching across those emulated frames faults: a minidump caught at the first
+** chance shows
+**
+**   server!typeerror -> luaG_runerror -> luaD_throw -> _CxxThrowException
+**   -> ... lua_pcallk -> luasrc_dofile -> luasrc_dofolder
+**   -> CServerGameDLL::LevelInit
+**
+** with ExceptionCode c0000005 and ExceptionParameter1 = 8 (EXECUTE access
+** violation) -- i.e. raising ANY Lua runtime error killed the process instead of
+** being caught by pcall and logged.  That is why the game died both on level init
+** and whenever undo touched an entity it had already removed.
+**
+** longjmp has no such problem and is Lua's other supported mechanism.
+*/
+#if !defined(LUA_USE_LONGJMP)
+#define LUA_USE_LONGJMP 1
+#endif
 #if !defined(LUAI_THROW)				/* { */
 
 #if defined(__cplusplus) && !defined(LUA_USE_LONGJMP)	/* { */
