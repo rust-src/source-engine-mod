@@ -303,8 +303,11 @@ void LModelPanel::Paint()
 	g_pStudioRender->SetLocalLights( 0, NULL );
 
 #ifdef LUA_SDK
+	// HL2SB: GMod passes ( w, h ) to the scripted Paint ( see lPanel.cpp ).
 	BEGIN_LUA_CALL_PANEL_METHOD( "Paint" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 

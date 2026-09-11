@@ -88,8 +88,14 @@ void LPanel::PaintBackground()
 void LPanel::Paint()
 {
 #ifdef LUA_SDK
+	// HL2SB: GMod passes ( w, h ) to the scripted Paint; this pushed none, so
+	// every Derma skin saw nil dimensions and died in derma_gwen's nine-slice
+	// arithmetic on a nil 'w'.  Panels are the majority of Derma -- DPanel,
+	// DLabel, DButton, DListView and the rest all derive from this.
 	BEGIN_LUA_CALL_PANEL_METHOD( "Paint" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 

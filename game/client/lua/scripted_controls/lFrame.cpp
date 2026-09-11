@@ -57,8 +57,20 @@ void LFrame::Paint()
 {
 	BaseClass::Paint();
 #if defined( LUA_SDK )
+	// HL2SB: GMod calls the scripted Paint with ( w, h ); this passed NOTHING,
+	// so every Derma skin got nil dimensions and died in the nine-slice maths:
+	//
+	//     lua/skins/default.lua:350  if ( panel:HasHierarchicalFocus() ) then
+	//         lua/derma/derma_gwen.lua:28: attempt to perform arithmetic on a nil
+	//         value (local 'w')
+	//
+	// (the skin reached its window code only after HasHierarchicalFocus was
+	// implemented; the nil w was waiting right behind it.)  Same fix as the
+	// panel-level Paint.
 	BEGIN_LUA_CALL_PANEL_METHOD( "Paint" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 
