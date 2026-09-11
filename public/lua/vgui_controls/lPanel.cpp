@@ -1249,6 +1249,20 @@ static const luaL_Reg Panelmeta[] = {
   {"GetPinOffset", Panel_GetPinOffset},
   {"GetPos", Panel_GetPos},
   {"GetRefTable", Panel_GetRefTable},
+  /* HL2SB: GMod spells this GetTable().  lua/includes/extensions/client/panel/
+  ** scriptedpanels.lua:35 does
+  **
+  **     table.Merge( panel:GetTable(), metatable )
+  **
+  ** and every GMod panel file (dpanel.lua, dlabel.lua, ...) calls panel:GetTable()
+  ** too, so with only the Experiment name registered the call resolved to nil:
+  **
+  **     Hook 'hl2sb_notification' (OnUndo) Failed:
+  **       scriptedpanels.lua:35: attempt to call a nil value (method 'GetTable')
+  **
+  ** which kept the GMod undo notification from ever being built even after the
+  ** undo itself worked.  Same function, both names. */
+  {"GetTable", Panel_GetRefTable},
   {"GetResizeOffset", Panel_GetResizeOffset},
   {"GetSize", Panel_GetSize},
   {"GetTabPosition", Panel_GetTabPosition},
