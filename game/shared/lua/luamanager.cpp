@@ -123,6 +123,27 @@ static int luasrc_type (lua_State *L) {
 }
 
 
+//-----------------------------------------------------------------------------
+// HL2SB: include( name ).
+//
+// Resolved the Team Sandbox way first -- relative to the CALLING file, which is
+// what every existing script here relies on.
+//
+// GMod's include is a search-path lookup instead, so a GMod file that lives in
+// one directory can pull in a file from another.  The case that forced this:
+// GMod's lua/includes/vgui_base.lua does include( "vgui/DFrame.lua" ) and the
+// controls live in lua/vgui/ -- relative resolution would look for
+// lua/includes/vgui/DFrame.lua and fail.  GMod's own derma/init.lua is the same
+// shape: it is at lua/derma/ and includes "derma.lua" (fine, relative) while the
+// bootstrap at lua/includes/ has to reach "derma/init.lua" (needs the root).
+//
+// So: relative first, then the GMod roots.  Existing behaviour is untouched --
+// anything that resolved before still resolves to the same file.
+//-----------------------------------------------------------------------------
+static bool LuaFileExists (const char *pszPath) {
+  return g_pFullFileSystem && g_pFullFileSystem->FileExists( pszPath, "MOD" );
+}
+
 static int luasrc_include (lua_State *L) {
   lua_Debug ar1;
   lua_getstack(L, 1, &ar1);
@@ -133,8 +154,30 @@ static int luasrc_include (lua_State *L) {
   char source[MAX_PATH];
   Q_StrRight( ar2.source, iLength-1, source, sizeof( source ) );
   Q_StripFilename( source );
+
+  const char *pszName = luaL_checkstring(L, 1);
+
+  // 1. relative to the calling file (Team Sandbox / existing HL2SB scripts).
   char filename[MAX_PATH];
-  Q_snprintf( filename, sizeof( filename ), "%s/%s", source, luaL_checkstring(L, 1) );
+  Q_snprintf( filename, sizeof( filename ), "%s/%s", source, pszName );
+  if ( !LuaFileExists( filename ) )
+  {
+    // 2. GMod's roots.  lua/ is the one GMod's own engine defaults to; the
+    //    includes/ entry keeps an include() inside lua/includes/ working when
+    //    the caller is nested deeper than the file it wants.
+    static const char *s_pRoots[] = { "lua/%s", "lua/includes/%s", "%s" };
+    for ( int i = 0; i < ARRAYSIZE( s_pRoots ); ++i )
+    {
+      char candidate[MAX_PATH];
+      Q_snprintf( candidate, sizeof( candidate ), s_pRoots[i], pszName );
+      if ( LuaFileExists( candidate ) )
+      {
+        Q_strncpy( filename, candidate, sizeof( filename ) );
+        break;
+      }
+    }
+  }
+
   luasrc_dofile(L, filename);
   return 0;
 }
