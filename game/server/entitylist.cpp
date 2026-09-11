@@ -1281,9 +1281,17 @@ void CNotifyList::OnEntityDeleted( CBaseEntity *pEntity )
 	// HL2SB: GMod's EntityRemoved hook.  Fired before the notify list drops its
 	// reference so Lua can still inspect the entity (that is what GMod does).
 	// undo.lua uses it to prune stale undos, and CallOnRemove is built on it.
-	BEGIN_LUA_CALL_HOOK( "EntityRemoved" );
-		lua_pushentity( L, pEntity );
-	END_LUA_CALL_HOOK( 1, 0 );
+	//
+	// The `L` guard matters here in a way it does not for OnEntityCreated:
+	// level shutdown tears the Lua state down (luasrc_shutdown() sets L = NULL)
+	// while entities are still being deleted, and the macro dereferences L
+	// unconditionally.
+	if ( L )
+	{
+		BEGIN_LUA_CALL_HOOK( "EntityRemoved" );
+			lua_pushentity( L, pEntity );
+		END_LUA_CALL_HOOK( 1, 0 );
+	}
 #endif
 
 	ReportDestroyEvent( pEntity );
