@@ -15,6 +15,13 @@
 extern "C" __declspec( dllimport ) int __stdcall MessageBoxA( void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType );
 extern "C" void __cdecl _exit( int nCode );
 extern "C" void __cdecl abort( void );
+// Linker-provided base address of this module; lets the panic handler print
+// stack addresses as RVAs (symbolizable with the deployed PDB) without pulling
+// in <windows.h>, which breaks the engine headers included below.
+extern "C" unsigned char __ImageBase;
+extern "C" __declspec( dllimport ) unsigned short __stdcall
+	RtlCaptureStackBackTrace( unsigned long FramesToSkip, unsigned long FramesToCapture,
+	                          void **BackTrace, unsigned long *BackTraceHash );
 #define HL2SB_MB_OK         0x00000000u
 #define HL2SB_MB_ICONERROR  0x00000010u
 #endif
@@ -352,6 +359,36 @@ static int HL2SB_LuaPanic( lua_State *pL )
 
 	Msg( "\n[HL2SB] *** LUA PANIC - unprotected Lua error ***\n" );
 	Warning( "[HL2SB] LUA PANIC:\n%s\n", pszTrace ? pszTrace : pszMsg );
+
+	// The Lua traceback above is almost always empty (the CallInfo chain is
+	// already unwound when the panic runs), so capture the NATIVE stack too.
+	// Only the client has a SIGABRT handler that writes a minidump -- a panic on
+	// the server otherwise left no usable information at all.  Printing the
+	// addresses relative to this module's base makes them symbolizable with the
+	// deployed PDB.
+	//
+	// __ImageBase is provided by the linker in every DLL, so this needs no
+	// Windows headers (including <windows.h> here breaks the engine headers).
+	{
+		void *pStack[ 64 ];
+		unsigned short nFrames = RtlCaptureStackBackTrace( 1, 64, pStack, NULL );
+		const unsigned char *pBase = &__ImageBase;
+
+		Msg( "[HL2SB] native stack (%u frames), module base %p:\n", nFrames, pBase );
+		for ( unsigned short i = 0; i < nFrames; i++ )
+			Msg( "[HL2SB]   %02u: base+0x%llX  (%p)\n", i,
+			     (unsigned long long)( (const unsigned char *)pStack[ i ] - pBase ), pStack[ i ] );
+
+		if ( FILE *fp = fopen( "hl2sb_lua_panic.log", "a" ) )
+		{
+			fprintf( fp, "native stack, module base %p\n", pBase );
+			for ( unsigned short i = 0; i < nFrames; i++ )
+				fprintf( fp, "  %02u: base+0x%llX\n", i,
+				         (unsigned long long)( (const unsigned char *)pStack[ i ] - pBase ) );
+			fflush( fp );
+			fclose( fp );
+		}
+	}
 
 	if ( FILE *fp = fopen( "hl2sb_lua_panic.log", "a" ) )
 	{
