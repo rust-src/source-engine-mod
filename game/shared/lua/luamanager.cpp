@@ -633,7 +633,10 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 			pBuf[nClean++] = pBuf[i];
 	}
 
-	char *pOut = (char *)malloc( nClean + 1 );
+	// HL2SB: 2x, not 1x.  Every rewrite below is length-preserving except
+	// DEFINE_BASECLASS, whose replacement (30 bytes) is nearly twice the token
+	// (16), so the old nClean+1 buffer would overflow on a file that uses it.
+	char *pOut = (char *)malloc( nClean * 2 + 1 );
 	if ( !pOut )
 	{
 		free( pBuf );
@@ -691,6 +694,37 @@ LUA_API int luasrc_dofile (lua_State *L, const char *filename) {
 			}
 			else if ( c == '/' && i2 + 1 < nClean && pBuf[i2+1] == '/' ) { pOut[o++] = '-'; pOut[o++] = '-'; i2 += 2; state = LINE_COMMENT; }
 			else if ( c == '!' && i2 + 1 < nClean && pBuf[i2+1] == '=' ) { pOut[o++] = '~'; pOut[o++] = '='; i2 += 2; }
+			// HL2SB: DEFINE_BASECLASS( "X" ) -- a Garry's Mod PREPROCESSOR keyword,
+			// not a function.  Its own wiki: "directly replaced with local
+			// BaseClass = baseclass.Get", and lua/includes/modules/baseclass.lua
+			// documents the same expansion.  Only the identifier is replaced, so
+			// the trailing ( "X" ) stays and the result is
+			// local BaseClass = baseclass.Get( "X" ).
+			//
+			// Done here rather than as a global function because GMod does it at
+			// the lexer level: the argument is part of the replacement, and a
+			// function could not introduce a `local`.
+			//
+			// Identifier-boundary checked, so DEFINE_BASECLASS_X or a longer name
+			// is untouched -- and, unlike GMod's own pass, strings and comments are
+			// left alone (the state machine above already guarantees that).
+			else if ( ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || c == '_' ) &&
+			          ( i2 == 0 || !( ( pBuf[i2-1] >= 'a' && pBuf[i2-1] <= 'z' ) ||
+			                          ( pBuf[i2-1] >= 'A' && pBuf[i2-1] <= 'Z' ) ||
+			                          ( pBuf[i2-1] >= '0' && pBuf[i2-1] <= '9' ) ||
+			                          pBuf[i2-1] == '_' ) ) &&
+			          i2 + 16 <= nClean &&
+			          !Q_strnicmp( pBuf + i2, "DEFINE_BASECLASS", 16 ) &&
+			          ( i2 + 16 >= nClean || !( ( pBuf[i2+16] >= 'a' && pBuf[i2+16] <= 'z' ) ||
+			                                    ( pBuf[i2+16] >= 'A' && pBuf[i2+16] <= 'Z' ) ||
+			                                    ( pBuf[i2+16] >= '0' && pBuf[i2+16] <= '9' ) ||
+			                                    pBuf[i2+16] == '_' ) ) )
+			{
+				static const char szDefineBaseClass[] = "local BaseClass = baseclass.Get";
+				for ( const char *p = szDefineBaseClass; *p; ++p )
+					pOut[o++] = *p;
+				i2 += 16;
+			}
 			else { pOut[o++] = c; i2++; }
 			break;
 		}
