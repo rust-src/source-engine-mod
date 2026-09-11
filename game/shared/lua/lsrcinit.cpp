@@ -601,6 +601,32 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   /* ...and the library tables themselves can be reachable under GMod's names. */
   luasrc_install_lib_aliases(L);
 
+  /* HL2SB: re-assert the realm globals LAST.
+  **
+  ** public/lenumerations_shared.cpp:573 pushes the entity flag FL_CLIENT (256)
+  ** with the shortname "CLIENT", and lua_pushenum publishes shortnames as flat
+  ** globals -- so it overwrote the boolean base_open() had set (luamanager.cpp:
+  ** 235-251).  Result, measured in-game: CLIENT=256 on BOTH realms, i.e. truthy
+  ** everywhere, so every `if ( CLIENT ) then` took the client branch on the
+  ** server too (that is what made the server import derma/ + all of lua/vgui/
+  ** and print 54 "nil value (global 'derma')" lines per level).
+  **
+  ** Fixing the macro alone was not enough -- the object that defines the FL_
+  ** enum did not get rebuilt (luamanager.h is not in waf's header dependency
+  ** set) and the value was still 256 afterwards.  Stamping them here, once,
+  ** after every lib is open, cannot be skipped by a stale object: this file is
+  ** the one that changed, so it always recompiles.
+  */
+#ifdef CLIENT_DLL
+  lua_pushboolean(L, 1); lua_setglobal(L, "_CLIENT");
+  lua_pushboolean(L, 0); lua_setglobal(L, "SERVER");
+  lua_pushboolean(L, 1); lua_setglobal(L, "CLIENT");
+#else
+  lua_pushboolean(L, 1); lua_setglobal(L, "_GAME");
+  lua_pushboolean(L, 1); lua_setglobal(L, "SERVER");
+  lua_pushboolean(L, 0); lua_setglobal(L, "CLIENT");
+#endif
+
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
 }

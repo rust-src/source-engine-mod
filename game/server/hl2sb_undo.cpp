@@ -85,8 +85,26 @@ static void HL2SB_CallUndoFunc( lua_State *pL, const char *pszFunc, int nArgs )
 //-----------------------------------------------------------------------------
 void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 {
-	if ( !pOwner || !pEnt )
+	// HL2SB: log every entry, not just the failures.
+	//
+	// The failure prints below only fire once the call is already inside, so a
+	// silent run was ambiguous: "HL2SB_UndoRecord was never called" (the spawn
+	// command did not create anything -- CreatePhysicsProp returns NULL when the
+	// model is missing) looks exactly like "it was called and worked".  Those
+	// two need completely different fixes, so say which one it is.
+	if ( !pEnt )
+	{
+		Warning( "[HL2SB undo] HL2SB_UndoRecord: entity is NULL (the spawn failed -- model missing?), nothing recorded\n" );
 		return;
+	}
+	if ( !pOwner )
+	{
+		Warning( "[HL2SB undo] HL2SB_UndoRecord: owner is NULL for %s, nothing recorded\n", pEnt->GetClassname() );
+		return;
+	}
+
+	if ( cvar && cvar->FindVar( "hl2sb_hud_debug" ) && cvar->FindVar( "hl2sb_hud_debug" )->GetInt() != 0 )
+		Warning( "[HL2SB undo] HL2SB_UndoRecord( %s, %s )\n", pOwner->GetPlayerName(), pEnt->GetClassname() );
 
 	lua_State *pL = L;
 	if ( !pL )
