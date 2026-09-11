@@ -2877,19 +2877,33 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 
 	// HL2SB: image materials (Material( "path/img.png" ) and friends) are created
 	// without a .vmt on disk, and CMaterial::PrecacheVars() flags every material
-	// it precaches as MANUALLY CREATED (cmaterial.cpp:575-579).  A manual material
-	// is invisible to the 'false' lookup above, so the FIRST precache made the
-	// image material unreachable and every later FindMaterial built yet another
-	// copy of it.  The result was a per-frame material churn that ended in
+	// it precaches as MANUALLY CREATED (cmaterial.cpp:575-579) -- but the
+	// dictionary records that flag when the material is INSERTED, i.e. while it is
+	// still false.  So after the first precache neither lookup can find the
+	// material:
 	//
-	//   CMaterial::PrecacheVars: error loading vmt file for gwenskin/gmoddefault
-	//   CMaterial::DrawElements: No bound shader
+	//   FindMaterial( name, false ) -> the material IS manual now
+	//   FindMaterial( name, true )  -> the DICTIONARY still says it is not
 	//
-	// and a crash on the next draw (plus the duplicate the Derma skin held, which
-	// had no shader params at all).  Accept a manual match as well.
+	// The result was a per-frame rebuild of the same material (the log showed
+	// "AddMaterial( 'gwenskin/gmoddefault.vmt' ) -> <same address>" over and over,
+	// 422 "error loading vmt file" lines, then "DrawElements: No bound shader" and
+	// an access violation), plus the Derma skin holding one of the paramless
+	// copies -- the transparent panel.
+	//
+	// Fall back to a name-only scan, which does not care about the stale flag.
 	if ( !pExistingMaterial )
 	{
-		pExistingMaterial = m_MaterialDict.FindMaterial( pTemp, true );
+		for ( MaterialHandle_t h = m_MaterialDict.FirstMaterial(); h != m_MaterialDict.InvalidMaterial(); h = m_MaterialDict.NextMaterial( h ) )
+		{
+			IMaterialInternal *pCandidate = m_MaterialDict.GetMaterialInternal( h );
+
+			if ( pCandidate != NULL && !Q_stricmp( pCandidate->GetName(), pTemp ) )
+			{
+				pExistingMaterial = pCandidate;
+				break;
+			}
+		}
 	}
 
 	if ( pExistingMaterial )
