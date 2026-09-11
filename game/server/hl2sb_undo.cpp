@@ -62,7 +62,21 @@ static void HL2SB_CallUndoFunc( lua_State *pL, const char *pszFunc, int nArgs )
 	// func followed by its arguments.
 	lua_insert( pL, -( nArgs + 1 ) );
 
-	luasrc_pcall( pL, nArgs, 0, 0 );				// [ undo ]
+	// HL2SB: report the failure.
+	//
+	// This used to be a bare `luasrc_pcall( pL, nArgs, 0, 0 );` -- return value
+	// discarded, error object left unread.  Every failure inside
+	// undo.Create / AddEntity / SetPlayer / Finish was therefore invisible, and
+	// the only symptom was the undo command later saying
+	// "no undo entry recorded" with a perfectly empty stack.  Now the Lua error
+	// names itself in ds_debug.log.
+	int iStatus = luasrc_pcall( pL, nArgs, 0, 0 );
+	if ( iStatus != 0 )
+	{
+		const char *pszErr = lua_tostring( pL, -1 );
+		Warning( "[HL2SB undo] undo.%s() failed: %s\n", pszFunc, pszErr ? pszErr : "(no message)" );
+		lua_pop( pL, 1 );							// [ undo ]
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -87,6 +101,12 @@ void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 	lua_getglobal( pL, "undo" );					// [ undo ]
 	if ( !lua_istable( pL, -1 ) )
 	{
+		// HL2SB: same reasoning as the pcall report below -- say WHY the record
+		// is being dropped instead of returning in silence.  "undo is nil" means
+		// lua/includes/modules/undo.lua never ran in this Lua state, which is a
+		// completely different problem from an error inside undo.Finish().
+		Warning( "[HL2SB undo] global `undo` is %s, not a table -- cannot record %s\n",
+			luaL_typename( pL, -1 ), pszName );
 		lua_settop( pL, nBase );
 		return;
 	}
