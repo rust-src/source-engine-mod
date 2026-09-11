@@ -15,6 +15,8 @@
 #include "luasrclib.h"
 #include "vgui/LVGUI.h"
 #include "vgui_controls/lPanel.h"
+#include "materialsystem/imaterial.h"
+#include "lua/materialsystem/limaterial.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -314,6 +316,29 @@ static int surface_DrawSetTextScale (lua_State *L) {
 
 static int surface_DrawSetTexture (lua_State *L) {
   surface()->DrawSetTexture(luaL_checkint(L, 1));
+  return 0;
+}
+
+// GMod: surface.SetMaterial( material ) -- use a real IMaterial for the
+// following DrawTexturedRect* calls.  That is how the Derma skin
+// (lua/derma/derma_gwen.lua -> GWEN.CreateTextureBorder) and killicon.lua draw.
+//
+// ISurface has no DrawSetTextureMaterial() in this engine's public interface (it
+// lives on IMatSystemSurface, and extending the ISurface vtable would break the
+// prebuilt engine.dll), so bind by name: DrawSetTextureFile() resolves the name
+// through FindMaterial() and hands the dictionary slot the very material we were
+// passed.  One slot is reused for the life of the process, so painting every
+// frame does not leak texture ids.
+static int surface_SetMaterial (lua_State *L) {
+  static int nMaterialDrawTextureID = -1;
+
+  if ( nMaterialDrawTextureID == -1 ) {
+    nMaterialDrawTextureID = surface()->CreateNewTextureID();
+  }
+
+  IMaterial *pMaterial = luaL_checkmaterial(L, 1);
+  surface()->DrawSetTextureFile( nMaterialDrawTextureID, pMaterial->GetName(), true, false );
+  surface()->DrawSetTexture( nMaterialDrawTextureID );
   return 0;
 }
 
@@ -824,6 +849,7 @@ static const luaL_Reg surfacelib[] = {
   {"SetFont",   surface_SetFont},
   {"SetEmbeddedPanel",   surface_SetEmbeddedPanel},
   {"SetFontGlyphSet",   surface_SetFontGlyphSet},
+  {"SetMaterial",   surface_SetMaterial},
   {"SetTranslateExtendedKeys",   surface_SetTranslateExtendedKeys},
   {"SetWorkspaceInsets",   surface_SetWorkspaceInsets},
   {"SupportsFeature",   surface_SupportsFeature},

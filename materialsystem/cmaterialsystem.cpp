@@ -10,6 +10,7 @@
 
 #include "cmaterialsystem.h"
 
+#include "hl2sb_pngtexture.h"
 #include "colorspace.h"
 #include "materialsystem/materialsystem_config.h"
 #include "IHardwareConfigInternal.h"
@@ -2826,14 +2827,36 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 	CUtlVector<FileNameHandle_t> includes;
 	KeyValues *pKeyValues = new KeyValues("vmt");
 	KeyValues *pPatchKeyValues = new KeyValues( "vmt_patches" );
+
+	// HL2SB: GMod lets a material name point straight at an image file, e.g.
+	// Material( "gwenskin/GModDefault.png" ) or $basetexture "icon.png".  Stock
+	// Source insists on a .vmt of the same name and otherwise errors out, so
+	// synthesize an UnlitGeneric material from the image instead.
+	bool bImageMaterial = false;
 	if ( !LoadVMTFile( *pKeyValues, *pPatchKeyValues, vmtName, true, &includes ) )
 	{
-		pKeyValues->deleteThis();
-		pKeyValues = NULL;
-		pPatchKeyValues->deleteThis();
-		pPatchKeyValues = NULL;
+		char szImageName[MAX_PATH];
+		if ( HL2SB_ResolveImageTexture( pMaterialName, szImageName, sizeof( szImageName ) ) )
+		{
+			pKeyValues->deleteThis();
+			pKeyValues = new KeyValues( "UnlitGeneric" );
+			pKeyValues->SetString( "$basetexture", szImageName );
+			pKeyValues->SetInt( "$translucent", 1 );
+			pKeyValues->SetInt( "$vertexcolor", 1 );
+			pKeyValues->SetInt( "$vertexalpha", 1 );
+			pKeyValues->SetInt( "$nolod", 1 );
+			bImageMaterial = true;
+		}
+		else
+		{
+			pKeyValues->deleteThis();
+			pKeyValues = NULL;
+			pPatchKeyValues->deleteThis();
+			pPatchKeyValues = NULL;
+		}
 	}
-	else
+
+	if ( pKeyValues )
 	{
 		char *matNameWithExtension;
 		nLen = Q_strlen( pTemp ) + Q_strlen( ".vmt" ) + 1;
@@ -2841,14 +2864,18 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 		Q_strncpy( matNameWithExtension, pTemp, nLen );
 		Q_strncat( matNameWithExtension, ".vmt", nLen, COPY_ALL_CHARACTERS );
 
+		// Image materials are keyed by the image name GMod asked for, so
+		// mat:GetName() reports the .png rather than an implied .vmt.
+		const char *pMatName = bImageMaterial ? pMaterialName : matNameWithExtension;
+
 		IMaterialInternal *pMat = NULL;
 		if ( !Q_stricmp( pKeyValues->GetName(), "subrect" ) )
 		{
-			pMat = m_MaterialDict.AddMaterialSubRect( matNameWithExtension, pTextureGroupName, pKeyValues, pPatchKeyValues );
+			pMat = m_MaterialDict.AddMaterialSubRect( pMatName, pTextureGroupName, pKeyValues, pPatchKeyValues );
 		}
 		else
 		{
-			pMat = m_MaterialDict.AddMaterial( matNameWithExtension, pTextureGroupName );
+			pMat = m_MaterialDict.AddMaterial( pMatName, pTextureGroupName );
 			if ( g_pShaderDevice->IsUsingGraphics() )
 			{
 				if ( !bIsUNC )
