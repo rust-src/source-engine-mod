@@ -455,6 +455,40 @@ static int luasrc_ConVar (lua_State *L) {
   return 1;
 }
 
+// HL2SB: GMod's engine global GetConVar_Internal( name ).
+//
+// GMod's lua/includes/util.lua builds GetConVar / GetConVarNumber /
+// GetConVarString / GetConVarBool on top of this, and it redefines them
+// UNCONDITIONALLY -- so once that file runs, whatever the Lua side had before is
+// gone.  Without this function every one of those became "attempt to call a nil
+// value (global 'GetConVar_Internal')" and took the kill feed and undo with it.
+//
+// Contract differences from luasrc_ConVar() below, both deliberate:
+//   * it never CREATES a convar -- an unknown name yields nil, which is what
+//     GMod's GetConVar() promises (scripts write `if ( !GetConVar(x) ) then`);
+//   * a name created from Lua is found through m_ConVarDatabase, because
+//     luasrc_ConVar() does not go through cvar->RegisterConCommand().
+static int luasrc_GetConVar_Internal (lua_State *L) {
+  const char *pName = luaL_checkstring(L, 1);
+
+  unsigned short lookup = m_ConVarDatabase.Find( pName );
+  if ( lookup != m_ConVarDatabase.InvalidIndex() )
+  {
+    lua_pushconvar(L, m_ConVarDatabase[ lookup ] );
+    return 1;
+  }
+
+  ConVar *pConVar = cvar->FindVar( pName );
+  if ( !pConVar )
+  {
+    lua_pushnil(L);
+    return 1;
+  }
+
+  lua_pushconvar(L, pConVar);
+  return 1;
+}
+
 void ResetConVarDatabase( void )
 {
 	for ( int i=m_ConVarDatabase.First(); i != m_ConVarDatabase.InvalidIndex(); i=m_ConVarDatabase.Next( i ) )
@@ -469,6 +503,7 @@ void ResetConVarDatabase( void )
 
 static const luaL_Reg ConVar_funcs[] = {
   {"ConVar", luasrc_ConVar},
+  {"GetConVar_Internal", luasrc_GetConVar_Internal},
   {NULL, NULL}
 };
 

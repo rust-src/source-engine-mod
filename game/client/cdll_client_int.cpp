@@ -1658,16 +1658,26 @@ void CHLClient::LevelInitPreEntity( char const* pMapName )
 	luasrc_dofolder( L, LUA_PATH_MODULES );
 
 	// HL2SB: GMod keeps its bootstrap files (init.lua, util.lua, vgui_base.lua)
-	// directly in lua/includes/, and its init.lua runs before everything else.
-	// Here it runs AFTER extensions/modules on purpose: GMod's Material() is a
-	// C global there, while HL2SB still provides it as a Lua shim in
+	// directly in lua/includes/ and its engine loads lua/includes/init.lua by
+	// NAME -- it does not scan the directory.  Loading only init.lua matters a
+	// great deal here (2026-09-12): a non-recursive scan of lua/includes/
+	// loads init.lua, then util.lua, then vgui_base.lua AGAIN, and that second
+	// pass re-runs all 54 lua/vgui controls.  derma.DefineControl() then sees
+	// Controls[name] ~= nil, takes its "reloading" branch, and every control
+	// dies in ReloadClass() -> FindPanelsByClass() -> vgui.GetAll():
+	//   54 x "[Lua] FAILED lua/vgui/D*.lua: lua/derma/derma.lua:35:
+	//          attempt to call a nil value (field 'GetAll')"
+	// with no controls registered at all.  init.lua pulls in util.lua and
+	// vgui_base.lua itself, so one named file is one pass.
+	//
+	// It runs AFTER extensions/modules on purpose: GMod's Material() is a C
+	// global there, while HL2SB still provides it as a Lua shim in
 	// extensions/gmod_surface.lua, and lua/includes/util.lua captures Material
 	// at load time -- running first would make it capture nil and install a
 	// wrapper that throws on every call.
 	// TODO(port): make Material a real engine binding, then move this call back
 	// to the top of the pass (see the plan's "engine-side" rule).
-	// Sorted, non-recursive -- extensions/ and modules/ are handled above.
-	luasrc_dofolder_sorted( L, LUA_PATH_INCLUDES, false );
+	luasrc_dofile_includes( L, "init.lua" );
 
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_CLIENT );

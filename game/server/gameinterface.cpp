@@ -970,11 +970,18 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
 	luasrc_dofolder( L, LUA_PATH_MODULES );
 
-	// HL2SB: GMod's lua/includes/ bootstrap files (init.lua, util.lua) live
-	// directly in that directory.  Loaded after extensions/modules for the same
-	// reason as the client -- lua/includes/util.lua captures Material at load
-	// time and HL2SB still provides that as a Lua shim.  Sorted, non-recursive.
-	luasrc_dofolder_sorted( L, LUA_PATH_INCLUDES, false );
+	// HL2SB: GMod's lua/includes/ bootstrap.  GMod's engine loads init.lua by
+	// NAME, not by scanning the directory -- and on the server the scan was
+	// doubly wrong (2026-09-12): it re-loaded util.lua and vgui_base.lua, and
+	// vgui_base.lua's 54 lua/vgui controls are CLIENT ONLY (they need `surface`,
+	// `vgui` and derma's skin system), so the server produced 54 more FAILED
+	// lines on top of the client's.  init.lua guards its client-only includes
+	// with `if CLIENT`, exactly as GMod's own does.
+	//
+	// Loaded after extensions/modules for the same reason as the client --
+	// lua/includes/util.lua captures Material at load time and HL2SB still
+	// provides that as a Lua shim.
+	luasrc_dofile_includes( L, "init.lua" );
 
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_SERVER );

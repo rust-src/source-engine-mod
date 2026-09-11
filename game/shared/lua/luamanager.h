@@ -618,6 +618,11 @@ LUA_API void  (luasrc_dofolder) (lua_State *L, const char *path);
 // alphabetical order, which is what GMod guarantees and luasrc_dofolder does not.
 LUA_API void  (luasrc_dofolder_sorted) (lua_State *L, const char *path, bool bRecurse);
 
+// HL2SB: load one named file from lua/includes/ (GMod's engine calls its
+// bootstrap by name instead of scanning the directory -- see the definition for
+// why the scan is actively harmful).
+LUA_API int   (luasrc_dofile_includes) (lua_State *L, const char *pszName);
+
 LUA_API int   (luasrc_pcall) (lua_State *L, int nargs, int nresults, int errfunc);
 LUA_API void  (luasrc_print) (lua_State *L, int narg);
 LUA_API void  (luasrc_dumpstack) (lua_State *L);

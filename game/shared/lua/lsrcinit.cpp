@@ -496,10 +496,13 @@ static void luasrc_install_type_names (lua_State *L) {
 ** lua/derma/init.lua opens with system.IsLinux(), and its lua/vgui controls are
 ** full of render.*, surface.*, draw.*.
 **
-** The alias copies a REFERENCE to the same table, never a copy of it, so adding
-** a function under either name is visible through the other.  A missing library
-** (several are realm-gated) is skipped rather than aliased to nil, so the name
-** simply stays undefined in the realm that does not have it -- which is what
+** The alias MERGES the Experiment table into the GMod name (see the function
+** below): entries the GMod name already has are kept, the rest are added.  It
+** must not replace the table, because the two realms register some of these
+** under different spellings and replacing one with the other silently deletes a
+** library -- that is exactly how util.PrecacheModel went missing.  A missing
+** library (several are realm-gated) is skipped rather than aliased to nil, so the
+** name simply stays undefined in the realm that does not have it -- which is what
 ** GMod does too.
 **
 ** Entities / player / gameevent are already aliased where they are opened
@@ -525,12 +528,61 @@ static const char *s_pGModLibAliases[][2] = {
 
 static void luasrc_install_lib_aliases (lua_State *L) {
   for (int i = 0; s_pGModLibAliases[i][0]; ++i) {
-    lua_getglobal(L, s_pGModLibAliases[i][1]);
-    if (lua_istable(L, -1)) {
-      lua_setglobal(L, s_pGModLibAliases[i][0]);
-    } else {
+    const char *pszGModName = s_pGModLibAliases[i][0];
+    const char *pszExpName  = s_pGModLibAliases[i][1];
+
+    lua_getglobal(L, pszExpName);
+    if (!lua_istable(L, -1)) {
       lua_pop(L, 1);
+      continue;
     }
+    const int nSrc = lua_gettop(L);
+
+    lua_getglobal(L, pszGModName);
+    if (!lua_istable(L, -1)) {
+      /* Nothing under the GMod name yet -- publish the source table itself. */
+      lua_pop(L, 1);
+      lua_pushvalue(L, nSrc);
+      lua_setglobal(L, pszGModName);
+      lua_pop(L, 1);
+      continue;
+    }
+    const int nDst = lua_gettop(L);
+
+    /* The GMod name already exists, so MERGE instead of overwriting.
+    **
+    ** lua_setglobal() here used to clobber a real library.  Concretely: on the
+    ** client luaopen_UTIL() (game/client/lua/lcdll_util.cpp) registers its
+    ** functions under "UTIL" while luaopen_UTIL_shared()
+    ** (game/shared/lua/lutil_shared.cpp) registers under "util" -- and GMod's
+    ** spelling is "util".  So `util = UTIL` threw away everything the shared
+    ** library had put there: util.PrecacheModel, util.PrecacheSound,
+    ** util.TraceLine, util.DecalTrace ...  The visible breakage was
+    **
+    **   lua/includes/util.lua:225: attempt to call a nil value
+    **                             (field 'PrecacheModel')
+    **
+    ** from Model() in GMod's own util.lua, which weapons/gmod_camera/shared.lua
+    ** calls at load time.  Same shape for every realm-gated pair in the table
+    ** above, so the rule is: never destroy an existing library, only fill it in.
+    ** Existing entries win -- a name the GMod spelling already owns is left
+    ** alone, and package.loaded[ name ] stays the same table as _G[ name ]. */
+    lua_pushnil(L);
+    while (lua_next(L, nSrc) != 0) {
+      lua_pushvalue(L, -2);              /* key */
+      lua_rawget(L, nDst);               /* dst[ key ] */
+      if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushvalue(L, -2);            /* key */
+        lua_pushvalue(L, -2);            /* value */
+        lua_rawset(L, nDst);             /* dst[ key ] = value */
+      } else {
+        lua_pop(L, 1);
+      }
+      lua_pop(L, 1);                     /* pop the value, keep the key */
+    }
+
+    lua_settop(L, nSrc - 1);             /* drop src and dst */
   }
 }
 
