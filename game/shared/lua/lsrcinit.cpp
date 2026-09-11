@@ -17,6 +17,11 @@
 // HL2SB: game.AddParticles() below drives the particle system manager directly.
 #include "particles/particles.h"
 #include "filesystem.h"
+// HL2SB: luaL_checkentity (SuppressHostEvents) and the GMod global helpers
+// registered at the end.
+#include "luamanager.h"
+#include "lbaseentity_shared.h"
+#include "ipredictionsystem.h"
 
 
 static const luaL_Reg luasrclibs[] = {
@@ -693,6 +698,58 @@ static int lua_game_IsDedicated (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: the console print globals.
+//
+// GMod has Msg() (no newline) and MsgN() (newline) on both realms, and its own
+// lua/includes files use them - extensions/gmod_isvalid.lua:115 and
+// extensions/player_auth.lua:78 both failed with
+//     attempt to call a nil value (global 'Msg')
+//     attempt to call a nil value (global 'MsgN')
+//-----------------------------------------------------------------------------
+static int lua_Msg (lua_State *L) {
+  int nArgs = lua_gettop( L );
+
+  for ( int i = 1; i <= nArgs; ++i ) {
+    size_t nLength = 0;
+    const char *pszText = luaL_tolstring( L, i, &nLength );
+    Msg( "%s", pszText ? pszText : "" );
+    lua_pop( L, 1 );
+  }
+
+  return 0;
+}
+
+static int lua_MsgN (lua_State *L) {
+  lua_Msg( L );
+  Msg( "\n" );
+  return 0;
+}
+
+#ifndef CLIENT_DLL
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: SuppressHostEvents( ent ).
+//
+// GMod's server-side helper for "do not filter this player's own prediction out
+// of the temp entities I am about to send" - it is exactly
+// IPredictionSystem::SuppressHostEvents(), and the ported flechette gun calls it
+// (with NULL) before spawning its projectile.  Without the global the weapon
+// aborted on that line and never fired:
+//     weapon_flechettegun/shared.lua:58: attempt to call a nil value (global
+//     'SuppressHostEvents')
+//-----------------------------------------------------------------------------
+static int lua_SuppressHostEvents (lua_State *L) {
+  if ( lua_isnoneornil( L, 1 ) ) {
+    IPredictionSystem::SuppressHostEvents( NULL );
+  }
+  else {
+    IPredictionSystem::SuppressHostEvents( luaL_checkentity( L, 1 ) );
+  }
+
+  return 0;
+}
+#endif
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -885,5 +942,18 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
 
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
+
+  /* HL2SB: GMod globals that the engine owns (see the lua_Msg / lua_SuppressHost
+  ** Events definitions above).  Registered after the library pass so nothing
+  ** overwrites them. */
+  lua_pushcfunction( L, lua_Msg );
+  lua_setglobal( L, "Msg" );
+  lua_pushcfunction( L, lua_MsgN );
+  lua_setglobal( L, "MsgN" );
+
+#ifndef CLIENT_DLL
+  lua_pushcfunction( L, lua_SuppressHostEvents );
+  lua_setglobal( L, "SuppressHostEvents" );
+#endif
 }
 
