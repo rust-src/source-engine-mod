@@ -14,6 +14,10 @@
 #include "luasrclib.h"
 #include "lauxlib.h"
 
+// HL2SB: game.AddParticles() below drives the particle system manager directly.
+#include "particles/particles.h"
+#include "filesystem.h"
+
 
 static const luaL_Reg luasrclibs[] = {
   // HL2SB: ported from Experiment: Source.  Fills _E with the shared enums.
@@ -603,21 +607,41 @@ static void luasrc_install_lib_aliases (lua_State *L) {
 // and threw "attempt to call a nil value (field 'AddParticles')" six times per
 // session, because the table created below was empty.
 //-----------------------------------------------------------------------------
-#ifdef CLIENT_DLL
-// Game client's particle precache (game/client/cdll_client_int.cpp).
-extern void PrecacheParticleSystem( const char *pParticleSystemName );
-#endif
-
 static int lua_game_AddParticles (lua_State *L) {
   const char *pszParticleFile = luaL_checkstring( L, 1 );
+  bool bLoaded = false;
 
-#ifdef CLIENT_DLL
-  // GMod loads the PCF so its particle systems can be created later; the engine
-  // side of that is the client's precache.
-  PrecacheParticleSystem( pszParticleFile );
-#endif
+  // GMod's game.AddParticles( file ) loads a .pcf so that the particle systems
+  // inside it can be precached by name afterwards.  That is what GMod SWEPs rely
+  // on: the ported flechette gun runs
+  //     game.AddParticles( "particles/hunter_flechette.pcf" )
+  // and the weapon then precaches "hunter_muzzle_flash", "flechette_halo", ...
+  //
+  // This used to hand the *file name* to PrecacheParticleSystem(), which takes a
+  // system name, so every call produced
+  //     Attemped to precache unknown particle system "particles/....pcf"!
+  // and the weapon had no effects at all.  ReadParticleConfigFile() is the same
+  // entry the engine's own particles_manifest.txt loader uses.
+  if ( pszParticleFile[0] == '\0' ) {
+    lua_pushboolean( L, false );
+    return 1;
+  }
 
-  lua_pushboolean( L, true );
+  if ( g_pParticleSystemMgr == NULL ) {
+    Warning( "[HL2SB] game.AddParticles: particle system manager not ready, '%s' not loaded\n", pszParticleFile );
+  }
+  else if ( !filesystem->FileExists( pszParticleFile, "GAME" ) ) {
+    Warning( "[HL2SB] game.AddParticles: '%s' is not in the search paths - its particle systems stay unknown\n", pszParticleFile );
+  }
+  else {
+    bLoaded = g_pParticleSystemMgr->ReadParticleConfigFile( pszParticleFile, true, false );
+
+    if ( !bLoaded ) {
+      Warning( "[HL2SB] game.AddParticles: '%s' exists but could not be parsed\n", pszParticleFile );
+    }
+  }
+
+  lua_pushboolean( L, bLoaded );
   return 1;
 }
 
