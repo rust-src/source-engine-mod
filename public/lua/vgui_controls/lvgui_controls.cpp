@@ -41,6 +41,8 @@
 ** true is safe for every one of them.
 ** ===========================================================================
 */
+static void lua_vgui_RememberPanel (lua_State *L, int nIndex);
+
 static int lua_vgui_Create (lua_State *L) {
   const char *pszClass = luaL_checkstring(L, 1);
   const int nTop = lua_gettop(L);
@@ -64,11 +66,72 @@ static int lua_vgui_Create (lua_State *L) {
   else if (!Q_stricmp(pszClass, "CheckButton"))             lua_pushstring(L, "");
 
   lua_call(L, lua_gettop(L) - nBase, 1);
+  lua_vgui_RememberPanel(L, -1);
+  return 1;
+}
+
+/*
+** ===========================================================================
+** HL2SB: vgui.GetAll()
+**
+** Garry's Mod's engine returns a table of every panel created through
+** vgui.Create / vgui.CreateX.  Its own Lua layer needs it in derma.lua's
+** FindPanelsByClass() -- the "this control definition is being reloaded, so
+** re-apply the new methods to every live instance" path -- and addons use it to
+** find and close their own windows.
+**
+** This engine had no panel registry at all (no CUtlVector of Lua panels exists
+** in public/lua/vgui_controls), so one is kept here: a weak-VALUED table in the
+** Lua registry, appended to by the vgui.Create dispatch above.  Weak values mean
+** a panel that was closed and collected drops out by itself, which is exactly
+** what GMod's list does -- it only ever holds live panels.
+** ===========================================================================
+*/
+static const char *s_pVguiPanelRegistry = "hl2sb_vgui_panels";
+
+static void lua_vgui_RememberPanel (lua_State *L, int nIndex) {
+  if (nIndex < 0) nIndex = lua_gettop(L) + nIndex + 1;
+  if (!lua_istable(L, nIndex) && !lua_isuserdata(L, nIndex))
+    return;                                     // Create returned nil (bad class name)
+
+  lua_pushstring(L, s_pVguiPanelRegistry);
+  lua_rawget(L, LUA_REGISTRYINDEX);
+  if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+
+  lua_pushvalue(L, nIndex);
+  lua_rawseti(L, -2, (int)lua_objlen(L, -2) + 1);
+  lua_pop(L, 1);
+}
+
+/*
+** HL2SB: build the registry table (with a weak-value metatable) once, when the
+** vgui library is opened.  Stack balanced: everything pushed here is popped.
+*/
+static void lua_vgui_CreatePanelRegistry (lua_State *L) {
+  lua_newtable(L);                              // [panels]
+  lua_newtable(L);                              // [panels metatable]
+  lua_pushstring(L, "v");
+  lua_setfield(L, -2, "__mode");                // metatable.__mode = "v"
+  lua_setmetatable(L, -2);                      // [panels]
+  lua_pushstring(L, s_pVguiPanelRegistry);
+  lua_pushvalue(L, -2);                         // [panels panels]
+  lua_rawset(L, LUA_REGISTRYINDEX);             // registry[name] = panels, [panels]
+  lua_pop(L, 1);                                // []
+}
+
+static int lua_vgui_GetAll (lua_State *L) {
+  lua_pushstring(L, s_pVguiPanelRegistry);
+  lua_rawget(L, LUA_REGISTRYINDEX);
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    lua_newtable(L);                            // never nil: derma.lua pairs() it
+  }
   return 1;
 }
 
 static const luaL_Reg vgui_funcs[] = {
   {"Create", lua_vgui_Create},
+  {"GetAll", lua_vgui_GetAll},
   {NULL, NULL}
 };
 
@@ -76,6 +139,8 @@ static const luaL_Reg vgui_funcs[] = {
 ** Open vgui library
 */
 LUALIB_API int luaopen_vgui (lua_State *L) {
+  lua_vgui_CreatePanelRegistry(L);
+
   luaopen_vgui_Button(L);
   luaopen_vgui_EditablePanel(L);
   luaopen_vgui_Panel(L);

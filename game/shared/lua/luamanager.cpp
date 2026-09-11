@@ -852,6 +852,41 @@ static int __cdecl CompareLuaFileNames ( const CUtlString *pA, const CUtlString 
 //          entries over -- which also differs between Windows and Linux.  Autorun
 //          therefore gets this loader instead.
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// Purpose: load ONE named file out of lua/includes/.
+//
+//          This exists because GMod's engine calls its bootstrap files by name
+//          -- lua/includes/init.lua -- instead of scanning the directory, and
+//          the difference is not cosmetic.  A non-recursive scan of
+//          lua/includes/ loads init.lua, then util.lua, then vgui_base.lua a
+//          SECOND time, and that second pass re-runs all 54 lua/vgui controls:
+//          derma.DefineControl() sees Controls[name] ~= nil, takes its reloading
+//          branch, and every control dies in ReloadClass() ->
+//          FindPanelsByClass() -> vgui.GetAll().  Result: 54 FAILED lines and
+//          zero controls registered.  init.lua includes util.lua and
+//          vgui_base.lua itself, so one named file is one pass.
+//
+//          Prints the same "[Lua]   <path>" line the folder loader does, so the
+//          load order stays readable in ds_debug.log.
+//-----------------------------------------------------------------------------
+LUA_API int luasrc_dofile_includes (lua_State *L, const char *pszName)
+{
+	char relative[ MAX_PATH ];
+	Q_snprintf( relative, sizeof( relative ), "%s/%s", LUA_PATH_INCLUDES, pszName );
+
+	if ( !LuaFileExists( relative ) )
+	{
+		Warning( "[Lua] %s: not found -- GMod bootstrap NOT loaded\n", relative );
+		return 1;
+	}
+
+	char fullpath[ MAX_PATH ];
+	filesystem->RelativePathToFullPath( relative, "MOD", fullpath, sizeof( fullpath ) );
+
+	Msg( "[Lua]   %s\n", relative );
+	return luasrc_dofile( L, fullpath );
+}
+
 LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecurse)
 {
 	CUtlVector< CUtlString > files;
