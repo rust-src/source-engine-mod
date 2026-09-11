@@ -118,7 +118,15 @@ static const luaL_Reg luasrclibs[] = {
   // TODO(port): Files / FileHandle still need a decision on how they coexist with
   // the Team Sandbox era `filesystem` library (LUA_FILESYSTEMLIBNAME) before they
   // can be registered.
-  // {LUA_FILESLIBNAME, luaopen_Files},
+  // HL2SB: GMod's file library.  This registration was commented out and there
+  // was no implementation, so the lib alias ("file" -> LUA_FILESLIBNAME) at the
+  // bottom of this file silently skipped and every imported GMod file that uses
+  // file.* failed at load:
+  //     extensions/file.lua:2: attempt to index a nil value (global 'file')
+  //     extensions/player_auth.lua:77: ... (global 'file')
+  // Implemented in public/lua/lfilesystem.cpp, which BOTH game vpcs already list,
+  // so no .vpc needed touching and both realms get it.
+  {LUA_FILESLIBNAME, luaopen_Files},
   // {LUA_FILEHANDLEMETANAME, luaopen_FileHandle},
 #ifdef CLIENT_DLL
   {LUA_CLIENTENUMNAME, luaopen_ClientEnumerations},
