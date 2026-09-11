@@ -6,6 +6,17 @@
 
 #include "cbase.h"
 #include "filesystem.h"
+
+// HL2SB: the Lua panic handler wants a message box and a hard exit, but pulling
+// in <windows.h> here drags in min/max and the window-message macros, which
+// break the engine headers included below.  Declare the two entry points
+// directly instead.
+#ifdef _WIN32
+extern "C" __declspec( dllimport ) int __stdcall MessageBoxA( void *hWnd, const char *lpText, const char *lpCaption, unsigned int uType );
+extern "C" void __cdecl _exit( int nCode );
+#define HL2SB_MB_OK         0x00000000u
+#define HL2SB_MB_ICONERROR  0x00000010u
+#endif
 #ifndef CLIENT_DLL
 #include "gameinterface.h"
 #endif
@@ -231,8 +242,13 @@ void luasrc_setmodulepaths(lua_State *L) {
 }
 
 #ifdef CLIENT_DLL
+// Defined below (HL2SB_LuaPanic); the menu state gets it too, otherwise an
+// unprotected error in a GameUI script aborts the process the same way.
+static int HL2SB_LuaPanic( lua_State *pL );
+
 void luasrc_init_gameui (void) {
   LGameUI = luaL_newstate();
+  lua_atpanic( LGameUI, HL2SB_LuaPanic );
 
   luaL_openlibs(LGameUI);
   base_open(LGameUI);
@@ -306,12 +322,68 @@ void luasrc_shutdown_gameui (void) {
 }
 #endif
 
+//-----------------------------------------------------------------------------
+// HL2SB: Lua panic handler.
+//
+// When Lua raises an error and there is NO protected call on the stack,
+// luaD_throw() calls g->panic(L).  If no panic function is installed it calls
+// abort() -- and on x64 UCRT abort() ends in __fastfail (int 29h).  That is a
+// kernel fast-fail: SEH, vectored handlers and even a SIGABRT handler installed
+// later in the process never get a chance, so the game simply vanishes with no
+// dump (this was the project's dominant crash mode: 26 events, client.dll).
+//
+// Installing a panic function turns that whole class into a readable report:
+// the real error message plus a Lua traceback, written to the console log and
+// to hl2sb_lua_panic.log.
+//
+// Returning from a panic function is undefined behaviour in Lua, so we report
+// and then exit; the process is already unusable at that point.
+//-----------------------------------------------------------------------------
+static int HL2SB_LuaPanic( lua_State *pL )
+{
+	const char *pszMsg = lua_tostring( pL, -1 );
+	if ( !pszMsg )
+		pszMsg = "(error object is not a string)";
+
+	// Traceback of where the unprotected error came from.
+	luaL_traceback( pL, pL, pszMsg, 1 );
+	const char *pszTrace = lua_tostring( pL, -1 );
+
+	Msg( "\n[HL2SB] *** LUA PANIC - unprotected Lua error ***\n" );
+	Warning( "[HL2SB] LUA PANIC:\n%s\n", pszTrace ? pszTrace : pszMsg );
+
+	if ( FILE *fp = fopen( "hl2sb_lua_panic.log", "a" ) )
+	{
+		fprintf( fp, "\n=== HL2SB Lua panic ===\n%s\n=== End ===\n", pszTrace ? pszTrace : pszMsg );
+		fflush( fp );
+		fclose( fp );
+	}
+
+#ifdef _WIN32
+	{
+		char szBox[ 1024 ];
+		Q_snprintf( szBox, sizeof( szBox ),
+			"HL2SB: unprotected Lua error (would have been a silent abort).\n\n%s\n\n"
+			"Full traceback: hl2sb_lua_panic.log and the console log.", pszMsg );
+		MessageBoxA( NULL, szBox, "HL2SB Lua Error", HL2SB_MB_OK | HL2SB_MB_ICONERROR );
+	}
+#endif
+
+	// Do not return into Lua with a broken stack.
+	_exit( 5 );
+	return 0;
+}
+
 void luasrc_init (void) {
   if (g_bLuaInitialized)
 	  return;
   g_bLuaInitialized = true;
 
   L = lua_open();
+
+  // HL2SB: without this, any unprotected Lua error kills the process via
+  // __fastfail before any of our crash handling can run.  See above.
+  lua_atpanic( L, HL2SB_LuaPanic );
 
   luaL_openlibs(L);
   base_open(L);
