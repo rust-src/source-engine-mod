@@ -969,6 +969,13 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 
 	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
 	luasrc_dofolder( L, LUA_PATH_MODULES );
+
+	// HL2SB: GMod's lua/includes/ bootstrap files (init.lua, util.lua) live
+	// directly in that directory.  Loaded after extensions/modules for the same
+	// reason as the client -- lua/includes/util.lua captures Material at load
+	// time and HL2SB still provides that as a Lua shim.  Sorted, non-recursive.
+	luasrc_dofolder_sorted( L, LUA_PATH_INCLUDES, false );
+
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_SERVER );
 
