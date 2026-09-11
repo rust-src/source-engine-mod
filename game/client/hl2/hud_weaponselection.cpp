@@ -973,8 +973,13 @@ static bool HL2SB_DrawWeaponSelectIcon( C_BaseCombatWeapon *pWeapon, int xpos, i
 	int x = xpos + ( boxWide - iDrawWide ) / 2;
 	int y = ypos + ( boxTall - iDrawTall ) / 2;
 
+	// GMod draws the icon in its own colours; the HUD's foreground colour is
+	// yellow in HL2MP, which turned the Lua paper icon (and any coloured SWEP
+	// icon) yellow.  Only the box's alpha modulates the icon.
+	Color iconColor( 255, 255, 255, col[3] );
+
 	surface()->DrawSetTexture( iTextureID );
-	surface()->DrawSetColor( col );
+	surface()->DrawSetColor( iconColor );
 	surface()->DrawTexturedSubRect( x, y, x + iDrawWide, y + iDrawTall, 0.0f, 0.0f, 1.0f, 1.0f );
 
 	return true;
