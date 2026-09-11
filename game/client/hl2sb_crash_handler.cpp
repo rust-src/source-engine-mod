@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <exception>
 #endif
 
@@ -93,6 +94,28 @@ static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
 		"HL2SB crashed!\n\nReason: %s\n%s\n\nSee hl2sb_crash.log and the dumps/ folder.",
 		pszReason, pszDetail ? pszDetail : "" );
 	MessageBoxA( NULL, szBox, "HL2SB Crash", MB_OK | MB_ICONERROR );
+}
+
+//-----------------------------------------------------------------------------
+// SIGABRT -- the ONLY in-process hook that fires for a bare abort().
+//
+// UCRT's abort() is:
+//     if ( __acrt_get_sigabrt_handler() )  raise( SIGABRT );
+//     if ( __abort_behavior & _CALL_REPORTFAULT )
+//         __fastfail( FAST_FAIL_FATAL_APP_EXIT );   // int 29h
+//     _exit( 3 );
+//
+// That `int 29h` is the kernel fast-fail: it bypasses SEH, vectored handlers
+// and every debugger-independent mechanism, which is why a bare abort() left
+// no dump at all.  Registering a SIGABRT handler makes raise() call us *before*
+// the fast-fail, with a live stack -- and gives us the actual caller.
+//-----------------------------------------------------------------------------
+static void __cdecl HL2SB_SigabrtHandler( int )
+{
+	HL2SB_WriteAbortDump( "SIGABRT / abort()", NULL );
+
+	// Never return into abort(): the next thing it does is int 29h.
+	_exit( 3 );
 }
 
 //-----------------------------------------------------------------------------
@@ -200,7 +223,10 @@ void HL2SB_InstallCrashHandler( void )
 	_set_invalid_parameter_handler( HL2SB_InvalidParameterHandler );
 	_set_purecall_handler( HL2SB_PurecallHandler );
 
-	Msg( "[HL2SB] Crash handler installed (SEH + terminate/invalid-parameter/purecall)\n" );
+	// Bare abort(): only SIGABRT fires before the int 29h fast-fail.
+	signal( SIGABRT, HL2SB_SigabrtHandler );
+
+	Msg( "[HL2SB] Crash handler installed (SEH + SIGABRT + terminate/invalid-parameter/purecall)\n" );
 }
 
 #else
