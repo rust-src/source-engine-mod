@@ -50,9 +50,39 @@
   lua_getglobal(L, "_E"); \
   lua_newtable(L);
 
+/*
+** HL2SB: also publish every enum member as a FLAT GLOBAL.
+**
+** GMod exposes enum members as globals -- FCVAR_ARCHIVE, ACT_VM_DRAW, KEY_A,
+** MASK_SHOT_HULL -- and its own Lua depends on that: lua/vgui/DTooltip.lua's
+** first statement is a CreateConVar with FCVAR_ARCHIVE.  HL2SB only ever filled
+** _E[lib][member], so every one of those names was nil and GMod's files could
+** not load.  (gmod_globals.lua had worked around it by hard-coding ~40 ACT_*
+** values; that block is now redundant.)
+**
+** The shortnames are inconsistent between libs -- FCVAR passes "ARCHIVE",
+** BUTTON passes "BUTTON_CODE_INVALID" and "KEY_A" -- so BOTH spellings are
+** published:
+**
+**     FCVAR  + "ARCHIVE"             -> ARCHIVE        and FCVAR_ARCHIVE
+**     BUTTON + "BUTTON_CODE_INVALID" -> (same string)  and BUTTON_BUTTON_CODE_INVALID
+**     BUTTON + "KEY_A"               -> KEY_A          and BUTTON_KEY_A
+**
+** The second column's junk entries are harmless and are the price of not
+** teaching every lib which convention it uses.  The bracket block keeps this
+** usable inside the multi-statement macro bodies the enum files already have.
+*/
 #define lua_pushenum(L, enum, shortname) \
   lua_pushinteger(L, enum); \
-  lua_setfield(L, -2, shortname);
+  lua_setfield(L, -2, shortname); \
+  { \
+    char szFlatGlobal[192]; \
+    Q_snprintf(szFlatGlobal, sizeof(szFlatGlobal), "%s_%s", lib, (shortname)); \
+    lua_pushinteger(L, enum); \
+    lua_setglobal(L, (shortname)); \
+    lua_pushinteger(L, enum); \
+    lua_setglobal(L, szFlatGlobal); \
+  }
 
 #define END_LUA_SET_ENUM_LIB(L) \
   lua_setfield(L, -2, lib); \
