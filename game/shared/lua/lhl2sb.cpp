@@ -24,6 +24,8 @@
 #include "c_baseplayer.h"
 #endif
 
+#include "lbaseplayer_shared.h"
+
 //-----------------------------------------------------------------------------
 // Purpose: global IsValid( ent ) - HL2SB
 //
@@ -32,11 +34,38 @@
 // because that raises a Lua error when the entity pointer is NULL - IsValid
 // should return false for an invalid entity, not throw.  lua_toentity returns
 // NULL for NULL/bad handles without raising.
+//
+// HL2SB: PLAYERS ARE A SEPARATE USERDATA TYPE and lua_toentity() returns NULL
+// for them, so this answered false for a perfectly valid player.  Measured in
+// game with hl2sb_hud_debug 1:
+//
+//     LocalPlayer()=CBasePlayer: 2 "hut"   IsValid=false   IsAlive=true
+//
+// That one wrong answer cost two GMod HUDs:
+//   * lua/game/client/hl2sb_cl_hudpickup.lua refused every pickup (it asked
+//     IsValid/ Alive of the local player), so the pickup list never filled;
+//   * lua/includes/modules/undo.lua:396 is
+//         if ( !IsValid( Current_Undo.Owner ) or ... ) then return false end
+//     so undo.Finish() threw away EVERY undo, "undo" always answered
+//     "no undo entry recorded", and no notice could ever be queued.
+//
+// Try the entity first (unchanged behaviour for entities), then the player.
 //-----------------------------------------------------------------------------
 static int hl2sb_GlobalIsValid( lua_State *L )
 {
-	CBaseEntity *pEntity = lua_toentity( L, 1 );
-	lua_pushboolean( L, pEntity != NULL );
+	if ( lua_gettop( L ) < 1 || lua_isnoneornil( L, 1 ) )
+	{
+		lua_pushboolean( L, false );
+		return 1;
+	}
+
+	if ( lua_toentity( L, 1 ) != NULL )
+	{
+		lua_pushboolean( L, true );
+		return 1;
+	}
+
+	lua_pushboolean( L, lua_toplayer( L, 1 ) != NULL );
 	return 1;
 }
 
