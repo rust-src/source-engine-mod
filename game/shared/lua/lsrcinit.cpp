@@ -627,6 +627,41 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_pushboolean(L, 0); lua_setglobal(L, "CLIENT");
 #endif
 
+  /* HL2SB: four GMod globals this engine never had.  All four are LOAD-TIME
+  ** prerequisites of files imported verbatim from GMod, and every one of them is
+  ** needed on BOTH realms (client.dll and server.dll compile this file), so they
+  ** are stamped here rather than in a Lua shim that would only exist in one:
+  **
+  **   AddCSLuaFile( path )  lua/includes/extensions/coroutine.lua:5 calls it at
+  **                         load time -> "attempt to call a nil value (global
+  **                         'AddCSLuaFile')".  GMod uses it to mark a file for
+  **                         client download; this engine has no download list, so
+  **                         it records nothing and returns the path like GMod.
+  **   IncludeCS( path )     the client-side twin of the above; same reasoning.
+  **   jit                   lua/includes/extensions/util.lua:397 indexes
+  **                         jit.version.  Our Lua is 5.4, not LuaJIT, so there is
+  **                         no jit table at all and the whole GMod util extension
+  **                         failed to load.  The stub carries a version string so
+  **                         the feature check runs instead of throwing.
+  **   LoadPresets()         lua/includes/modules/presets.lua:6 calls it at load.
+  **   SENSORBONE            lua/includes/modules/motionsensor.lua:16 indexes it.
+  */
+  if ( luaL_loadstring( L,
+    "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
+    "IncludeCS = IncludeCS or function( path ) return path end\n"
+    "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400 }\n"
+    "LoadPresets = LoadPresets or function() end\n"
+    "SENSORBONE = SENSORBONE or {}\n" ) == 0 )
+  {
+    lua_pcall( L, 0, 0, 0 );
+  }
+  else
+  {
+    // A syntax error here is a bug in this snippet, not in the game.
+    Warning( "[HL2SB] lsrcinit: GMod global stubs failed to compile: %s\n", lua_tostring( L, -1 ) );
+    lua_pop( L, 1 );
+  }
+
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
 }
