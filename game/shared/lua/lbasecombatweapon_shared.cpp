@@ -145,6 +145,32 @@ static int CBaseCombatWeapon_SetClip2 (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod SWEP compat: GMod's engine exposes these four on every SWEP.  GMod
+// weapon scripts throttle their own attacks with them (weapon_fists calls
+// self:GetNextPrimaryFire() from its PrimaryAttack and threw
+// "attempt to call a nil value (method 'GetNextPrimaryFire')" 1121 times in one
+// session), and the engine's own GMod weapon loop in ItemPostFrame reads the
+// same fields, so they belong to the engine and not to a Lua shim.
+static int CBaseCombatWeapon_GetNextPrimaryFire (lua_State *L) {
+  lua_pushnumber(L, luaL_checkweapon(L, 1)->m_flNextPrimaryAttack);
+  return 1;
+}
+
+static int CBaseCombatWeapon_SetNextPrimaryFire (lua_State *L) {
+  luaL_checkweapon(L, 1)->m_flNextPrimaryAttack = luaL_checknumber(L, 2);
+  return 0;
+}
+
+static int CBaseCombatWeapon_GetNextSecondaryFire (lua_State *L) {
+  lua_pushnumber(L, luaL_checkweapon(L, 1)->m_flNextSecondaryAttack);
+  return 1;
+}
+
+static int CBaseCombatWeapon_SetNextSecondaryFire (lua_State *L) {
+  luaL_checkweapon(L, 1)->m_flNextSecondaryAttack = luaL_checknumber(L, 2);
+  return 0;
+}
+
 static int CBaseCombatWeapon_DefaultDeploy (lua_State *L) {
   lua_pushboolean(L, luaL_checkweapon(L, 1)->DefaultDeploy( (char*)luaL_checkstring(L, 2), (char*)luaL_checkstring(L, 3), luaL_checkint(L, 4), (char*)luaL_checkstring(L, 5) ));
   return 1;
@@ -1009,6 +1035,10 @@ static const luaL_Reg CBaseCombatWeaponmeta[] = {
   {"Clip2", CBaseCombatWeapon_Clip2},
   {"SetClip1", CBaseCombatWeapon_SetClip1},
   {"SetClip2", CBaseCombatWeapon_SetClip2},
+  {"GetNextPrimaryFire", CBaseCombatWeapon_GetNextPrimaryFire},
+  {"SetNextPrimaryFire", CBaseCombatWeapon_SetNextPrimaryFire},
+  {"GetNextSecondaryFire", CBaseCombatWeapon_GetNextSecondaryFire},
+  {"SetNextSecondaryFire", CBaseCombatWeapon_SetNextSecondaryFire},
   {"DefaultDeploy", CBaseCombatWeapon_DefaultDeploy},
   {"DefaultReload", CBaseCombatWeapon_DefaultReload},
   {"DefaultTouch", CBaseCombatWeapon_DefaultTouch},

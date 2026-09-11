@@ -869,6 +869,24 @@ static int CBaseEntity_IsPlayer (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: GMod exposes SendViewModelMatchingSequence on Entity (its
+// weapons call it on the viewmodel to force the animation frame matching the
+// world model's sequence).  weapon_fists uses it for its punch animations:
+//     vm:SendViewModelMatchingSequence( vm:LookupSequence( anim ) )
+// and threw "attempt to call a nil value (method 'SendViewModelMatchingSequence')"
+// without it.  The engine owns the real method (CBaseViewModel).
+#include "baseviewmodel_shared.h"
+
+static int CBaseEntity_SendViewModelMatchingSequence (lua_State *L) {
+  CBaseViewModel *pViewModel = dynamic_cast<CBaseViewModel *>( luaL_checkentity(L, 1) );
+
+  if ( pViewModel != NULL ) {
+    pViewModel->SendViewModelMatchingSequence( luaL_checkint(L, 2) );
+  }
+
+  return 0;
+}
+
 static int CBaseEntity_IsPlayerSimulated (lua_State *L) {
   lua_pushboolean(L, luaL_checkentity(L, 1)->IsPlayerSimulated());
   return 1;
@@ -1879,7 +1897,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"RemoveEFlags", CBaseEntity_RemoveEFlags},
   {"RemoveFlag", CBaseEntity_RemoveFlag},
   {"RemoveSolidFlags", CBaseEntity_RemoveSolidFlags},
-  {"SetAbsAngles", CBaseEntity_SetAbsAngles},
+  {"SendViewModelMatchingSequence", CBaseEntity_SendViewModelMatchingSequence},
+{"SetAbsAngles", CBaseEntity_SetAbsAngles},
   {"SetAbsOrigin", CBaseEntity_SetAbsOrigin},
   {"SetPos", CBaseEntity_SetPos},
   {"SetKeyValue", CBaseEntity_SetKeyValue},
