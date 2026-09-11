@@ -689,6 +689,33 @@ protected:
 	void SetOverridableColor( Color *pColor, const Color &newColor );
 
 public:
+	//=========================================================================
+	// HL2SB: GMod docking.
+	//
+	// GMod's Panel:Dock / DockPadding / DockMargin, which this fork's vgui2 never
+	// had (SetDockPadding / "DOCK_FILL" have zero matches in the whole tree, and
+	// lua/includes/extensions/client/panel.lua:500 CALLS self:Dock(pnl:GetDock())
+	// without defining it, i.e. it is a C++ feature there).
+	//
+	// Values are GMod's DOCK enum, which - uniquely in GMod - has NO DOCK_ prefix
+	// in Lua: NODOCK=0 FILL=1 LEFT=2 RIGHT=3 TOP=4 BOTTOM=5
+	// (https://wiki.facepunch.com/gmod/Enums/DOCK).
+	//
+	// Non-virtual on purpose: Panel's non-virtual methods already link across
+	// DLLs (lPanel.cpp calls GetBgColor() directly), so this changes no vtable
+	// and only vgui2 + client need rebuilding.
+	//
+	// The dock pass runs in InternalPerformLayout(), BEFORE the virtual
+	// PerformLayout(), so a Lua PANEL:PerformLayout override cannot skip it.
+	//=========================================================================
+	void SetDock( int iDockType );
+	int  GetDock( void );
+	void SetDockPadding( int iLeft, int iTop, int iRight, int iBottom );
+	void GetDockPadding( int &iLeft, int &iTop, int &iRight, int &iBottom );
+	void SetDockMargin( int iLeft, int iTop, int iRight, int iBottom );
+	void GetDockMargin( int &iLeft, int &iTop, int &iRight, int &iBottom );
+	void PerformDocking( void );
+
 	void SetNavUp( const char* controlName );
 	void SetNavDown( const char* controlName );
 	void SetNavLeft( const char* controlName );

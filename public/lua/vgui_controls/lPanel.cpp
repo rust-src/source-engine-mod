@@ -1202,7 +1202,56 @@ static int Panel___tostring (lua_State *L) {
 }
 
 
+//=============================================================================
+// HL2SB: GMod docking.
+//
+// GMod's Panel:Dock / DockPadding / DockMargin over the vgui2 implementation
+// added in vgui2/vgui_controls/Panel.cpp.  The DOCK enum values are GMod's and
+// are exposed WITHOUT the DOCK_ prefix (see the Lua side), so these just pass
+// the number straight through.
+//=============================================================================
+static int Panel_Dock (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDock(luaL_checkint(L, 2));
+  return 0;
+}
+
+static int Panel_GetDock (lua_State *L) {
+  lua_pushinteger(L, luaL_checkpanel(L, 1)->GetDock());
+  return 1;
+}
+
+static int Panel_DockPadding (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDockPadding(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  return 0;
+}
+
+static int Panel_GetDockPadding (lua_State *L) {
+  int l = 0, t = 0, r = 0, b = 0;
+  luaL_checkpanel(L, 1)->GetDockPadding(l, t, r, b);
+  lua_pushinteger(L, l); lua_pushinteger(L, t); lua_pushinteger(L, r); lua_pushinteger(L, b);
+  return 4;
+}
+
+static int Panel_DockMargin (lua_State *L) {
+  luaL_checkpanel(L, 1)->SetDockMargin(luaL_checkint(L, 2), luaL_checkint(L, 3), luaL_checkint(L, 4), luaL_checkint(L, 5));
+  return 0;
+}
+
+static int Panel_GetDockMargin (lua_State *L) {
+  int l = 0, t = 0, r = 0, b = 0;
+  luaL_checkpanel(L, 1)->GetDockMargin(l, t, r, b);
+  lua_pushinteger(L, l); lua_pushinteger(L, t); lua_pushinteger(L, r); lua_pushinteger(L, b);
+  return 4;
+}
+
+
 static const luaL_Reg Panelmeta[] = {
+  {"Dock", Panel_Dock},
+  {"GetDock", Panel_GetDock},
+  {"DockPadding", Panel_DockPadding},
+  {"GetDockPadding", Panel_GetDockPadding},
+  {"DockMargin", Panel_DockMargin},
+  {"GetDockMargin", Panel_GetDockMargin},
   {"AddKeyBinding", Panel_AddKeyBinding},
   {"AddActionSignalTarget", Panel_AddActionSignalTarget},
   {"CanStartDragging", Panel_CanStartDragging},

@@ -3842,6 +3842,243 @@ Color Panel::GetFgColor()
 	return _fgColor;
 }
 
+//=============================================================================
+// HL2SB: GMod docking.
+//
+// Values from https://wiki.facepunch.com/gmod/Enums/DOCK -- GMod's DOCK enum is
+// the one enum that has no DOCK_ prefix in Lua (NODOCK/FILL/LEFT/RIGHT/TOP/BOTTOM).
+//=============================================================================
+#ifndef DOCK_NONE
+#define DOCK_NONE	0
+#define DOCK_FILL	1
+#define DOCK_LEFT	2
+#define DOCK_RIGHT	3
+#define DOCK_TOP	4
+#define DOCK_BOTTOM	5
+#endif
+
+namespace
+{
+	struct HL2SBDockInfo_t
+	{
+		int iDockType;
+		int iMargin[ 4 ];
+		int iPad[ 4 ];
+	};
+
+	// Side table rather than Panel members on purpose: public/vgui_controls/
+	// Panel.h then needs no new fields and Panel's constructor needs no change.
+	// Panels that never call SetDock() are absent, so every existing C++ panel
+	// (viewports, HUD elements, ...) behaves exactly as before -- GetDock()
+	// reports DOCK_NONE and PerformDocking() skips them.
+	CUtlMap< vgui::Panel *, HL2SBDockInfo_t > g_HL2SBDockInfo( 8, 8, DefLessFunc( vgui::Panel * ) );
+
+	HL2SBDockInfo_t *FindDockInfo( vgui::Panel *pPanel )
+	{
+		int i = g_HL2SBDockInfo.Find( pPanel );
+		return ( i == g_HL2SBDockInfo.InvalidIndex() ) ? NULL : &g_HL2SBDockInfo[ i ];
+	}
+
+	HL2SBDockInfo_t &EnsureDockInfo( vgui::Panel *pPanel )
+	{
+		int i = g_HL2SBDockInfo.Find( pPanel );
+		if ( i == g_HL2SBDockInfo.InvalidIndex() )
+		{
+			HL2SBDockInfo_t info;
+			info.iDockType = DOCK_NONE;
+			for ( int k = 0; k < 4; ++k )
+			{
+				info.iMargin[ k ] = 0;
+				info.iPad[ k ] = 0;
+			}
+			i = g_HL2SBDockInfo.Insert( pPanel, info );
+		}
+		return g_HL2SBDockInfo[ i ];
+	}
+}
+
+void Panel::SetDock( int iDockType )
+{
+	EnsureDockInfo( this ).iDockType = iDockType;
+
+	// GMod: after docking, invalidate the parent so the new bounds are computed.
+	Panel *pParent = GetParent();
+	if ( pParent )
+		pParent->InvalidateLayout( false );
+	else
+		InvalidateLayout( false );
+}
+
+int Panel::GetDock( void )
+{
+	HL2SBDockInfo_t *pInfo = FindDockInfo( this );
+	return pInfo ? pInfo->iDockType : DOCK_NONE;
+}
+
+void Panel::SetDockPadding( int iLeft, int iTop, int iRight, int iBottom )
+{
+	HL2SBDockInfo_t &info = EnsureDockInfo( this );
+	info.iPad[ 0 ] = iLeft;  info.iPad[ 1 ] = iTop;
+	info.iPad[ 2 ] = iRight; info.iPad[ 3 ] = iBottom;
+	InvalidateLayout( false );
+}
+
+void Panel::GetDockPadding( int &iLeft, int &iTop, int &iRight, int &iBottom )
+{
+	HL2SBDockInfo_t *pInfo = FindDockInfo( this );
+	iLeft   = pInfo ? pInfo->iPad[ 0 ] : 0;
+	iTop    = pInfo ? pInfo->iPad[ 1 ] : 0;
+	iRight  = pInfo ? pInfo->iPad[ 2 ] : 0;
+	iBottom = pInfo ? pInfo->iPad[ 3 ] : 0;
+}
+
+void Panel::SetDockMargin( int iLeft, int iTop, int iRight, int iBottom )
+{
+	HL2SBDockInfo_t &info = EnsureDockInfo( this );
+	info.iMargin[ 0 ] = iLeft;  info.iMargin[ 1 ] = iTop;
+	info.iMargin[ 2 ] = iRight; info.iMargin[ 3 ] = iBottom;
+
+	Panel *pParent = GetParent();
+	if ( pParent )
+		pParent->InvalidateLayout( false );
+}
+
+void Panel::GetDockMargin( int &iLeft, int &iTop, int &iRight, int &iBottom )
+{
+	HL2SBDockInfo_t *pInfo = FindDockInfo( this );
+	iLeft   = pInfo ? pInfo->iMargin[ 0 ] : 0;
+	iTop    = pInfo ? pInfo->iMargin[ 1 ] : 0;
+	iRight  = pInfo ? pInfo->iMargin[ 2 ] : 0;
+	iBottom = pInfo ? pInfo->iMargin[ 3 ] : 0;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - lay out this panel's docked children.
+//
+// Called from InternalPerformLayout() BEFORE the virtual PerformLayout(), for the
+// same reason GMod does it there: a Lua PANEL:PerformLayout override replaces the
+// virtual call, so anything placed inside it would be skipped by every Derma
+// control that defines its own PerformLayout.
+//
+// GMod semantics (https://wiki.facepunch.com/gmod/Panel:Dock):
+//   * DockPadding is the inner spacing, applied to the area docked children get;
+//   * DockMargin is this child's outer spacing;
+//   * children are processed in ZPos order, each consuming an edge of the
+//     remaining rectangle; FILL takes whatever is left.
+//-----------------------------------------------------------------------------
+void Panel::PerformDocking( void )
+{
+	if ( GetChildCount() <= 0 )
+		return;
+
+	int iPad[ 4 ] = { 0, 0, 0, 0 };
+	HL2SBDockInfo_t *pSelf = FindDockInfo( this );
+	if ( pSelf )
+	{
+		iPad[ 0 ] = pSelf->iPad[ 0 ]; iPad[ 1 ] = pSelf->iPad[ 1 ];
+		iPad[ 2 ] = pSelf->iPad[ 2 ]; iPad[ 3 ] = pSelf->iPad[ 3 ];
+	}
+
+	int x0 = iPad[ 0 ];
+	int y0 = iPad[ 1 ];
+	int x1 = GetWide() - iPad[ 2 ];
+	int y1 = GetTall() - iPad[ 3 ];
+	if ( x1 <= x0 || y1 <= y0 )
+		return;
+
+	// Collect the docked children (ZPos order is applied below).
+	Panel *pDocked[ 256 ];
+	int    iDockedZ[ 256 ];
+	int    nDocked = 0;
+	int    nChildren = GetChildCount();
+
+	for ( int i = 0; i < nChildren && nDocked < 256; ++i )
+	{
+		Panel *pChild = GetChild( i );
+		if ( !pChild || !pChild->IsVisible() )
+			continue;
+
+		HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
+		if ( !pInfo || pInfo->iDockType == DOCK_NONE )
+			continue;
+
+		pDocked[ nDocked ] = pChild;
+		iDockedZ[ nDocked ] = pChild->GetZPos();
+		++nDocked;
+	}
+
+	if ( nDocked <= 0 )
+		return;
+
+	// Selection sort on ZPos - small counts, and it keeps vgui2 free of STL.
+	for ( int a = 0; a < nDocked - 1; ++a )
+	{
+		int iMin = a;
+		for ( int b = a + 1; b < nDocked; ++b )
+		{
+			if ( iDockedZ[ b ] < iDockedZ[ iMin ] )
+				iMin = b;
+		}
+		if ( iMin != a )
+		{
+			Panel *pTmp = pDocked[ a ]; pDocked[ a ] = pDocked[ iMin ]; pDocked[ iMin ] = pTmp;
+			int iTmp = iDockedZ[ a ]; iDockedZ[ a ] = iDockedZ[ iMin ]; iDockedZ[ iMin ] = iTmp;
+		}
+	}
+
+	for ( int i = 0; i < nDocked; ++i )
+	{
+		Panel *pChild = pDocked[ i ];
+		HL2SBDockInfo_t *pInfo = FindDockInfo( pChild );
+		if ( !pInfo )
+			continue;
+
+		const int iL = pInfo->iMargin[ 0 ];
+		const int iT = pInfo->iMargin[ 1 ];
+		const int iR = pInfo->iMargin[ 2 ];
+		const int iB = pInfo->iMargin[ 3 ];
+
+		int iW = pChild->GetWide();
+		int iH = pChild->GetTall();
+
+		switch ( pInfo->iDockType )
+		{
+		case DOCK_FILL:
+			pChild->SetPos( x0 + iL, y0 + iT );
+			pChild->SetSize( ( x1 - x0 ) - iL - iR, ( y1 - y0 ) - iT - iB );
+			break;
+
+		case DOCK_TOP:
+			if ( iH < 0 ) iH = 0;
+			pChild->SetPos( x0 + iL, y0 + iT );
+			pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
+			y0 += iH + iT + iB;
+			break;
+
+		case DOCK_BOTTOM:
+			if ( iH < 0 ) iH = 0;
+			pChild->SetPos( x0 + iL, y1 - iH - iB );
+			pChild->SetSize( ( x1 - x0 ) - iL - iR, iH );
+			y1 -= iH + iT + iB;
+			break;
+
+		case DOCK_LEFT:
+			if ( iW < 0 ) iW = 0;
+			pChild->SetPos( x0 + iL, y0 + iT );
+			pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
+			x0 += iW + iL + iR;
+			break;
+
+		case DOCK_RIGHT:
+			if ( iW < 0 ) iW = 0;
+			pChild->SetPos( x1 - iW - iR, y0 + iT );
+			pChild->SetSize( iW, ( y1 - y0 ) - iT - iB );
+			x1 -= iW + iL + iR;
+			break;
+		}
+	}
+}
+
 void Panel::InternalPerformLayout()
 {
 	// Don't layout if we're still waiting for our scheme to be applied.
@@ -3852,6 +4089,12 @@ void Panel::InternalPerformLayout()
 	_flags.SetFlag( IN_PERFORM_LAYOUT );
 	// make sure the scheme has been applied
 	_flags.ClearFlag( NEEDS_LAYOUT );
+
+	// HL2SB: dock the children FIRST.  This runs before the virtual
+	// PerformLayout(), so a Lua PANEL:PerformLayout override cannot skip it --
+	// which is exactly why GMod puts it here too.
+	PerformDocking();
+
 	PerformLayout();
 	_flags.ClearFlag( IN_PERFORM_LAYOUT );
 }
