@@ -2990,6 +2990,24 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 		else
 		{
 			pMat = m_MaterialDict.AddMaterial( pMatName, pTextureGroupName );
+
+			// HL2SB: pin image materials.
+			//
+			// The measured behaviour was "AddMaterial( 'gwenskin/gmoddefault.vmt' )
+			// -> <the SAME address>" over and over, with 143 "error loading vmt
+			// file" lines and then "DrawElements: No bound shader" and an access
+			// violation: something drops the material's reference count to zero
+			// between two lookups, the material is destroyed, and the next
+			// Material( "gwenskin/GModDefault.png" ) builds it again.
+			//
+			// An image material has no .vmt on disk, so being rebuilt is not just
+			// wasteful: whichever pointer a Lua closure captured points at freed
+			// memory (the transparent Derma panel) and drawing through one of the
+			// short-lived copies crashes.  Hold a reference for the level.
+			if ( bImageMaterial )
+			{
+				pMat->IncrementReferenceCount();
+			}
 			if ( g_pShaderDevice->IsUsingGraphics() )
 			{
 				if ( !bIsUNC )

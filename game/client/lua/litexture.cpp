@@ -255,27 +255,17 @@ static ITexture *HL2SB_MaterialTexture( IMaterial *pMaterial, const char *pTextu
         return NULL;
 
     IMaterialVar *pVar = pMaterial->FindVar( pTextureVarName, &bFound, false );
-    ITexture *pTexture = ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+    return ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
 
-    if ( pTexture != NULL )
-        return pTexture;
-
-    if ( materials == NULL )
-        return NULL;
-
-    char szTextureName[MAX_PATH];
-    Q_strncpy( szTextureName, pMaterial->GetName(), sizeof( szTextureName ) );
-    Q_StripExtension( szTextureName, szTextureName, sizeof( szTextureName ) );
-
-    if ( szTextureName[0] == 0 )
-        return NULL;
-
-    pTexture = materials->FindTexture( szTextureName, TEXTURE_GROUP_VGUI, false );
-
-    if ( pTexture != NULL && pTexture->IsError() )
-        pTexture = NULL;
-
-    return pTexture;
+    /*
+    ** NOTE: a name-based "materials->FindTexture( material name )" fallback lived
+    ** here for one revision and is deliberately gone.  It ran while a Lua panel
+    ** was painting, i.e. mid-frame inside the render context, where
+    ** CTextureManager::LoadTexture may create a texture -- the crashes reported
+    ** after that build (access violation ~1s after the first undo, right after
+    ** "DrawElements: No bound shader") point at it.  The materialsystem now
+    ** returns a properly precached material instead, so no fallback is needed.
+    */
 }
 
 static int HL2SB_IMaterial_GetTexture( lua_State *L )
