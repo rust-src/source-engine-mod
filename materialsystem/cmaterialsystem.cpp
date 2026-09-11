@@ -2875,6 +2875,23 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 
 	IMaterialInternal *pExistingMaterial = m_MaterialDict.FindMaterial( pTemp, false );	// 'false' causes the search to find only file-created materials
 
+	// HL2SB: image materials (Material( "path/img.png" ) and friends) are created
+	// without a .vmt on disk, and CMaterial::PrecacheVars() flags every material
+	// it precaches as MANUALLY CREATED (cmaterial.cpp:575-579).  A manual material
+	// is invisible to the 'false' lookup above, so the FIRST precache made the
+	// image material unreachable and every later FindMaterial built yet another
+	// copy of it.  The result was a per-frame material churn that ended in
+	//
+	//   CMaterial::PrecacheVars: error loading vmt file for gwenskin/gmoddefault
+	//   CMaterial::DrawElements: No bound shader
+	//
+	// and a crash on the next draw (plus the duplicate the Derma skin held, which
+	// had no shader params at all).  Accept a manual match as well.
+	if ( !pExistingMaterial )
+	{
+		pExistingMaterial = m_MaterialDict.FindMaterial( pTemp, true );
+	}
+
 	if ( pExistingMaterial )
 		return pExistingMaterial->GetQueueFriendlyVersion();
 
