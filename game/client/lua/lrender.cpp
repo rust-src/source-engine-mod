@@ -372,7 +372,12 @@ LUA_BINDING_BEGIN( Renders, RenderFlashlights, "library", "Render flashlights.",
     // Execute the function.
     // HL2SB: luasrc_pcall() takes an explicit error-function slot; upstream's three
     // argument form is a 5.1 era signature.
-    luasrc_pcall( L, 1, 0, 0 );
+    //
+    // nargs must be 0: the callback is the only value on the stack (it IS arg 1),
+    // and lua_pcall calls the function at top-(nargs+1).  Passing 1 made
+    // luasrc_pcall move its injected handler to index -3, which is BELOW this C
+    // function's frame -- an out-of-frame write that corrupted the Lua stack.
+    luasrc_pcall( L, 0, 0, 0 );
 
     pRenderContext->SetFlashlightMode( false );
 

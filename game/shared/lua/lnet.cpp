@@ -121,9 +121,26 @@ static void MsgFunc_LuaNet( bf_read &msg )
 				// Call the receiver with (len, client).  len is approximate.
 				lua_pushinteger( L, msg.GetNumBytesLeft() );
 				lua_pushnil( L ); // client handle unsupported
+
+				// luasrc_pcall CONSUMES the receiver along with its two
+				// arguments, so nothing may be popped afterwards.
+				//
+				// This used to be an unconditional lua_pop( L, 1 ) placed AFTER
+				// the if -- on the function path that popped one slot below the
+				// C function's own frame.  lua_settop then underflowed, making
+				// `L->tbclist.p >= newtop` true, so luaF_close tried to close a
+				// slot that had never been a to-be-closed variable and raised
+				// "attempt to call a nil value" OUTSIDE any protected call --
+				// and with no panic function installed that aborted the process
+				// through __fastfail.  Every LuaNet message (i.e. every
+				// spawnmenu action) reached it, which is why the whole smenu
+				// killed the game with client.dll / 0xC0000409.
 				luasrc_pcall( L, 2, 0, 0 );
 			}
-			lua_pop( L, 1 );
+			else
+			{
+				lua_pop( L, 1 );	// drop the non-function value rawgeti pushed
+			}
 
 			g_pNetRead = NULL;
 			return;
