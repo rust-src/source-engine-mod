@@ -594,6 +594,81 @@ static void luasrc_install_lib_aliases (lua_State *L) {
   }
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: the engine half of GMod's `game` library.
+//
+// Only the members the ported content actually calls are here.  The ported
+// flechette gun's SWEP body runs
+//     game.AddParticles( "particles/hunter_flechette.pcf" )
+// and threw "attempt to call a nil value (field 'AddParticles')" six times per
+// session, because the table created below was empty.
+//-----------------------------------------------------------------------------
+#ifdef CLIENT_DLL
+// Game client's particle precache (game/client/cdll_client_int.cpp).
+extern void PrecacheParticleSystem( const char *pParticleSystemName );
+#endif
+
+static int lua_game_AddParticles (lua_State *L) {
+  const char *pszParticleFile = luaL_checkstring( L, 1 );
+
+#ifdef CLIENT_DLL
+  // GMod loads the PCF so its particle systems can be created later; the engine
+  // side of that is the client's precache.
+  PrecacheParticleSystem( pszParticleFile );
+#endif
+
+  lua_pushboolean( L, true );
+  return 1;
+}
+
+static int lua_game_GetMap (lua_State *L) {
+  // The realms disagree on where the map name lives: the client has
+  // IVEngineClient::GetLevelName() (CGlobalVarsBase has no mapname), the server
+  // has CGlobalVars::mapname (IVEngineServer has no GetLevelName()).
+#ifdef CLIENT_DLL
+  const char *pszLevel = engine->GetLevelName();
+#else
+  const char *pszLevel = STRING( gpGlobals->mapname );
+#endif
+  char szPath[MAX_PATH];
+  char szMap[MAX_PATH];
+  const char *pszBase = szPath;
+  char *pDot;
+
+  Q_strncpy( szPath, pszLevel ? pszLevel : "", sizeof( szPath ) );
+
+  // "maps/foo.bsp" -> "foo"
+  for ( const char *p = szPath; *p; ++p ) {
+    if ( *p == '/' || *p == '\\' ) {
+      pszBase = p + 1;
+    }
+  }
+
+  Q_strncpy( szMap, pszBase, sizeof( szMap ) );
+
+  pDot = Q_strrchr( szMap, '.' );
+  if ( pDot ) {
+    *pDot = '\0';
+  }
+
+  lua_pushstring( L, szMap );
+  return 1;
+}
+
+static int lua_game_SinglePlayer (lua_State *L) {
+  lua_pushboolean( L, gpGlobals->maxClients <= 1 );
+  return 1;
+}
+
+static int lua_game_IsDedicated (lua_State *L) {
+#ifdef CLIENT_DLL
+  lua_pushboolean( L, false );
+#else
+  lua_pushboolean( L, engine->IsDedicatedServer() != 0 );
+#endif
+  return 1;
+}
+
 LUALIB_API void luasrc_openlibs (lua_State *L) {
   const luaL_Reg *lib = luasrclibs;
   for (; lib->func; lib++) {
@@ -740,6 +815,20 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   {
     lua_pop( L, 1 );
   }
+
+  // The engine-backed members (lua_game_* above).  GMod's extensions/game.lua
+  // only ADDS to this table, and the Lua shims in extensions/gmod_compat.lua
+  // redefine GetMap/SinglePlayer later with the same behaviour, so anything
+  // installed here may be overridden by script.
+  lua_getglobal( L, "game" );
+  if ( lua_istable( L, -1 ) )
+  {
+    lua_pushcfunction( L, lua_game_AddParticles ); lua_setfield( L, -2, "AddParticles" );
+    lua_pushcfunction( L, lua_game_GetMap );       lua_setfield( L, -2, "GetMap" );
+    lua_pushcfunction( L, lua_game_SinglePlayer ); lua_setfield( L, -2, "SinglePlayer" );
+    lua_pushcfunction( L, lua_game_IsDedicated );  lua_setfield( L, -2, "IsDedicated" );
+  }
+  lua_pop( L, 1 );
 
   //-----------------------------------------------------------------------------
   // HL2SB: Source's StudioRender flags, exposed with the ENGINE's own values
