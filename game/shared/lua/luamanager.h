@@ -102,6 +102,31 @@
     lua_setglobal(L, szFlatGlobal); \
   }
 
+/*
+** Same as lua_pushenum, except the bare shortname is NEVER published as a
+** global (the enum table field and <lib>_<shortname> are still set).
+**
+** Needed where the bare name belongs to GMod: lin_buttons.cpp publishes
+** IN_LEFT = 128 / IN_RIGHT = 256, whose bare names are LEFT and RIGHT -- and
+** those are GMod's DOCK enum, i.e. what every `panel:Dock( LEFT )` in Derma
+** passes.  The bare value won the race (the engine libs open before the Lua
+** extensions) and lua/includes/extensions/gmod_isvalid.lua reported it:
+**
+**   [HL2SB] WARNING: global 'LEFT' is already 128, but GMod's DOCK enum needs
+**           it to be 2 -- docking may misbehave
+**
+** and then docking did misbehave: the model list never docked to the left.
+*/
+#define lua_pushenum_nobare(L, enum, shortname) \
+  lua_pushinteger(L, enum); \
+  lua_setfield(L, -2, shortname); \
+  { \
+    char szFlatGlobal[192]; \
+    Q_snprintf(szFlatGlobal, sizeof(szFlatGlobal), "%s_%s", lib, (shortname)); \
+    lua_pushinteger(L, enum); \
+    lua_setglobal(L, szFlatGlobal); \
+  }
+
 #define END_LUA_SET_ENUM_LIB(L) \
   lua_setfield(L, -2, lib); \
   lua_pop(L, 1);

@@ -687,8 +687,10 @@ LUA_BINDING_BEGIN( TextEntry, __newindex, "class", "Metamethod called when a new
         lua_getinfo( L, "fl", &ar1 );
         lua_Debug ar2;
         lua_getinfo( L, ">S", &ar2 );
-        lua_pushfstring( L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline );
-        return lua_error( L );
+        /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
+        (see lua/includes/util.lua:314-322, GMod's IsValid). */
+        lua_pushnil( L );
+        return 1;
     }
 
     LTextEntry *plTextEntry = dynamic_cast< LTextEntry * >( pTextEntry );

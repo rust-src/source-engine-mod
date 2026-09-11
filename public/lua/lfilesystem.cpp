@@ -399,7 +399,119 @@ static int FileHandle_t___tostring (lua_State *L) {
 }
 
 
+/*
+** HL2SB: GMod's File object methods.
+**
+** lua/includes/extensions/file.lua (Garry's Mod's own file extension, shipped
+** here verbatim) rebuilds file.Read / file.Write on top of file.Open, and then
+** does `local str = f:Read( f:Size() )` / `f:Close()`.  The FileHandle_t
+** metatable used to carry nothing but __gc and __tostring, so loading that
+** extension failed on both realms:
+**
+**   [Lua] FAILED lua/includes/extensions/player_auth.lua:
+**         file.lua:10: attempt to call a nil value (method 'Size')
+*/
+static int FileHandle_Close (lua_State *L) {
+  FileHandle_t &hFile = luaL_checkfilehandle(L, 1);
+
+  if (hFile != FILESYSTEM_INVALID_HANDLE) {
+    filesystem->Close(hFile);
+    hFile = FILESYSTEM_INVALID_HANDLE;
+  }
+
+  return 0;
+}
+
+static int FileHandle_EndOfFile (lua_State *L) {
+  lua_pushboolean(L, filesystem->EndOfFile(luaL_checkfilehandle(L, 1)));
+  return 1;
+}
+
+static int FileHandle_Flush (lua_State *L) {
+  filesystem->Flush(luaL_checkfilehandle(L, 1));
+  return 0;
+}
+
+// f:Read( [bytes] ) -> string  (the rest of the file by default)
+static int FileHandle_Read (lua_State *L) {
+  FileHandle_t hFile = luaL_checkfilehandle(L, 1);
+  int nBytes = luaL_optint(L, 2, filesystem->Size(hFile));
+
+  if (nBytes <= 0) {
+    lua_pushstring(L, "");
+    return 1;
+  }
+
+  byte *pBuffer = new byte[nBytes + 1];
+  int nRead = filesystem->Read(pBuffer, nBytes, hFile);
+
+  if (nRead <= 0) {
+    delete[] pBuffer;
+    lua_pushstring(L, "");
+    return 1;
+  }
+
+  pBuffer[nRead] = 0;
+  lua_pushlstring(L, (const char *)pBuffer, nRead);
+  delete[] pBuffer;
+  return 1;
+}
+
+// f:Seek( offset, whence ) -> number.  GMod's whence is a string ("set"/"cur"/
+// "end"); the plain 0/1/2 numbers C uses are accepted too.
+static int FileHandle_Seek (lua_State *L) {
+  FileHandle_t hFile = luaL_checkfilehandle(L, 1);
+  int nOffset = luaL_checkint(L, 2);
+  FileSystemSeek_t nWhence = FILESYSTEM_SEEK_HEAD;
+
+  if (lua_type(L, 3) == LUA_TSTRING) {
+    const char *pWhence = lua_tostring(L, 3);
+
+    if (!V_stricmp(pWhence, "cur") || !V_stricmp(pWhence, "current"))
+      nWhence = FILESYSTEM_SEEK_CURRENT;
+    else if (!V_stricmp(pWhence, "end") || !V_stricmp(pWhence, "tail"))
+      nWhence = FILESYSTEM_SEEK_TAIL;
+  } else if (lua_isnumber(L, 3)) {
+    int nWhence = lua_tointeger(L, 3);
+    nWhence = (nWhence == 1) ? FILESYSTEM_SEEK_CURRENT : (nWhence == 2) ? FILESYSTEM_SEEK_TAIL : FILESYSTEM_SEEK_HEAD;
+  }
+
+  // IFileSystem::Seek returns void in this fork, so report the new position the
+  // way GMod's File:Seek does.
+  filesystem->Seek(hFile, nOffset, nWhence);
+  lua_pushinteger(L, filesystem->Tell(hFile));
+  return 1;
+}
+
+static int FileHandle_Size (lua_State *L) {
+  lua_pushinteger(L, filesystem->Size(luaL_checkfilehandle(L, 1)));
+  return 1;
+}
+
+static int FileHandle_Tell (lua_State *L) {
+  lua_pushinteger(L, filesystem->Tell(luaL_checkfilehandle(L, 1)));
+  return 1;
+}
+
+static int FileHandle_Write (lua_State *L) {
+  size_t nLength = 0;
+  const char *pData = luaL_checklstring(L, 2, &nLength);
+
+  // IFileSystem::Write returns void in this fork; report what we handed it.
+  filesystem->Write(pData, (int)nLength, luaL_checkfilehandle(L, 1));
+  lua_pushinteger(L, (lua_Integer)nLength);
+  return 1;
+}
+
 static const luaL_Reg FileHandle_tmeta[] = {
+  {"Close", FileHandle_Close},
+  {"EndOfFile", FileHandle_EndOfFile},
+  {"Flush", FileHandle_Flush},
+  {"Read", FileHandle_Read},
+  {"Seek", FileHandle_Seek},
+  {"Size", FileHandle_Size},
+  {"Tell", FileHandle_Tell},
+  {"Write", FileHandle_Write},
   {"__gc", FileHandle_t___gc},
   {"__tostring", FileHandle_t___tostring},
   {NULL, NULL}

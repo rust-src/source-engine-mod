@@ -347,8 +347,12 @@ void LPanel::OnMouseCaptureLost()
 void LPanel::PerformLayout()
 {
 #ifdef LUA_SDK
+	// GMod's Panel:PerformLayout( w, h ) -- lua/vgui/DFrame.lua:246 lands here and
+	// computes "w - 31 - 4", so the dimensions have to be on the stack.
 	BEGIN_LUA_CALL_PANEL_METHOD( "PerformLayout" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 

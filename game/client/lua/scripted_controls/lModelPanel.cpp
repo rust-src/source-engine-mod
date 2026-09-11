@@ -316,8 +316,11 @@ void LModelPanel::PerformLayout()
 	BaseClass::PerformLayout();
 
 #ifdef LUA_SDK
+	// GMod's Panel:PerformLayout( w, h ), same as LPanel.
 	BEGIN_LUA_CALL_PANEL_METHOD( "PerformLayout" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 
@@ -522,8 +525,10 @@ static int ModelPanel___index( lua_State *L )
 		lua_getinfo( L, "fl", &ar1 );
 		lua_Debug ar2;
 		lua_getinfo( L, ">S", &ar2 );
-		lua_pushfstring( L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline );
-		return lua_error( L );
+		/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
+        (see lua/includes/util.lua:314-322, GMod's IsValid). */
+        lua_pushnil( L );
+        return 1;
 	}
 
 	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( pPanel );
@@ -594,8 +599,10 @@ static int ModelPanel___newindex( lua_State *L )
 		lua_getinfo( L, "fl", &ar1 );
 		lua_Debug ar2;
 		lua_getinfo( L, ">S", &ar2 );
-		lua_pushfstring( L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline );
-		return lua_error( L );
+		/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves
+        (see lua/includes/util.lua:314-322, GMod's IsValid). */
+        lua_pushnil( L );
+        return 1;
 	}
 
 	LModelPanel *plPanel = dynamic_cast< LModelPanel * >( pPanel );

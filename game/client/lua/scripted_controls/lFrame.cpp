@@ -78,8 +78,11 @@ void LFrame::PerformLayout()
 {
 	BaseClass::PerformLayout();
 #if defined( LUA_SDK )
+	// GMod's Panel:PerformLayout( w, h ), same as LPanel.
 	BEGIN_LUA_CALL_PANEL_METHOD( "PerformLayout" );
-	END_LUA_CALL_PANEL_METHOD( 0, 0 );
+		lua_pushinteger( m_lua_State, GetWide() );
+		lua_pushinteger( m_lua_State, GetTall() );
+	END_LUA_CALL_PANEL_METHOD( 2, 0 );
 #endif
 }
 
@@ -471,8 +474,13 @@ static int Frame___index (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+	/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LFrame *plFrame = dynamic_cast<LFrame *>(pFrame);
   if (plFrame && plFrame->m_nTableReference != LUA_NOREF) {
@@ -525,8 +533,13 @@ static int Frame___newindex (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-    lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-    return lua_error(L);
+    /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LFrame *plFrame = dynamic_cast<LFrame *>(pFrame);
   if (plFrame) {

@@ -163,8 +163,13 @@ static int CheckButton___index (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-	lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-	return lua_error(L);
+	/* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LCheckButton *plCheckButton = dynamic_cast<LCheckButton *>(pCheckButton);
   if (plCheckButton && plCheckButton->m_nTableReference != LUA_NOREF) {
@@ -217,8 +222,13 @@ static int CheckButton___newindex (lua_State *L) {
     lua_getinfo(L, "fl", &ar1);
     lua_Debug ar2;
     lua_getinfo(L, ">S", &ar2);
-    lua_pushfstring(L, "%s:%d: attempt to index an INVALID_PANEL", ar2.short_src, ar1.currentline);
-    return lua_error(L);
+    /* HL2SB: indexing a deleted panel yields nil, the way GMod's engine behaves.
+      GMod's own IsValid() (lua/includes/util.lua:314-322) is
+      `local isvalid = object.IsValid` -- and a panel that has been marked for
+      deletion reaches exactly that read.  Raising here turned every such check
+      into an error (7221 lines in one run) and blanked the Derma UI. */
+      lua_pushnil(L);
+      return 1;
   }
   LCheckButton *plCheckButton = dynamic_cast<LCheckButton *>(pCheckButton);
   if (plCheckButton) {
