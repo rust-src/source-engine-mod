@@ -22,8 +22,36 @@ static int CBasePlayer_GetLocalPlayer (lua_State *L) {
 }
 
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - player:UniqueID() on the CLIENT too.
+//
+// GMod's Player:UniqueID() exists in BOTH realms, and the Lua HUD depends on
+// that: lua/game/client/hl2sb_cl_hudpickup.lua compares
+//
+//     LocalPlayer():UniqueID() != userid      -- userid from item_pickup
+//
+// to ignore other players' pickups.  The binding only ever existed in
+// game/server/lua/lplayer.cpp, so on the client this raised
+// "attempt to call a nil value (method 'UniqueID')" -- and lua/includes/modules/
+// hook.lua UNREGISTERS a hook that throws, so the pickup HUD died on the very
+// first pickup and never came back.  That is why the pickup notification never
+// appeared even though the whole event chain (item_pickup -> HUDItemPickedUp ->
+// HUDWeaponPickedUp/HUDItemPickedUp/HUDAmmoPickedUp -> HudViewportPaint) was
+// wired correctly.
+//
+// Returns the engine user ID -- the same number CBasePlayer::GetUserID() gives
+// on the server, and the same one HL2MP puts in item_pickup.userid, so the
+// comparison above actually holds.
+//-----------------------------------------------------------------------------
+static int CBasePlayer_UniqueID (lua_State *L) {
+  lua_pushinteger(L, luaL_checkplayer(L, 1)->GetUserID());
+  return 1;
+}
+
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GetLocalPlayer", CBasePlayer_GetLocalPlayer},
+  {"UniqueID", CBasePlayer_UniqueID},
   {NULL, NULL}
 };
 
