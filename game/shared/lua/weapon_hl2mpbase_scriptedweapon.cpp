@@ -177,6 +177,18 @@ int CHL2MPScriptedWeapon::ActivityListCount( void ) { return LUA_MAX_WEAPON_ACTI
 CHL2MPScriptedWeapon::CHL2MPScriptedWeapon( void )
 {
 	m_pLuaWeaponInfo = dynamic_cast< CHL2MPSWeaponInfo* >( CreateWeaponInfo() );
+
+#ifdef LUA_SDK
+	// HL2SB: this MUST be initialised.  InitScriptedWeapon() is what normally
+	// assigns it, but GetMaxClip1() / GetWeight() / ... are reachable before
+	// that -- CBaseCombatWeapon::Weapon_EquipAmmoOnly() calls
+	// UsesClipsForAmmo1() -> GetMaxClip1() as soon as a player bumps a dropped
+	// weapon.  Leaving the member uninitialised made lua_getref() read a random
+	// registry slot, which held a number, so lua_getfield raised
+	// "attempt to index a number value" OUTSIDE any protected call -- and with
+	// no panic function that aborted the whole server via __fastfail.
+	m_nTableReference = LUA_NOREF;
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -188,7 +200,10 @@ CHL2MPScriptedWeapon::~CHL2MPScriptedWeapon( void )
 	// Andrew; This is actually done in CBaseEntity. I'm doing it here because
 	// this is the class that initialized the reference.
 #ifdef LUA_SDK
-	lua_unref( L, m_nTableReference );
+	// Only unref a reference that was actually taken: with an uninitialised (or
+	// already-freed) value this would free a random registry slot.
+	if ( lua_isrefvalid( L, m_nTableReference ) )
+		lua_unref( L, m_nTableReference );
 #endif
 }
 
