@@ -2800,47 +2800,6 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 
 	IMaterialInternal *pExistingMaterial = m_MaterialDict.FindMaterial( pTemp, false );	// 'false' causes the search to find only file-created materials
 
-
-	// HL2SB: image materials (Material( "path/img.png" )) have no .vmt on disk, and
-
-	// CMaterial::PrecacheVars() marks a material MANUALLY CREATED only AFTER the
-
-	// dictionary recorded the flag as false -- so neither flag value matches
-
-	// afterwards and every lookup rebuilt the material (measured: the same address
-
-	// re-created repeatedly, then "DrawElements: No bound shader" and an access
-
-	// violation).  A name-only scan ignores the stale flag.  Lookup-time only,
-
-	// never per frame.
-
-	if ( !pExistingMaterial )
-
-	{
-
-		for ( MaterialHandle_t hScan = m_MaterialDict.FirstMaterial(); hScan != m_MaterialDict.InvalidMaterial(); hScan = m_MaterialDict.NextMaterial( hScan ) )
-
-		{
-
-			IMaterialInternal *pCandidate = m_MaterialDict.GetMaterialInternal( hScan );
-
-	
-
-			if ( pCandidate != NULL && !Q_stricmp( pCandidate->GetName(), pTemp ) )
-
-			{
-
-				pExistingMaterial = pCandidate;
-
-				break;
-
-			}
-
-		}
-
-	}
-
 	if ( pExistingMaterial )
 		return pExistingMaterial->GetQueueFriendlyVersion();
 
@@ -2917,15 +2876,6 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 		else
 		{
 			pMat = m_MaterialDict.AddMaterial( pMatName, pTextureGroupName );
-			
-			// HL2SB: hold one reference on an image material for the level.  It has no .vmt
-			// to reload from, so being destroyed and rebuilt leaves every Lua closure that
-			// captured it (derma_gwen's skin drawers do) pointing at freed memory.  One
-			// call at creation, not per frame.
-			if ( bImageMaterial )
-			{
-				pMat->IncrementReferenceCount();
-			}
 			if ( g_pShaderDevice->IsUsingGraphics() )
 			{
 				if ( !bIsUNC )
