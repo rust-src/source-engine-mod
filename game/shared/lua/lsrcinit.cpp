@@ -658,6 +658,21 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "AddCSLuaFile = AddCSLuaFile or function( path ) return path end\n"
     "IncludeCS = IncludeCS or function( path ) return path end\n"
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400 }\n"
+    //---------------------------------------------------------------------
+    // player: only the SERVER DLL ever created this table
+    // (game/server/lua/lplayer.cpp:652 does lua_setglobal( L, "player" ));
+    // the client's luaopen_CBasePlayer (game/client/lua/lc_baseplayer.cpp)
+    // registers the metatable and LocalPlayer but never the library, so on
+    // the client `player` was nil and two imported GMod files died:
+    //
+    //     extensions/player.lua:265        attempt to index a nil value (global player)
+    //     extensions/entity_iter.lua:14    (cascade: player.lua never ran)
+    //
+    // This snippet runs AFTER the library loop in luasrc_openlibs, so the
+    // server's real table is kept and only the client gets an empty one, which
+    // is what GMod's own extensions/player.lua then fills in.
+    //---------------------------------------------------------------------
+    "player = player or {}\n"
     "LoadPresets = LoadPresets or function() end\n"
     "SENSORBONE = SENSORBONE or {}\n"
     //---------------------------------------------------------------------
