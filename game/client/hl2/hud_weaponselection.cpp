@@ -841,12 +841,11 @@ void CHudWeaponSelection::Paint()
 // HL2SB: GMod weapon selection icons.
 //
 // GMod SWEPs carry their own HUD icon in Lua (SWEP.IconOverride /
-// SWEP.WepSelectIcon) and the community icon set ships as
-// materials/entities/weapon_<classname>.*.  Those are materials, not HUD
-// sprites, so a scripted weapon used to draw an empty box (the stock sprite
-// path only knows the names in scripts/mod_textures.txt).  Draw the material
-// when one exists and let GetSpriteActive()/GetSpriteInactive() handle the
-// weapons that do not have one (HL2's own weapons keep their HUD sprites).
+// SWEP.WepSelectIcon, a material path); a SWEP that sets neither gets GMod's
+// default icon materials/weapons/swep.  Those are materials, not HUD sprites,
+// so a scripted weapon used to draw an empty box (the stock sprite path only
+// knows the names in scripts/mod_textures.txt).  HL2's own weapons are not Lua
+// SWEPs, keep the sprite they were authored with.
 //-----------------------------------------------------------------------------
 static int HL2SB_FindWeaponIconTextureID( const char *pIconName )
 {
@@ -884,49 +883,87 @@ static int HL2SB_FindWeaponIconTextureID( const char *pIconName )
 	return iTextureID;
 }
 
+// One line per unusable icon, so a missing asset is visible in the log without
+// spamming every frame the HUD paints.
+static void HL2SB_WeaponIconWarn( const char *pIconName, const char *pWhy )
+{
+	static char s_Warned[8][MAX_PATH];
+	static int s_nWarned = 0;
+
+	for ( int i = 0; i < s_nWarned; ++i )
+	{
+		if ( !Q_stricmp( s_Warned[i], pIconName ) )
+			return;
+	}
+
+	if ( s_nWarned >= ARRAYSIZE( s_Warned ) )
+		return;
+
+	Q_strncpy( s_Warned[s_nWarned], pIconName, sizeof( s_Warned[s_nWarned] ) );
+	++s_nWarned;
+
+	Msg( "[HL2SB] weapon selection icon '%s': %s\n", pIconName, pWhy );
+}
+
 // Returns true when a GMod icon was drawn for this weapon.
 static bool HL2SB_DrawWeaponSelectIcon( C_BaseCombatWeapon *pWeapon, int xpos, int ypos, int boxWide, int boxTall, Color col )
 {
 	if ( !pWeapon )
 		return false;
 
-	char szIconName[MAX_PATH];
-	// Only Lua SWEPs (and GMod weapons generally) carry an icon of their own.
+	// Only Lua (GMod) SWEPs have a selection icon of their own - HL2's own
+	// weapons keep the HUD sprite they were authored with.
 	CHL2MPScriptedWeapon *pScriptedWeapon = dynamic_cast<CHL2MPScriptedWeapon *>( pWeapon );
-	const char *pszIcon = pScriptedWeapon ? pScriptedWeapon->GetWepSelectIcon() : NULL;
-	if ( pszIcon && pszIcon[0] )
-	{
-		Q_strncpy( szIconName, pszIcon, sizeof( szIconName ) );
-	}
-	else
-	{
-		// The community icon set: materials/entities/weapon_<classname>.png
-		Q_snprintf( szIconName, sizeof( szIconName ), "entities/%s", pWeapon->GetClassname() );
-	}
+	if ( !pScriptedWeapon )
+		return false;
+
+	// GMod spells it IconOverride / WepSelectIcon (a material path, so .vmt,
+	// .vtf or a raw .png all work).  A SWEP that sets neither falls back to
+	// GMod's default icon, weapons/swep - the sheet of paper that means "this
+	// weapon is a Lua file".  Neither is materials/entities/weapon_<class>, which
+	// is the *spawnmenu* thumbnail and does not belong in the weapon HUD.
+	const char *pszIcon = pScriptedWeapon->GetWepSelectIcon();
+	if ( !pszIcon || !pszIcon[0] )
+		pszIcon = "weapons/swep";
+
+	char szIconName[MAX_PATH];
+	Q_strncpy( szIconName, pszIcon, sizeof( szIconName ) );
 
 	IMaterial *pMaterial = materials->FindMaterial( szIconName, TEXTURE_GROUP_VGUI, false );
 	if ( !pMaterial || pMaterial->IsErrorMaterial() )
+	{
+		HL2SB_WeaponIconWarn( szIconName, "no such material" );
 		return false;
+	}
 
 	bool bFoundVar = false;
 	IMaterialVar *pBaseTextureVar = pMaterial->FindVar( "$basetexture", &bFoundVar, false );
 	ITexture *pTexture = ( pBaseTextureVar && bFoundVar ) ? pBaseTextureVar->GetTextureValue() : NULL;
 	if ( !pTexture || pTexture->IsError() )
+	{
+		HL2SB_WeaponIconWarn( szIconName, "$basetexture did not load (missing/undecodable image?)" );
 		return false;
+	}
 
 	int iIconWide = pTexture->GetActualWidth();
 	int iIconTall = pTexture->GetActualHeight();
 	if ( iIconWide <= 0 || iIconTall <= 0 )
+	{
+		HL2SB_WeaponIconWarn( szIconName, "$basetexture has no size yet" );
 		return false;
+	}
 
 	// Bind by material name - the same path surface.SetMaterial uses from Lua
 	// (it goes through the .vtf lookup, which falls back to the image file).
 	int iTextureID = HL2SB_FindWeaponIconTextureID( pMaterial->GetName() );
 	if ( iTextureID < 0 )
+	{
+		HL2SB_WeaponIconWarn( szIconName, "surface() could not bind the texture" );
 		return false;
+	}
 
 	// Centre the icon in the slot box and scale it down when it does not fit
-	// (the GMod icon set is 128x128, the bucket box is 112x80).
+	// (the buckets box is 112x80).
 	int iMaxWide = MAX( 1, boxWide - 8 );
 	int iMaxTall = MAX( 1, boxTall - 8 );
 	float flScale = MIN( 1.0f, MIN( (float)iMaxWide / (float)iIconWide, (float)iMaxTall / (float)iIconTall ) );
