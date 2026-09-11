@@ -90,6 +90,11 @@ public:
 #endif
 	virtual int				GetPosition( void ) const;
 	virtual char const		*GetPrintName( void ) const;
+	// HL2SB GMod SWEP compat: SWEP.IconOverride / SWEP.WepSelectIcon, read by
+	// the weapon selection HUD.  Deliberately NOT virtual - adding a slot to
+	// CBaseCombatWeapon's vtable would silently mis-dispatch in every object
+	// file waf does not recompile (it does not track header changes).
+	char const				*GetWepSelectIcon( void ) const;
 	bool					IsMeleeWeapon() const;
 
 public:

@@ -807,6 +807,44 @@ bool CHL2MPScriptedWeapon::UseHands( void ) const
 	return false;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod SWEP compat: the weapon selection HUD takes the icon straight off
+// the SWEP.  GMod spells it IconOverride (material path) or WepSelectIcon, and
+// the older WepSelectIcon spelling is a surface.GetTextureID() *number*, which
+// is not a material name - ignore numbers and let the HUD fall back to
+// materials/entities/weapon_<classname>.
+//-----------------------------------------------------------------------------
+const char *CHL2MPScriptedWeapon::GetWepSelectIcon( void ) const
+{
+#if defined ( LUA_SDK )
+	if ( L == NULL || m_nTableReference < 0 )
+		return NULL;
+
+	static const char *s_pIconKeys[] = { "IconOverride", "WepSelectIcon" };
+
+	for ( int i = 0; i < ARRAYSIZE( s_pIconKeys ); ++i )
+	{
+		lua_getref( L, m_nTableReference );
+		if ( !lua_istable( L, -1 ) )
+		{
+			lua_pop( L, 1 );
+			return NULL;
+		}
+
+		lua_getfield( L, -1, s_pIconKeys[i] );
+		lua_remove( L, -2 );
+
+		const char *pszIcon = ( lua_type( L, -1 ) == LUA_TSTRING ) ? lua_tostring( L, -1 ) : NULL;
+		lua_pop( L, 1 );
+
+		if ( pszIcon && pszIcon[0] )
+			return pszIcon;
+	}
+#endif
+
+	return NULL;
+}
+
 const char *CHL2MPScriptedWeapon::GetPrintName( void ) const
 {
 #if defined ( LUA_SDK )

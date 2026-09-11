@@ -12,6 +12,10 @@
 #include "../hud_crosshair.h"
 
 #include "VGuiMatSurface/IMatSystemSurface.h"
+#include <materialsystem/imaterialsystem.h>
+#include "materialsystem/imaterial.h"
+#include "materialsystem/imaterialvar.h"
+#include "materialsystem/itexture.h"
 #include <KeyValues.h>
 #include <vgui/IScheme.h>
 #include <vgui/ISurface.h>
@@ -24,6 +28,7 @@
 #ifdef LUA_SDK
 #include "luamanager.h"
 #include "lbasecombatweapon_shared.h"
+#include "weapon_hl2mpbase_scriptedweapon.h"
 #include "lColor.h"
 #endif
 
@@ -831,6 +836,114 @@ void CHudWeaponSelection::Paint()
 //-----------------------------------------------------------------------------
 // Purpose: draws a single weapon selection box
 //-----------------------------------------------------------------------------
+#ifdef LUA_SDK
+//-----------------------------------------------------------------------------
+// HL2SB: GMod weapon selection icons.
+//
+// GMod SWEPs carry their own HUD icon in Lua (SWEP.IconOverride /
+// SWEP.WepSelectIcon) and the community icon set ships as
+// materials/entities/weapon_<classname>.*.  Those are materials, not HUD
+// sprites, so a scripted weapon used to draw an empty box (the stock sprite
+// path only knows the names in scripts/mod_textures.txt).  Draw the material
+// when one exists and let GetSpriteActive()/GetSpriteInactive() handle the
+// weapons that do not have one (HL2's own weapons keep their HUD sprites).
+//-----------------------------------------------------------------------------
+static int HL2SB_FindWeaponIconTextureID( const char *pIconName )
+{
+	struct IconCache_t
+	{
+		char	szName[MAX_PATH];
+		int		iTextureID;
+	};
+
+	// One texture id per icon name; surface() needs the id to be created once.
+	static IconCache_t	s_Cache[32];
+	static int			s_nCacheCount = 0;
+
+	for ( int i = 0; i < s_nCacheCount; ++i )
+	{
+		if ( !Q_stricmp( s_Cache[i].szName, pIconName ) )
+			return s_Cache[i].iTextureID;
+	}
+
+	if ( s_nCacheCount >= ARRAYSIZE( s_Cache ) )
+		return -1;
+
+	int iTextureID = surface()->CreateNewTextureID();
+	surface()->DrawSetTextureFile( iTextureID, pIconName, true, false );
+
+	int iWide = 0, iTall = 0;
+	surface()->DrawGetTextureSize( iTextureID, iWide, iTall );
+	if ( iWide <= 0 || iTall <= 0 )
+		return -1;
+
+	Q_strncpy( s_Cache[s_nCacheCount].szName, pIconName, sizeof( s_Cache[s_nCacheCount].szName ) );
+	s_Cache[s_nCacheCount].iTextureID = iTextureID;
+	++s_nCacheCount;
+
+	return iTextureID;
+}
+
+// Returns true when a GMod icon was drawn for this weapon.
+static bool HL2SB_DrawWeaponSelectIcon( C_BaseCombatWeapon *pWeapon, int xpos, int ypos, int boxWide, int boxTall, Color col )
+{
+	if ( !pWeapon )
+		return false;
+
+	char szIconName[MAX_PATH];
+	// Only Lua SWEPs (and GMod weapons generally) carry an icon of their own.
+	CHL2MPScriptedWeapon *pScriptedWeapon = dynamic_cast<CHL2MPScriptedWeapon *>( pWeapon );
+	const char *pszIcon = pScriptedWeapon ? pScriptedWeapon->GetWepSelectIcon() : NULL;
+	if ( pszIcon && pszIcon[0] )
+	{
+		Q_strncpy( szIconName, pszIcon, sizeof( szIconName ) );
+	}
+	else
+	{
+		// The community icon set: materials/entities/weapon_<classname>.png
+		Q_snprintf( szIconName, sizeof( szIconName ), "entities/%s", pWeapon->GetClassname() );
+	}
+
+	IMaterial *pMaterial = materials->FindMaterial( szIconName, TEXTURE_GROUP_VGUI, false );
+	if ( !pMaterial || pMaterial->IsErrorMaterial() )
+		return false;
+
+	bool bFoundVar = false;
+	IMaterialVar *pBaseTextureVar = pMaterial->FindVar( "$basetexture", &bFoundVar, false );
+	ITexture *pTexture = ( pBaseTextureVar && bFoundVar ) ? pBaseTextureVar->GetTextureValue() : NULL;
+	if ( !pTexture || pTexture->IsError() )
+		return false;
+
+	int iIconWide = pTexture->GetActualWidth();
+	int iIconTall = pTexture->GetActualHeight();
+	if ( iIconWide <= 0 || iIconTall <= 0 )
+		return false;
+
+	// Bind by material name - the same path surface.SetMaterial uses from Lua
+	// (it goes through the .vtf lookup, which falls back to the image file).
+	int iTextureID = HL2SB_FindWeaponIconTextureID( pMaterial->GetName() );
+	if ( iTextureID < 0 )
+		return false;
+
+	// Centre the icon in the slot box and scale it down when it does not fit
+	// (the GMod icon set is 128x128, the bucket box is 112x80).
+	int iMaxWide = MAX( 1, boxWide - 8 );
+	int iMaxTall = MAX( 1, boxTall - 8 );
+	float flScale = MIN( 1.0f, MIN( (float)iMaxWide / (float)iIconWide, (float)iMaxTall / (float)iIconTall ) );
+
+	int iDrawWide = MAX( 1, (int)( iIconWide * flScale ) );
+	int iDrawTall = MAX( 1, (int)( iIconTall * flScale ) );
+	int x = xpos + ( boxWide - iDrawWide ) / 2;
+	int y = ypos + ( boxTall - iDrawTall ) / 2;
+
+	surface()->DrawSetTexture( iTextureID );
+	surface()->DrawSetColor( col );
+	surface()->DrawTexturedSubRect( x, y, x + iDrawWide, y + iDrawTall, 0.0f, 0.0f, 1.0f, 1.0f );
+
+	return true;
+}
+#endif // LUA_SDK
+
 void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool bSelected, int xpos, int ypos, int boxWide, int boxTall, Color selectedColor, float alpha, int number )
 {
 	Color col = bSelected ? m_SelectedFgColor : GetFgColor();
@@ -844,6 +957,14 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 
 			// draw icon
 			col[3] *= (alpha / 255.0f);
+
+#ifdef LUA_SDK
+			// HL2SB: GMod weapons carry a material icon instead of a HUD sprite.
+			if ( HL2SB_DrawWeaponSelectIcon( pWeapon, xpos, ypos, boxWide, boxTall, col ) )
+			{
+				break;
+			}
+#endif
 			if ( pWeapon->GetSpriteActive() )
 			{
 				// find the center of the box to draw in
@@ -910,6 +1031,14 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 
 			// draw icon
 			col[3] *= (alpha / 255.0f);
+
+#ifdef LUA_SDK
+			// HL2SB: GMod weapons carry a material icon instead of a HUD sprite.
+			if ( HL2SB_DrawWeaponSelectIcon( pWeapon, xpos, ypos, boxWide, boxTall, col ) )
+			{
+				break;
+			}
+#endif
 
 			if ( pWeapon->GetSpriteInactive() )
 			{
@@ -1027,7 +1156,13 @@ void CHudWeaponSelection::DrawLargeWeaponBox( C_BaseCombatWeapon *pWeapon, bool 
 		{
 			// string wasn't found by g_pVGuiLocalize->Find()
 #if defined ( LUA_SDK )
-			g_pVGuiLocalize->ConvertANSIToUnicode(pWeapon->GetPrintName(), text, sizeof(text));
+			// HL2SB: GMod SWEPs spell their print name as a language token
+			// ("#weapon_medkit"), and GMod's language.GetPhrase() falls back to
+			// the raw key *without* the '#'.  Do the same instead of drawing it.
+			const char *pszPrintName = pWeapon->GetPrintName();
+			if ( pszPrintName && pszPrintName[0] == '#' )
+				++pszPrintName;
+			g_pVGuiLocalize->ConvertANSIToUnicode(pszPrintName, text, sizeof(text));
 #else
 			g_pVGuiLocalize->ConvertANSIToUnicode(weaponInfo.szPrintName, text, sizeof(text));
 #endif
