@@ -659,7 +659,40 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     "IncludeCS = IncludeCS or function( path ) return path end\n"
     "jit = jit or { version = 'Lua 5.4 (no LuaJIT)', version_num = 50400 }\n"
     "LoadPresets = LoadPresets or function() end\n"
-    "SENSORBONE = SENSORBONE or {}\n" ) == 0 )
+    "SENSORBONE = SENSORBONE or {}\n"
+    //---------------------------------------------------------------------
+    // sql: GMod's sql library is SQLite-backed and this engine ships no
+    // sqlite3 at all (no sqlite3.h/.c anywhere; the only sql code is the
+    // MySQL developer tools under utils/, which are not in client.dll or
+    // server.dll).  luasrclib.h declares no sql library either, so there is
+    // nothing to bind.
+    //
+    // This is a STUB, not an implementation.  It keeps GMod's shapes so the
+    // three imported files that merely CALL it can load --
+    //
+    //     modules/cookie.lua:2            attempt to index a nil value (global sql)
+    //     extensions/player.lua:37        ... (global sql)
+    //     extensions/entity_iter.lua:14   (cascade: player.lua never ran)
+    //
+    // Queries return empty results and LastError says so, instead of
+    // pretending to persist.  Replacing this with sqlite3 is a build-level
+    // job (vendor the amalgamation + register the library in lsrcinit.cpp),
+    // not a Lua one.
+    //---------------------------------------------------------------------
+    "sql = sql or {\n"
+    "  LastError = function() return 'sqlite is not available in this engine' end,\n"
+    "  SQLStr = function( str, bNoQuotes )\n"
+    "    local s = tostring( str ):gsub( \"'\", \"''\" )\n"
+    "    if ( bNoQuotes ) then return s end\n"
+    "    return \"'\" .. s .. \"'\"\n"
+    "  end,\n"
+    "  TableExists = function() return false end,\n"
+    "  Query = function() return {} end,\n"
+    "  QueryRow = function() return nil end,\n"
+    "  QueryValue = function() return nil end,\n"
+    "  Begin = function() end,\n"
+    "  Commit = function() end,\n"
+    "}\n" ) == 0 )
   {
     lua_pcall( L, 0, 0, 0 );
   }
