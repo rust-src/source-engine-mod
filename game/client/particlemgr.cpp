@@ -2096,6 +2096,14 @@ PMaterialHandle CParticleMgr::GetPMaterial( const char *pMaterialName )
 //This function takes a leaked handle from a previous level and reacquires necessary materials.
 void CParticleMgr::RepairPMaterial( PMaterialHandle hMaterial )
 {
+	// HL2SB: callers hand AddParticle() whatever handle the effect passed in, and
+	// fx_explosion.cpp passes g_Mat_DustPuff[1] straight through -- NULL whenever
+	// FX_CacheMaterialHandles() has not populated it.  Reading m_pMaterial
+	// through that was undefined behaviour (and the Assert below is compiled out
+	// in release, so FindMaterial(NULL, ...) was reached too).
+	if ( hMaterial == NULL )
+		return;
+
 	if( hMaterial->m_pMaterial != NULL )
 		return;
 
@@ -2109,6 +2117,11 @@ void CParticleMgr::RepairPMaterial( PMaterialHandle hMaterial )
 		}
 	}
 	Assert( pMaterialName != NULL );
+
+	// HL2SB: a handle that was never registered with a name cannot be repaired;
+	// FindMaterial(NULL, ...) resolves nothing useful.
+	if ( pMaterialName == NULL )
+		return;
 
 	IMaterial *pIMaterial = m_pMaterialSystem->FindMaterial( pMaterialName, TEXTURE_GROUP_PARTICLE );
 	hMaterial->m_pMaterial = pIMaterial;

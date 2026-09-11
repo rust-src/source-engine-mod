@@ -86,8 +86,17 @@ CBaseScriptedTrigger::CBaseScriptedTrigger( void )
 
 CBaseScriptedTrigger::~CBaseScriptedTrigger( void )
 {
+	// HL2SB: m_nTableReference is CBaseEntity's member and ~CBaseEntity unrefs
+	// it too, so unref exactly once here and clear it.  A second lua_unref() on
+	// the same ref corrupts the registry free list (luaL_unref writes the
+	// number ref into the slot), after which lua_getref() on a stale ref
+	// returns a number and "attempt to index a number value" aborts the
+	// process from an unprotected context.
 #ifdef LUA_SDK
-	lua_unref( L, m_nTableReference );
+	if ( L != NULL && m_nTableReference >= 0 )
+		lua_unref( L, m_nTableReference );
+
+	m_nTableReference = LUA_NOREF;
 #endif
 }
 
@@ -153,7 +162,9 @@ void CBaseScriptedTrigger::InitScriptedTrigger( void )
 		lua_pop( L, 1 );
 	}
 
-	if ( m_nTableReference == LUA_NOREF )
+	// HL2SB: < 0, not == LUA_NOREF -- luaL_ref() returns LUA_REFNIL (-1) when
+	// entity.get() had no table to offer, which is not LUA_NOREF (-2).
+	if ( m_nTableReference < 0 )
 	{
 		LoadScriptedTrigger();
 		m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );

@@ -262,7 +262,16 @@ typedef struct luaL_Stream
 #define luaL_optunsigned( L, a, d ) \
     ( ( lua_Unsigned )luaL_optinteger( L, a, ( lua_Integer )( d ) ) )
 
-#define luaL_checknumber( L, n ) ( ( int )luaL_checkinteger( L, ( n ) ) )
+/*
+** HL2SB: this macro was misnamed luaL_checknumber, which would have silently
+** turned every float conversion in the Lua library itself into an int cast
+** (math.sin(x), io.write(x), string.rep(s, n) ...) the moment LUA_COMPAT_5_3
+** was enabled.  Upstream 5.4.6 spells it luaL_checkint.  Restored.
+** NOTE: the Lua 5.1 spellings that HL2SB's bindings actually use are defined
+** in lua/etc/lua.hpp, where they deliberately truncate floats instead of
+** raising "number has no integer representation".
+*/
+#define luaL_checkint( L, n ) ( ( int )luaL_checkinteger( L, ( n ) ) )
 #define luaL_optint( L, n, d ) ( ( int )luaL_optinteger( L, ( n ), ( d ) ) )
 
 #define luaL_checklong( L, n ) ( ( long )luaL_checkinteger( L, ( n ) ) )

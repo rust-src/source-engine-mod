@@ -700,6 +700,88 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	Msg( "[Lua] %s -> %d file(s)\n", path, nLoaded );
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB: collect the "*.lua" files under a folder, optionally walking
+//          subfolders.  See luasrc_dofolder_sorted() for why this exists.
+//-----------------------------------------------------------------------------
+static void CollectLuaFiles ( const char *path, CUtlVector< CUtlString > &out, bool bRecurse )
+{
+	FileFindHandle_t fh;
+
+	char searchPath[ 512 ];
+	Q_snprintf( searchPath, sizeof( searchPath ), "%s/*", path );
+
+	char const *fn = g_pFullFileSystem->FindFirstEx( searchPath, "MOD", &fh );
+	while ( fn )
+	{
+		if ( fn[0] != '.' )
+		{
+			char relative[ 512 ];
+			Q_snprintf( relative, sizeof( relative ), "%s/%s", path, fn );
+
+			if ( g_pFullFileSystem->FindIsDirectory( fh ) )
+			{
+				if ( bRecurse )
+				{
+					CollectLuaFiles( relative, out, bRecurse );
+				}
+			}
+			else
+			{
+				char ext[ 10 ];
+				Q_ExtractFileExtension( fn, ext, sizeof( ext ) );
+				if ( !Q_stricmp( ext, "lua" ) )
+				{
+					out.AddToTail( CUtlString( relative ) );
+				}
+			}
+		}
+
+		fn = g_pFullFileSystem->FindNext( fh );
+	}
+	g_pFullFileSystem->FindClose( fh );
+}
+
+static int __cdecl CompareLuaFileNames ( const CUtlString *pA, const CUtlString *pB )
+{
+	return Q_stricmp( pA->Get(), pB->Get() );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB: Garry's Mod's autorun scan.
+//
+//          GMod loads lua/autorun/*.lua and then lua/autorun/<realm>/** (it walks
+//          into subfolders -- that is how lua/autorun/server/sensorbones/*.lua
+//          ships), and it executes them in ALPHABETICAL order on every platform
+//          ("Autorun lua files are sorted alphabetically (A-Z) on all OSes",
+//          wiki: Lua_Loading_Order) because addons rely on that order.
+//
+//          luasrc_dofolder() above can do neither: it only matches "*.lua" in the
+//          one folder and it executes in whatever order the file system hands the
+//          entries over -- which also differs between Windows and Linux.  Autorun
+//          therefore gets this loader instead.
+//-----------------------------------------------------------------------------
+LUA_API void luasrc_dofolder_sorted (lua_State *L, const char *path, bool bRecurse)
+{
+	CUtlVector< CUtlString > files;
+	CollectLuaFiles( path, files, bRecurse );
+
+	if ( files.Count() > 0 )
+	{
+		files.Sort( CompareLuaFileNames );
+	}
+
+	for ( int i = 0; i < files.Count(); ++i )
+	{
+		char loadname[ 512 ];
+		filesystem->RelativePathToFullPath( files[i].Get(), "MOD", loadname, sizeof( loadname ) );
+		Msg( "[Lua]   %s\n", files[i].Get() );
+		luasrc_dofile( L, loadname );
+	}
+
+	Msg( "[Lua] %s -> %d file(s)%s\n", path, files.Count(), bRecurse ? " (recursive, A-Z)" : " (A-Z)" );
+}
+
 /*
 ** HL2SB: error message handler that appends a traceback.  Experiment: Source does
 ** the same via Lua 5.4's luaL_traceback; on Lua 5.1 debug.traceback works as a
@@ -924,6 +1006,14 @@ void luasrc_LoadWeapons (const char *path)
 				if ( filesystem->FileExists( filename, "MOD" ) )
 				{
 					filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
+
+					// HL2SB: say which script a weapon was built from, and from
+					// which file on disk.  The loader used to be silent here, so
+					// "did an addon's SWEP actually get picked up?" could only be
+					// answered by walking the file system by hand -- and GMod
+					// compatibility regressions are exactly the kind of thing that
+					// has to be checkable from the log.
+					Msg( "[Lua] weapon '%s' <- %s\n", className, fullpath );
 
 					// GMod semantics: the engine seeds every SWEP with a deep copy
 					// of the base weapon table before running the script, so stock

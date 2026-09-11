@@ -28,6 +28,7 @@
 #include "lbasecombatweapon_shared.h"
 #include "lgametrace.h"
 #include "SoundEmitterSystem/lisoundemittersystembase.h"
+#include "engine/IEngineSound.h"
 #include "lshareddefs.h"
 #include "ltakedamageinfo.h"
 #include "mathlib/lvector.h"
@@ -277,15 +278,6 @@ static int CBaseEntity_EmitSound (lua_State *L) {
     float duration = 0;
 	CBaseEntity *pSoundEnt = luaL_checkentity(L, 1);
 	const char *pszSoundName = luaL_checkstring(L, 2);
-	// HL2SB SOUND DEBUG (temporary): Lua SWEPs call self:EmitSound on both realms
-	// during prediction; log every call so duplicated/dropped plays are visible.
-#ifdef CLIENT_DLL
-	Msg( "[snddbg] EmitSound CLIENT ent=%s(%d) t=%.3f sound=%s\n",
-		pSoundEnt->GetClassname(), pSoundEnt->entindex(), gpGlobals->curtime, pszSoundName );
-#else
-	Msg( "[snddbg] EmitSound SERVER ent=%s(%d) t=%.3f sound=%s\n",
-		pSoundEnt->GetClassname(), pSoundEnt->entindex(), gpGlobals->curtime, pszSoundName );
-#endif
 	float flSoundTime = luaL_optnumber(L, 3, 0.0f);
 
 	// HL2SB GMod compat #1: GMod scripts play sounds by name without ever
@@ -294,8 +286,17 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 	// which is why the stock SWEP's explosion sound was silent even though the
 	// sound script name was valid.  Register the script -- or the raw wave -- the
 	// first time a script plays it.
+	//
+	// HL2SB: check IsSoundPrecached() first.  This binding runs on EVERY
+	// EmitSound, and precaching unconditionally re-registered the wave on every
+	// single shot -- the log carried six "Direct precache of
+	// weapons/automag/deagle-1.wav" lines per burst (CBaseEntity::PrecacheSound
+	// warns whenever it is called outside the precache phase, see
+	// SoundEmitterSystem.cpp:1494).  Register it once, then leave the cache
+	// alone.
 #ifndef CLIENT_DLL
-	if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' )	// not a sentence / user voice
+	if ( pszSoundName[0] != '!' && pszSoundName[0] != '?' &&	// not a sentence / user voice
+	     !enginesound->IsSoundPrecached( pszSoundName ) )
 	{
 		if ( CBaseEntity::PrecacheScriptSound( pszSoundName ) <= 0 )
 		{
@@ -311,9 +312,30 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 	// second copy restarted the first -- rapid fire sounded like it kept losing
 	// shots.  Valve's own weapons attach prediction rules to the filter, which is
 	// what stops the networked copy from cutting off the predicted one.
+	//
+	// HL2SB GMod compat #3 -- the actual channel.  EmitSound() resolves a raw
+	// wave through the overload that builds a default EmitSound_t, whose
+	// m_nChannel is CHAN_AUTO (0).  CHAN_AUTO allocates a NEW channel for every
+	// call, so a Lua SWEP firing at its Delay (weapon_pist_weagon: 0.05s, i.e.
+	// 20 shots/second on both realms) piles up concurrent instances of the same
+	// wave until the client's sound limit starts refusing them -- that is the
+	// "rapid fire sometimes goes silent" symptom, and it is why the log shows
+	// sounds being dropped rather than mis-played.  Valve's weapons put a shot on
+	// CHAN_WEAPON, where a new shot REPLACES the previous one, so at most one
+	// instance of the shot exists.  Scripts that name their own channel keep it;
+	// anything that would fall back to CHAN_AUTO is pinned to CHAN_WEAPON.
 	CSoundParameters params;
 	if ( CBaseEntity::GetParametersForSound( pszSoundName, params, NULL ) )
 	{
+		EmitSound_t emit;
+		emit.m_pSoundName      = pszSoundName;
+		emit.m_flVolume        = params.volume;
+		emit.m_SoundLevel      = params.soundlevel;
+		emit.m_nPitch          = params.pitch;
+		emit.m_nChannel        = ( params.channel != CHAN_AUTO ) ? params.channel : CHAN_WEAPON;
+		emit.m_flSoundTime     = flSoundTime;
+		emit.m_pflSoundDuration = &duration;
+
 		CPASAttenuationFilter soundFilter( pSoundEnt, params.soundlevel );
 #ifdef CLIENT_DLL
 		// Predicted Lua weapon sounds: C_RecipientFilter::UsePredictionRules keeps
@@ -323,11 +345,27 @@ static int CBaseEntity_EmitSound (lua_State *L) {
 		// CBaseCombatWeapon::WeaponSound.
 		soundFilter.UsePredictionRules();
 #endif
-		pSoundEnt->EmitSound( soundFilter, pSoundEnt->entindex(), pszSoundName, NULL, flSoundTime );
+		pSoundEnt->EmitSound( soundFilter, pSoundEnt->entindex(), emit );
 	}
 	else
 	{
-		pSoundEnt->EmitSound(pszSoundName, flSoundTime, &duration);
+		// Raw wave, no sound script.  Build the EmitSound_t by hand instead of
+		// using CBaseEntity::EmitSound( name, time, duration ) -- that overload
+		// leaves m_nChannel at CHAN_AUTO.  Everything else (volume, sound level,
+		// pitch, and the attenuation filter built from the sound name) is left
+		// exactly as that overload had it, so only the channel changes.
+		EmitSound_t emit;
+		emit.m_pSoundName      = pszSoundName;
+		emit.m_flSoundTime     = flSoundTime;
+		emit.m_pflSoundDuration = &duration;
+		emit.m_bWarnOnDirectWaveReference = true;
+		emit.m_nChannel        = CHAN_WEAPON;
+
+		CPASAttenuationFilter soundFilter( pSoundEnt, pszSoundName );
+#ifdef CLIENT_DLL
+		soundFilter.UsePredictionRules();
+#endif
+		pSoundEnt->EmitSound( soundFilter, pSoundEnt->entindex(), emit );
 	}
 	lua_pushnumber(L, duration);
 	return 1;

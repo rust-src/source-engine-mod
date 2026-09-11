@@ -55,20 +55,12 @@ public:
 
 void C_TEHL2MPFireBullets::CreateEffects( void )
 {
-	// HL2SB FX DEBUG (temporary): the TE carries the impact/tracer decision for
-	// the clients the shooter is filtered out of (UsePredictionRules), so log
-	// what actually arrived and whether a weapon was resolved.
-	Msg( "[fxdbg] TE CreateEffects impacts=%d tracers=%d player=%d shots=%d ammo=%d\n",
-		(int)m_bDoImpacts, (int)m_bDoTracers, m_iPlayer, m_iShots, m_iAmmoID );
-
 	CAmmoDef*	pAmmoDef	= GetAmmoDef();
 
 	if ( pAmmoDef == NULL )
 		 return;
 
 	C_BaseEntity *pEnt = ClientEntityList().GetEnt( m_iPlayer );
-
-	Msg( "[fxdbg] TE CreateEffects -> pEnt=%s\n", pEnt ? pEnt->GetClassname() : "<null>" );
 
 	if ( pEnt )
 	{
@@ -77,8 +69,6 @@ void C_TEHL2MPFireBullets::CreateEffects( void )
 		if ( pPlayer && pPlayer->GetActiveWeapon() )
 		{
 			C_BaseCombatWeapon *pWpn = dynamic_cast<C_BaseCombatWeapon *>( pPlayer->GetActiveWeapon() );
-
-			Msg( "[fxdbg] TE CreateEffects -> pWpn=%s\n", pWpn ? pWpn->GetClassname() : "<null>" );
 
 			if ( pWpn )
 			{

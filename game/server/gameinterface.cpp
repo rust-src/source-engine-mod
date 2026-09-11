@@ -972,6 +972,14 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	luasrc_dofolder( L, LUA_PATH_GAME_SHARED );
 	luasrc_dofolder( L, LUA_PATH_GAME_SERVER );
 
+	// HL2SB: GMod's autorun stage (wiki: Lua_Loading_Order).  GMod runs
+	// lua/autorun/*.lua and then lua/autorun/server/** before the gamemode and
+	// before weapons/entities, alphabetically and recursing into subfolders.
+	// Without this an addon whose only entry point is lua/autorun/... simply did
+	// nothing at all, with no error.
+	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN, false );
+	luasrc_dofolder_sorted( L, LUA_PATH_AUTORUN_SERVER, true );
+
 	luasrc_LoadWeapons();
 	luasrc_LoadEntities();
 	//luasrc_LoadEffects();

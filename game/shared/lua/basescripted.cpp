@@ -100,8 +100,26 @@ CBaseScripted::~CBaseScripted( void )
 {
 	// Andrew; This is actually done in CBaseEntity. I'm doing it here because
 	// this is the class that initialized the reference.
+	//
+	// HL2SB: m_nTableReference is CBaseEntity's member (there is no shadowing
+	// field in this class), so ~CBaseEntity runs lua_unref() on the SAME ref
+	// right after this.  Unref'ing a ref twice is not harmless: luaL_unref()
+	// splices the slot into the registry free list by writing t[ref] = t[0],
+	// so the second call stores the number ref into the slot and leaves the
+	// free list pointing at it again.  The next luaL_ref() then hands that
+	// same slot to a second live object, and lua_getref() on the stale ref
+	// reads a NUMBER -- lua_getfield() on it raises "attempt to index a number
+	// value" from an unprotected context, which aborts the process.
+	//
+	// Clearing the member makes the base-class unref a no-op (luaL_unref
+	// ignores negative refs), and the L != NULL test covers shutdown, where
+	// entities are destroyed after the lua_State is already gone
+	// (see the L = NULL comment in luamanager.cpp).
 #ifdef LUA_SDK
-	lua_unref( L, m_nTableReference );
+	if ( L != NULL && m_nTableReference >= 0 )
+		lua_unref( L, m_nTableReference );
+
+	m_nTableReference = LUA_NOREF;
 #endif
 }
 
@@ -160,7 +178,12 @@ void CBaseScripted::InitScriptedEntity( void )
  	Q_strlower( className );
 	SetClassname( className );
 
-	if ( m_nTableReference == LUA_NOREF )
+	// HL2SB: < 0, not == LUA_NOREF.  luaL_ref() returns LUA_REFNIL (-1) when
+	// entity.get() yielded no table (a classname with no lua/entities script),
+	// and that value is not LUA_NOREF (-2) -- so the old test fell into the
+	// "already loaded" branch below and tried table.merge() against a bogus
+	// reference on every subsequent Spawn.
+	if ( m_nTableReference < 0 )
 	{
 		LoadScriptedEntity();
 		m_nTableReference = luaL_ref( L, LUA_REGISTRYINDEX );

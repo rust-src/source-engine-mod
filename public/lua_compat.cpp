@@ -44,6 +44,20 @@ int luaL_typerror( lua_State *L, int narg, const char *tname )
 
 void lua_getref( lua_State *L, int ref )
 {
+    // HL2SB: LUA_NOREF (-2) and LUA_REFNIL (-1) are not registry keys.  Passing
+    // them to lua_rawgeti() reads a negative integer key out of the registry
+    // table -- an arbitrary slot that may hold a NUMBER (that is what a freed
+    // registry slot contains, see luaL_unref).  A caller that then does
+    // lua_getfield() on the result raises "attempt to index a number value"
+    // from an unprotected context, which kills the process.  An invalid
+    // reference means "no value", so push nil and let the lua_isrefvalid() /
+    // lua_istable() guards at the call sites skip the dispatch.
+    if ( ref < 0 )
+    {
+        lua_pushnil( L );
+        return;
+    }
+
     lua_rawgeti( L, LUA_REGISTRYINDEX, ref );
 }
 

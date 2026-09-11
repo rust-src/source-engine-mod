@@ -1329,16 +1329,27 @@ bool CHL2MPRules::IsConnectedUserInfoChangeAllowed( CBasePlayer *pPlayer )
  
 float CHL2MPRules::GetMapRemainingTime()
 {
-#if !defined ( LUA_SDK )
-	// if timelimit is disabled, return 0
-	if ( mp_timelimit.GetInt() <= 0 )
-		return 0;
-#else
+#if defined ( LUA_SDK )
 	BEGIN_LUA_CALL_HOOK( "GetMapRemainingTime" );
 	END_LUA_CALL_HOOK( 0, 1 );
 
 	RETURN_LUA_NUMBER();
 #endif
+
+	// HL2SB: the "timelimit is disabled" guard used to be inside
+	// `#if !defined ( LUA_SDK )`, so it was COMPILED OUT of this build.  A
+	// gamemode that does not implement GM:GetMapRemainingTime therefore fell
+	// straight through to the computation below, which with the default
+	// mp_timelimit 0 gives (m_flGameStartTime + 0) - curtime -- a large NEGATIVE
+	// number.  CHL2MPRules::Think() reads that as "time is up" and calls
+	// GoToIntermission(), after which the map is changed on a timer, forever.
+	//
+	// Only gamemodes/deathmatch defined the Lua method and no gamemode here
+	// derives from another, so every other gamemode (sandbox, campaign, ...)
+	// hit this.  The guard has to apply to the fallback path as well, not just
+	// when the Lua SDK is absent.
+	if ( mp_timelimit.GetInt() <= 0 )
+		return 0;
 
 	// timelimit is in minutes
 

@@ -24,10 +24,29 @@ extern "C" {
 #define LUA_QL(x)	"'" x "'"
 #define LUA_QS		LUA_QL("%s")
 
-#define luaL_checkint(L, n) ((int)luaL_checkinteger(L, (n)))
-#define luaL_optint(L, n, d) ((int)luaL_optinteger(L, (n), (d)))
-#define luaL_checklong(L, n) ((long)luaL_checkinteger(L, (n)))
-#define luaL_optlong(L, n, d) ((long)luaL_optinteger(L, (n), (d)))
+/*
+ * HL2SB: these four are Lua 5.1 spellings, and 5.1 TRUNCATED the argument.
+ *
+ * lua_tointeger() in 5.1 was `(int)lua_tonumber()`, so luaL_checkint( "2.7" )
+ * yielded 2.  Lua 5.4's lua_tointegerx() refuses any float that has a
+ * fractional part and raises
+ *     bad argument #N to '<fn>' (number has no integer representation)
+ *
+ * Forwarding the 5.1 names to the strict 5.4 luaL_checkinteger() therefore
+ * broke every 5.1-era binding that is handed a *computed* coordinate -- which
+ * is the normal case for the surface drawing API here, because scripts do
+ *     surface.DrawFilledRect( x, y, x + w, y + h )
+ * with an eased/spring float x.  Every such call died inside the Paint hook,
+ * so whole HUDs drew nothing at all (undo notification, pickup strip, ...).
+ *
+ * Route them through the number checks, which accept and truncate floats
+ * exactly like 5.1 did.  luaL_checkinteger() itself is left strict for the
+ * bindings that genuinely want an integer.
+ */
+#define luaL_checkint(L, n) ((int)luaL_checknumber(L, (n)))
+#define luaL_optint(L, n, d) ((int)luaL_optnumber(L, (n), (d)))
+#define luaL_checklong(L, n) ((long)luaL_checknumber(L, (n)))
+#define luaL_optlong(L, n, d) ((long)luaL_optnumber(L, (n), (d)))
 
 /* HL2SB: Lua 5.1 spelling of lua_rawlen (removed in 5.2). */
 #define lua_objlen(L,i) lua_rawlen(L,(i))

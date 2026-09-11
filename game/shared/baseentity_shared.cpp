@@ -1603,20 +1603,6 @@ typedef CTraceFilterSimpleList CBulletsTraceFilter;
 
 void CBaseEntity::FireBullets( const FireBulletsInfo_t &info )
 {
-	// HL2SB FX DEBUG (temporary): in HL2MP the server sets bDoServerEffects =
-	// false below, so bullet impacts are meant to come from the CLIENT
-	// (predicted FireBullets, or the TE that excludes the shooter).  This logs
-	// which realm actually runs the bullet loop for a Lua SWEP.
-#ifdef CLIENT_DLL
-	Msg( "[fxdbg] FireBullets CLIENT self=%s shots=%d ammo=%d dist=%.0f dmg=%.1f spread=%.3f tracer=%d\n",
-		GetClassname(), info.m_iShots, info.m_iAmmoType, info.m_flDistance,
-		info.m_flDamage, info.m_vecSpread.x, info.m_iTracerFreq );
-#else
-	Msg( "[fxdbg] FireBullets SERVER self=%s shots=%d ammo=%d dist=%.0f dmg=%.1f spread=%.3f tracer=%d\n",
-		GetClassname(), info.m_iShots, info.m_iAmmoType, info.m_flDistance,
-		info.m_flDamage, info.m_vecSpread.x, info.m_iTracerFreq );
-#endif
-
 	static int	tracerCount;
 	trace_t		tr;
 	CAmmoDef*	pAmmoDef	= GetAmmoDef();
@@ -2203,22 +2189,6 @@ void CBaseEntity::TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir
 //-----------------------------------------------------------------------------
 void CBaseEntity::DoImpactEffect( trace_t &tr, int nDamageType )
 {
-	// HL2SB FX DEBUG (temporary): is the impact stage reached, on which realm,
-	// and against what?
-#ifdef CLIENT_DLL
-	Msg( "[fxdbg] DoImpactEffect CLIENT self=%s(%d) hit=%s(%d) local_wpn=%d dmgtype=%d frac=%.2f\n",
-		GetClassname(), entindex(),
-		tr.m_pEnt ? tr.m_pEnt->GetClassname() : "<none>", tr.m_pEnt ? tr.m_pEnt->entindex() : -1,
-		( C_BasePlayer::GetLocalPlayer() && C_BasePlayer::GetLocalPlayer()->GetActiveWeapon() )
-			? C_BasePlayer::GetLocalPlayer()->GetActiveWeapon()->entindex() : -1,
-		nDamageType, tr.fraction );
-#else
-	Msg( "[fxdbg] DoImpactEffect SERVER self=%s(%d) hit=%s(%d) dmgtype=%d frac=%.2f\n",
-		GetClassname(), entindex(),
-		tr.m_pEnt ? tr.m_pEnt->GetClassname() : "<none>", tr.m_pEnt ? tr.m_pEnt->entindex() : -1,
-		nDamageType, tr.fraction );
-#endif
-
 	// give shooter a chance to do a custom impact.
 	UTIL_ImpactTrace( &tr, nDamageType );
 } 

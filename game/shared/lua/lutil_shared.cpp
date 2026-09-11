@@ -12,6 +12,7 @@
 #include "lbaseplayer_shared.h"
 #include "lgametrace.h"
 #include "mathlib/lvector.h"
+#include "engine/IEngineSound.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -136,8 +137,19 @@ static int luasrc_UTIL_PlayerByIndex (lua_State *L) {
 
 
 // HL2SB GMod SWEP compat: stock SWEP Initialize calls util.PrecacheSound.
+//
+// HL2SB: script-sound names must go through PrecacheScriptSound(), because that
+// is the table the server's SV_StartSound validation checks, and the raw-wave
+// path has to be idempotent: CBaseEntity::PrecacheSound() warns
+// ("Direct precache of %s", SoundEmitterSystem.cpp:1494) every time it is called
+// outside the precache phase, and a weapon that is re-created (every pickup,
+// every map reload) ran this on each spawn.
 static int luasrc_util_PrecacheSound (lua_State *L) {
-  CBaseEntity::PrecacheSound(luaL_checkstring(L, 1));
+  const char *pszName = luaL_checkstring(L, 1);
+  if ( CBaseEntity::PrecacheScriptSound( pszName ) <= 0
+       && !enginesound->IsSoundPrecached( pszName ) ) {
+    CBaseEntity::PrecacheSound( pszName );
+  }
   return 0;
 }
 

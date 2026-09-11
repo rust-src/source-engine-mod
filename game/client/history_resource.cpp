@@ -20,6 +20,13 @@ using namespace vgui;
 
 extern ConVar hud_drawhistory_time;
 
+// HL2SB: the intended pickup feedback is the GMod pickup bar
+// (lua/game/client/hl2sb_cl_hudpickup.lua), so HL2's stock "circle of icons" is
+// hidden by default.  Set hl2sb_hide_pickup_history 0 to get it back.
+static ConVar hl2sb_hide_pickup_history( "hl2sb_hide_pickup_history", "1",
+	FCVAR_ARCHIVE,
+	"HL2SB: hide HL2's stock pickup-history icons (the GMod pickup bar replaces them)." );
+
 DECLARE_HUDELEMENT( CHudHistoryResource );
 DECLARE_HUD_MESSAGE( CHudHistoryResource, ItemPickup );
 DECLARE_HUD_MESSAGE( CHudHistoryResource, AmmoDenied );
@@ -283,6 +290,17 @@ bool CHudHistoryResource::ShouldDraw( void )
 #ifdef TF_CLIENT_DLL
 	return false;
 #else
+	// HL2SB: hide the stock element outright.  The HudElementShouldDraw Lua
+	// hook in lua/game/client/hl2sb_cl_hudpickup.lua also returns false for
+	// "CHudHistoryResource", but that answer only survives
+	// CHudElement::ShouldDraw()'s RETURN_LUA_* path when the Lua stack happens
+	// to be empty at that exact moment (see the note in hud.cpp), and this
+	// element must not depend on that.  Note the short-circuit below: when no
+	// pickup is pending, CHudElement::ShouldDraw() -- the only place that asks
+	// Lua -- is never even reached.
+	if ( hl2sb_hide_pickup_history.GetBool() )
+		return false;
+
 	return ( ( m_iCurrentHistorySlot > 0 || m_bNeedsDraw ) && CHudElement::ShouldDraw() );
 #endif
 }
