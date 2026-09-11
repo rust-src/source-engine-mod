@@ -13,6 +13,7 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "limaterial.h"
+#include "lColor.h"
 #include "mathlib/lvector.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -294,6 +295,43 @@ static int IMaterial___tostring (lua_State *L) {
 }
 
 
+//-----------------------------------------------------------------------------
+// Purpose: HL2SB - IMaterial:GetColor( x, y )
+//
+// GMod samples an atlas pixel through the material, and lua/derma/
+// derma_gwen.lua:125 does exactly that while BUILDING its nine-slice borders
+// (GWEN.CreateTextureBorder -> GWEN.TextureColor):
+//
+//     local mat = SKIN.GwenTexture        -- Material( "gwenskin/GModDefault.png" )
+//     return mat:GetColor( x, y )
+//
+// That runs at LOAD time of lua/skins/default.lua, so without this binding the
+// whole skin file failed:
+//
+//     [Lua] FAILED lua/skins/default.lua:
+//       lua/derma/derma_gwen.lua:125: attempt to call a nil value (method 'GetColor')
+//
+// and the failure is silent everywhere else: DefineSkin( "Default", ... ) at the
+// end of the file never ran, DefaultSkin stayed the empty table derma.lua starts
+// with, derma.SkinHook then returned early for EVERY type
+// ("if ( !func ) then return end"), so no Derma panel painted anything at all --
+// the GMod undo notice included.  The undo itself worked the whole time.
+//
+// s/t are normalised (0..1); GetLowResColorSample hands back floats in 0..1.
+//-----------------------------------------------------------------------------
+static int IMaterial_GetColor (lua_State *L) {
+  IMaterial *pMaterial = luaL_checkmaterial(L, 1);
+  float s = (float)luaL_checknumber(L, 2);
+  float t = (float)luaL_checknumber(L, 3);
+
+  float color[3] = { 0.0f, 0.0f, 0.0f };
+  pMaterial->GetLowResColorSample(s, t, color);
+
+  lua_pushcolor(L, Color((int)(color[0] * 255.0f), (int)(color[1] * 255.0f), (int)(color[2] * 255.0f), 255));
+  return 1;
+}
+
+
 static const luaL_Reg IMaterialmeta[] = {
   {"AddRef", IMaterial_AddRef},
   {"AlphaModulate", IMaterial_AlphaModulate},
@@ -302,6 +340,7 @@ static const luaL_Reg IMaterialmeta[] = {
   {"DeleteIfUnreferenced", IMaterial_DeleteIfUnreferenced},
   {"GetAlphaModulation", IMaterial_GetAlphaModulation},
   {"GetColorModulation", IMaterial_GetColorModulation},
+  {"GetColor", IMaterial_GetColor},
   {"GetEnumerationID", IMaterial_GetEnumerationID},
   {"GetMappingHeight", IMaterial_GetMappingHeight},
   {"GetMappingWidth", IMaterial_GetMappingWidth},
