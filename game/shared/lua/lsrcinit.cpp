@@ -718,6 +718,45 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
     lua_pop( L, 1 );
   }
 
+  //-----------------------------------------------------------------------------
+  // HL2SB: GMod's `game` table.
+  //
+  // modules/... no -- extensions/game.lua:24 EXTENDS it (`function
+  // game.AddAmmoType( tbl )`), so it died on
+  //     extensions/game.lua:24: attempt to index a nil value (global 'game')
+  // because this engine has no game library at all (no LUA_GAMELIBNAME
+  // anywhere).  Creating the table here lets that file load; the individual
+  // game.* functions it expects from the engine are still a follow-up.
+  //
+  // `or {}` style: if a game library ever appears, its table wins.
+  //-----------------------------------------------------------------------------
+  if ( lua_getglobal( L, "game" ) == LUA_TNIL )
+  {
+    lua_pop( L, 1 );
+    lua_newtable( L );
+    lua_setglobal( L, "game" );
+  }
+  else
+  {
+    lua_pop( L, 1 );
+  }
+
+  //-----------------------------------------------------------------------------
+  // HL2SB: Source's StudioRender flags, exposed with the ENGINE's own values
+  // (public/model_types.h:16-18) rather than literals that could drift.
+  //
+  // modules/halo.lua:14 is
+  //     bit.bor( STUDIO_RENDER, STUDIO_SKIP_DECALS or 0 )
+  // and failed with "bad argument #1 to 'bor' (number expected, got nil)".
+  // STUDIO_SKIP_DECALS is genuinely not defined in this engine's model_types.h,
+  // and halo.lua already tolerates that with "or 0", so it is NOT faked here.
+  //-----------------------------------------------------------------------------
+#ifdef STUDIO_RENDER
+  lua_pushinteger( L, STUDIO_RENDER );                   lua_setglobal( L, "STUDIO_RENDER" );
+  lua_pushinteger( L, STUDIO_VIEWXFORMATTACHMENTS );     lua_setglobal( L, "STUDIO_VIEWXFORMATTACHMENTS" );
+  lua_pushinteger( L, STUDIO_DRAWTRANSLUCENTSUBMODELS ); lua_setglobal( L, "STUDIO_DRAWTRANSLUCENTSUBMODELS" );
+#endif
+
   luaL_register(L, "_G", lua_metatable_funcs);
   lua_pop(L, 1);
 }
