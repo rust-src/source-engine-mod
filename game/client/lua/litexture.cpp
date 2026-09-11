@@ -229,34 +229,78 @@ LUA_BINDING_END()
 ** IMaterial:GetTexture has to hand back.  luaopen_IMaterial() runs earlier in
 ** luasrc_openLibs(), so the metatable below already exists when we extend it.
 */
+/*
+** HL2SB: resolve a material's texture, tolerating the material object the engine
+** handed to Lua.
+**
+** FindMaterial() can give Lua an object that is not the one registered in the
+** material dictionary: in the measured case the dictionary's material was
+** precached correctly (mat=...B7F0, found=1, shader='UnlitGeneric') while the one
+** the Derma skin held (mat=...B8C0) had no shader params at all, so every
+** GetTexture( "$basetexture" ) returned nil and the skin atlas drawers died with
+**
+**   lua/derma/derma_gwen.lua:14: attempt to index a nil value (local 'tex')
+**
+** (surface.SetMaterial() is fine either way: it resolves by NAME, and the name
+** finds the good dictionary material.)  For an image material the material name
+** IS the texture name, so fall back to the texture system -- which resolves
+** materials/gwenskin/gmoddefault.png through the image fallback in
+** CTextureManager::LoadTexture.
+*/
+static ITexture *HL2SB_MaterialTexture( IMaterial *pMaterial, const char *pTextureVarName, bool &bFound )
+{
+    bFound = false;
+
+    if ( !pMaterial )
+        return NULL;
+
+    IMaterialVar *pVar = pMaterial->FindVar( pTextureVarName, &bFound, false );
+    ITexture *pTexture = ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+
+    if ( pTexture != NULL )
+        return pTexture;
+
+    if ( materials == NULL )
+        return NULL;
+
+    char szTextureName[MAX_PATH];
+    Q_strncpy( szTextureName, pMaterial->GetName(), sizeof( szTextureName ) );
+    Q_StripExtension( szTextureName, szTextureName, sizeof( szTextureName ) );
+
+    if ( szTextureName[0] == 0 )
+        return NULL;
+
+    pTexture = materials->FindTexture( szTextureName, TEXTURE_GROUP_VGUI, false );
+
+    if ( pTexture != NULL && pTexture->IsError() )
+        pTexture = NULL;
+
+    return pTexture;
+}
+
 static int HL2SB_IMaterial_GetTexture( lua_State *L )
 {
     IMaterial *pMaterial = luaL_checkmaterial( L, 1 );
     const char *pTextureVarName = luaL_checkstring( L, 2 );
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial ? pMaterial->FindVar( pTextureVarName, &bFound, false ) : NULL;
-    ITexture *pTexture = ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+    ITexture *pTexture = HL2SB_MaterialTexture( pMaterial, pTextureVarName, bFound );
 
-    if ( !pTexture )
+    if ( pTexture == NULL && pMaterial != NULL )
     {
-        // HL2SB diagnostic, once per material: the Derma skin's atlas lookup
-        // failing every frame is what leaves a Derma panel transparent, and the
-        // material pointer vs. the one the materialsystem reports precached says
-        // whether the caller holds a stale/duplicate material or the material
-        // simply has no $basetexture.
+        // Once per material: which object held no params, and did the name-based
+        // fallback save it?  (See HL2SB_MaterialTexture.)
         static CUtlDict< int, int > s_LoggedFailures;
 
-        if ( pMaterial != NULL && s_LoggedFailures.Find( pMaterial->GetName() ) == s_LoggedFailures.InvalidIndex() )
+        if ( s_LoggedFailures.Find( pMaterial->GetName() ) == s_LoggedFailures.InvalidIndex() )
         {
             s_LoggedFailures.Insert( pMaterial->GetName(), 1 );
-            Msg( "[HL2SB] GetTexture FAILED: material='%s' mat=%p var='%s' found=%d error=%d shader='%s'\n",
-                pMaterial->GetName(), pMaterial, pTextureVarName, bFound,
-                pMaterial->IsErrorMaterial(), pMaterial->GetShaderName() );
+            Msg( "[HL2SB] GetTexture could not resolve '%s' for material='%s' mat=%p found=%d shader='%s'\n",
+                pTextureVarName, pMaterial->GetName(), pMaterial, bFound, pMaterial->GetShaderName() );
         }
     }
 
-    if ( !pTexture )
+    if ( pTexture == NULL )
     {
         lua_pushnil( L );
         return 1;
@@ -272,8 +316,7 @@ static ITexture *HL2SB_MaterialBaseTexture( IMaterial *pMaterial )
         return NULL;
 
     bool bFound = false;
-    IMaterialVar *pVar = pMaterial->FindVar( "$basetexture", &bFound, false );
-    return ( pVar && bFound ) ? pVar->GetTextureValue() : NULL;
+    return HL2SB_MaterialTexture( pMaterial, "$basetexture", bFound );
 }
 
 static int HL2SB_IMaterial_Width( lua_State *L )
