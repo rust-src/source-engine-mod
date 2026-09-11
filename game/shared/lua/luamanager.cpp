@@ -760,10 +760,82 @@ LUA_API void luasrc_dofolder (lua_State *L, const char *path)
 	// stack leak that took the HUD down (see AGENTS.md 5.4.2).
 	int nFailed = 0;
 	const int nTop = lua_gettop( L );
+
+	//-----------------------------------------------------------------------------
+	// HL2SB: GMod's module dependency order.
+	//
+	// This folder used to load purely in directory order, but the GMod modules
+	// imported into lua/includes/modules/ were written against GMod's own ordered
+	// require list in its lua/includes/init.lua.  Four of them therefore failed to
+	// load because the module they use had not been read yet:
+	//
+	//     cleanup.lua      needs hook         (cleanup < hook)
+	//     construct.lua    needs duplicator   (construct < duplicator)
+	//     numpad.lua       needs saverestore  (numpad < saverestore)
+	//     entity_iter.lua  needs player       (entity_iter < player)
+	//
+	// Re-loading one is NOT an option: these files are plain dofile'd chunks with
+	// no re-entry guard, so a second execution re-runs their `local tHooks = {}`
+	// and silently detaches what the first pass registered (AGENTS.md 5.4).  Hence
+	// two passes with a skip list rather than a reorder of one pass.
+	//
+	// Names that are not in this folder (hook.lua when this runs for
+	// extensions/, for instance) are simply skipped, so this is safe for every
+	// other dofolder call site.
+	//-----------------------------------------------------------------------------
+	static const char *s_pHL2SBFirst[] = {
+		"hook.lua", "net.lua", "timer.lua", "concommand.lua",
+		"player_manager.lua", "player.lua", "entity_iter.lua",
+		"saverestore.lua", "scripted_ents.lua", "weapons.lua",
+		"duplicator.lua", "construct.lua", "constraint.lua",
+		"cleanup.lua", "usermessage.lua", "properties.lua",
+		"presets.lua", "numpad.lua",
+		NULL
+	};
+
+	char szLoadedFirst[ ARRAYSIZE( s_pHL2SBFirst ) ][ 64 ];
+	int nLoadedFirst = 0;
+
+	for ( int k = 0; s_pHL2SBFirst[ k ] != NULL; ++k )
+	{
+		char relative[ 512 ];
+		Q_snprintf( relative, sizeof( relative ), "%s/%s", path, s_pHL2SBFirst[ k ] );
+
+		if ( !LuaFileExists( relative ) )
+			continue;
+
+		char loadname[ 512 ];
+		filesystem->RelativePathToFullPath( relative, "MOD", loadname, sizeof( loadname ) );
+
+		Msg( "[Lua]   %s  (prerequisite)\n", relative );
+		if ( luasrc_dofile( L, loadname ) != 0 )
+			++nFailed;
+		lua_settop( L, nTop );
+
+		Q_strncpy( szLoadedFirst[ nLoadedFirst ], s_pHL2SBFirst[ k ], sizeof( szLoadedFirst[ 0 ] ) );
+		++nLoadedFirst;
+	}
+
 	while ( fn )
 	{
 		if ( fn[0] != '.' )
 		{
+			// HL2SB: already loaded in the prerequisite pass above.
+			bool bAlreadyLoaded = false;
+			for ( int s = 0; s < nLoadedFirst; ++s )
+			{
+				if ( !Q_stricmp( fn, szLoadedFirst[ s ] ) )
+				{
+					bAlreadyLoaded = true;
+					break;
+				}
+			}
+
+			if ( bAlreadyLoaded )
+			{
+				fn = g_pFullFileSystem->FindNext( fh );
+				continue;
+			}
 			char ext[ 10 ];
 			Q_ExtractFileExtension( fn, ext, sizeof( ext ) );
 
