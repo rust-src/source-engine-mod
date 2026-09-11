@@ -71,6 +71,18 @@
 ** The second column's junk entries are harmless and are the price of not
 ** teaching every lib which convention it uses.  The bracket block keeps this
 ** usable inside the multi-statement macro bodies the enum files already have.
+**
+** HL2SB: the bare shortname is only published if that global does NOT already
+** exist.  Some enum member is literally named CLIENT -- public/
+** lenumerations_shared.cpp:573 pushes FL_CLIENT (256) as "CLIENT" -- and
+** unconditionally assigning it turned the realm global set in base_open()
+** (luamanager.cpp:235-251) into the number 256.  That is truthy, so every
+** `if ( CLIENT ) then` on the SERVER took the client branch, which is how the
+** server came to import derma/ and the whole lua/vgui/ tree and report 54
+** "attempt to index a nil value (global 'derma')" lines per level.
+** base_open() runs before the libs are opened, so the realm globals are already
+** non-nil here and are left alone; every other flat name (ARCHIVE, KEY_A, ...)
+** is still nil and is published as before.
 */
 #define lua_pushenum(L, enum, shortname) \
   lua_pushinteger(L, enum); \
@@ -78,8 +90,14 @@
   { \
     char szFlatGlobal[192]; \
     Q_snprintf(szFlatGlobal, sizeof(szFlatGlobal), "%s_%s", lib, (shortname)); \
-    lua_pushinteger(L, enum); \
-    lua_setglobal(L, (shortname)); \
+    lua_getglobal(L, (shortname)); \
+    if (lua_isnil(L, -1)) { \
+      lua_pop(L, 1); \
+      lua_pushinteger(L, enum); \
+      lua_setglobal(L, (shortname)); \
+    } else { \
+      lua_pop(L, 1); \
+    } \
     lua_pushinteger(L, enum); \
     lua_setglobal(L, szFlatGlobal); \
   }
