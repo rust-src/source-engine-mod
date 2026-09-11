@@ -449,3 +449,27 @@ LUALIB_API int luaopen_net( lua_State *L )
 }
 
 #endif // CLIENT_DLL
+
+//-----------------------------------------------------------------------------
+// HL2SB: drop every net.Receive registration.
+//
+// Each receiver stores a luaL_ref() -- a registry INDEX into the Lua state that
+// is about to be closed.  Nothing cleared that list on a level change, so after
+// luasrc_shutdown()/luasrc_init() the next LuaNet usermessage looked the stale
+// index up in the NEW state's registry, where it can hold a completely
+// unrelated value.  That is exactly what happened at level init: a net message
+// arrived during the transition, the dispatch walked into a state that was not
+// the one the refs came from, and the resulting error was raised outside any
+// protected call -- which, with no panic function installed, killed the process
+// via __fastfail.
+//
+// Clearing here means the transitional window simply has no receivers, so
+// nothing is dispatched until the new level's scripts register again.
+//-----------------------------------------------------------------------------
+LUA_API void luasrc_net_reset( void )
+{
+#ifdef CLIENT_DLL
+	g_NetReceivers.RemoveAll();
+	g_pNetRead = NULL;
+#endif
+}

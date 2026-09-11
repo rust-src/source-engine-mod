@@ -424,6 +424,12 @@ void luasrc_shutdown (void) {
 
   ShutdownLuaGameEventHandler(L);
 
+  // HL2SB: the net.Receive table holds luaL_ref() registry indices into THIS
+  // state.  Drop them before the state goes away, or a LuaNet message that
+  // arrives during the level transition is dispatched against stale indices in
+  // the next state (that abort was the client.dll 0xC0000409 crash).
+  luasrc_net_reset();
+
 //  lcf_close(L);
   lua_close(L);
 
