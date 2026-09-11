@@ -995,8 +995,53 @@ static int Panel_SetPinCorner (lua_State *L) {
   return 0;
 }
 
+/*
+** HL2SB: GMod panels read self.x / self.y / self.w / self.h straight off their
+** Lua table -- lua/vgui/DFrame.lua:191-193 ("if ( self.y < 0 )"), :219 (starts a
+** drag with "gui.MouseX() - self.x") and :150-151 (screen-lock clamping) all do
+** -- because GMod's engine refreshes those fields whenever the panel moves.
+**
+** Without them a click on a frame threw
+**
+**   lua/vgui/DFrame.lua:219: attempt to perform arithmetic on a nil value (field 'x')
+**
+** and dragging never started.  Kept in sync from the geometry bindings; engine
+** side moves (docking) are not covered, which only affects dragging a docked
+** panel -- precisely the case where it does not matter.
+*/
+static void Panel_SyncLuaGeometry (lua_State *L, Panel *pPanel) {
+  if (pPanel == NULL)
+    return;
+
+  int x = 0, y = 0;
+  pPanel->GetPos(x, y);
+
+  int w = 0, h = 0;
+  pPanel->GetSize(w, h);
+
+  luaPushPanelRefTable(L, pPanel, true);
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return;
+  }
+
+  lua_pushinteger(L, x);
+  lua_setfield(L, -2, "x");
+  lua_pushinteger(L, y);
+  lua_setfield(L, -2, "y");
+  lua_pushinteger(L, w);
+  lua_setfield(L, -2, "w");
+  lua_pushinteger(L, h);
+  lua_setfield(L, -2, "h");
+
+  lua_pop(L, 1);
+}
+
 static int Panel_SetPos (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetPos(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  Panel *pPanel = luaL_checkpanel(L, 1);
+
+  pPanel->SetPos(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
@@ -1021,7 +1066,10 @@ static int Panel_SetSilentMode (lua_State *L) {
 }
 
 static int Panel_SetSize (lua_State *L) {
-  luaL_checkpanel(L, 1)->SetSize(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  Panel *pPanel = luaL_checkpanel(L, 1);
+
+  pPanel->SetSize(luaL_checkint(L, 2), luaL_checkint(L, 3));
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
@@ -1186,6 +1234,7 @@ static int Panel_CenterVertical (lua_State *L) {
   int x = 0, y = 0;
   pPanel->GetPos(x, y);
   pPanel->SetPos(x, (int)(nTall * flFraction - pPanel->GetTall() * flFraction) + nOffset);
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
@@ -1200,6 +1249,7 @@ static int Panel_CenterHorizontal (lua_State *L) {
   int x = 0, y = 0;
   pPanel->GetPos(x, y);
   pPanel->SetPos((int)(nWide * flFraction - pPanel->GetWide() * flFraction) + nOffset, y);
+  Panel_SyncLuaGeometry(L, pPanel);
   return 0;
 }
 
