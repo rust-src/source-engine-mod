@@ -967,6 +967,11 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	// Add Lua environment
 	luasrc_init();
 
+	// HL2SB: see the client call site -- extensions/ is scanned before modules/,
+	// and extensions/util/worldpicker.lua:40 indexes `hook` at load time, so the
+	// hook module has to exist first.  The modules pass skips it again.
+	luasrc_dofile_includes( L, "modules/hook.lua" );
+
 	luasrc_dofolder( L, LUA_PATH_EXTENSIONS );
 	luasrc_dofolder( L, LUA_PATH_MODULES );
 
