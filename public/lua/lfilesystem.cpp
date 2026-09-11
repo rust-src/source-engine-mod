@@ -547,7 +547,32 @@ static int file_Find (lua_State *L) {
   return 2;
 }
 
+// file.Open( path [, mode] ) -> FileHandle
+//
+// lua/includes/extensions/file.lua:7 is implemented ON TOP of this (GMod's file
+// extension wraps file.Open), so leaving it out made that whole file fail and
+// took extensions/player_auth.lua down with it:
+//
+//     extensions/player_auth.lua -> lua/includes/extensions/file.lua:7:
+//         attempt to call a nil value (field 'Open')
+//
+// lfilesystem.cpp already binds the FileHandle_t metatable (Close / Read / Write /
+// Size / Seek / EndOfFile / Flush / IsOk) plus lua_pushfilehandle, so the handle
+// GMod's file.lua expects is exactly the one this engine already has.  Opened
+// through the same `filesystem` pointer those methods use, so open and close
+// cannot end up on different interfaces.  GMod's mode strings ("r", "w", "a",
+// "rb", "wb", "ab", "r+", ...) are Source's own, so they pass straight through.
+static int file_Open (lua_State *L) {
+  const char *pszPath = luaL_checkstring(L, 1);
+  const char *pszMode = luaL_optstring(L, 2, "r");
+
+  lua_pushfilehandle(L, filesystem->Open(pszPath, pszMode, "MOD"));
+  return 1;
+}
+
+
 static const luaL_Reg file_funcs[] = {
+  {"Open",      file_Open},
   {"Read",      file_Read},
   {"Write",     file_Write},
   {"Append",    file_Append},
