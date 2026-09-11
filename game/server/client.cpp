@@ -820,9 +820,13 @@ CON_COMMAND( say_team, "Display player message to team" )
 //------------------------------------------------------------------------------
 CON_COMMAND( give, "Give item to player.\n\tArguments: <item_name>" )
 {
-	CBasePlayer *pPlayer = ToBasePlayer( UTIL_GetCommandClient() ); 
+	CBasePlayer *pPlayer = ToBasePlayer( UTIL_GetCommandClient() );
+	// HL2SB: GMod's `give` works for the host of a listen server (that is how its
+	// sandbox hands out weapons), while stock HL2MP only allows it in single
+	// player or with sv_cheats 1 - so `give weapon_x` silently did nothing on a
+	// multiplayer listen server and the spawn menu's weapon page was dead.
 	if ( pPlayer 
-		&& (gpGlobals->maxClients == 1 || sv_cheats->GetBool()) 
+		&& (gpGlobals->maxClients == 1 || sv_cheats->GetBool() || pPlayer == UTIL_GetListenServerHost() ) 
 		&& args.ArgC() >= 2 )
 	{
 		char item_to_give[ 256 ];

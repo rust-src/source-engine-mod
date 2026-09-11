@@ -29,12 +29,6 @@
 
 using namespace vgui;
 
-// HL2SB: the spawn menu's weapon page hands weapons/items to the player, the way
-// GMod's spawnmenu does.  Set to 0 for the engine's original behaviour, where the
-// entity was created in the world in front of the player and had to be picked up.
-// (Declared before CSMList because InitEntities() below reads it.)
-ConVar sm_menu_give("sm_menu_give", "1", FCVAR_CLIENTDLL, "SMenu: give weapons/items instead of spawning them");
-
 //-----------------------------------------------------------------------------
 // HL2SB: is this class Lua content (a GMod SWEP or a scripted entity)?
 //
@@ -157,16 +151,15 @@ public:
 
 			char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], png[MAX_PATH];
 
-			// HL2SB: a weapon/item/ammo belongs in the player's hands (GMod's
-			// spawnmenu gives them).  Not the engine's "give": that one is
-			// cheat-flagged, so with sv_cheats 0 (the multiplayer default)
-			// clicking a weapon did nothing at all.  hl2sb_giveweapon is the
-			// mod's own server command and calls GiveNamedItem() directly.
-			// sm_menu_give 0 restores the old world-spawning behaviour.
-			const bool bGive = sm_menu_give.GetBool() &&
-				( !Q_strnicmp( entname, "weapon_", 7 ) || !Q_strnicmp( entname, "item_", 5 ) || !Q_strnicmp( entname, "ammo_", 5 ) );
+			// HL2SB: weapons/items/ammo go into the player's hands, the way GMod's
+			// spawnmenu does - the engine's own "give" (which the mod allows for a
+			// listen server host, see game/server/client.cpp); everything else is
+			// created in the world with ent_create, as before.
+			const bool bGive = !Q_strnicmp( entname, "weapon_", 7 ) ||
+							   !Q_strnicmp( entname, "item_", 5 ) ||
+							   !Q_strnicmp( entname, "ammo_", 5 );
 
-			Q_snprintf( entspawn, sizeof(entspawn), "%s %s", bGive ? "hl2sb_giveweapon" : "ent_create", entname );
+			Q_snprintf( entspawn, sizeof(entspawn), "%s %s", bGive ? "give" : "ent_create", entname );
 			Q_snprintf( normalImage, sizeof(normalImage), "smenu/%s", entname );
 			Q_snprintf( vtf, sizeof( vtf ), "materials/vgui/smenu/%s.vtf", entname );
 			Q_snprintf( vtf_without_ex, sizeof(vtf_without_ex), "vgui/smenu/%s", entname );
