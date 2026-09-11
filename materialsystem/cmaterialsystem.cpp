@@ -26,6 +26,74 @@
 #include "vstdlib/IKeyValuesSystem.h"
 #include "ctexturecompositor.h"
 
+/*
+** ===========================================================================
+** HL2SB: late precache for materials created before the shader device is ready
+**
+** CMaterialSystem::FindMaterialEx() only runs CMaterial::PrecacheVars() when
+** g_pShaderDevice->IsUsingGraphics().  The Lua bootstrap runs early enough that
+** on some level loads that is still false, and a material created at that moment
+** never gets shader params at all -- no $basetexture -- and every holder of the
+** material pointer sees nil textures for the rest of the level.
+**
+** GMod's Derma skin is exactly that case: lua/skins/default.lua:10 does
+** SKIN.GwenTexture = Material( "gwenskin/GModDefault.png" ) while the Lua files
+** load, and lua/derma/derma_gwen.lua captures that material in its drawer
+** closures.  The panel then painted nothing at all (transparent frame, just the
+** label text) with
+**
+**   lua/derma/derma_gwen.lua:14: attempt to index a nil value (local 'tex')
+**
+** repeated every frame.  Queue the material here and precache it in BeginFrame()
+** as soon as the device can use graphics.
+** ===========================================================================
+*/
+struct HL2SB_PendingMaterialPrecache_t
+{
+	IMaterialInternal *m_pMaterial;
+	KeyValues *m_pKeyValues;
+	KeyValues *m_pPatchKeyValues;
+	int m_nContext;
+};
+
+static CUtlVector<HL2SB_PendingMaterialPrecache_t> s_HL2SBPendingPrecaches;
+
+static void HL2SB_QueuePendingMaterialPrecache( IMaterialInternal *pMaterial, KeyValues *pKeyValues, KeyValues *pPatchKeyValues, int nContext )
+{
+	if ( !pMaterial || !pKeyValues )
+		return;
+
+	HL2SB_PendingMaterialPrecache_t entry;
+	entry.m_pMaterial = pMaterial;
+	entry.m_pKeyValues = pKeyValues->MakeCopy();
+	entry.m_pPatchKeyValues = pPatchKeyValues ? pPatchKeyValues->MakeCopy() : NULL;
+	entry.m_nContext = nContext;
+
+	s_HL2SBPendingPrecaches.AddToTail( entry );
+}
+
+static void HL2SB_FlushPendingMaterialPrecaches()
+{
+	if ( s_HL2SBPendingPrecaches.Count() == 0 || !g_pShaderDevice || !g_pShaderDevice->IsUsingGraphics() )
+		return;
+
+	for ( int i = 0; i < s_HL2SBPendingPrecaches.Count(); ++i )
+	{
+		HL2SB_PendingMaterialPrecache_t &entry = s_HL2SBPendingPrecaches[i];
+
+		Msg( "[HL2SB] late precache of material \"%s\" (it was created before the shader device was ready)\n",
+			entry.m_pMaterial->GetName() );
+
+		entry.m_pMaterial->PrecacheVars( entry.m_pKeyValues, entry.m_pPatchKeyValues, NULL, entry.m_nContext );
+
+		entry.m_pKeyValues->deleteThis();
+		if ( entry.m_pPatchKeyValues )
+			entry.m_pPatchKeyValues->deleteThis();
+	}
+
+	s_HL2SBPendingPrecaches.RemoveAll();
+}
+
 #if defined( _X360 )
 #include "xbox/xbox_console.h"
 #include "xbox/xbox_win32stubs.h"
@@ -2824,6 +2892,10 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 	//Q_strncat( vmtName, ".vmt", nLen, COPY_ALL_CHARACTERS );
 	Assert( nLen >= (int)Q_strlen( vmtName ) + 1 );
 
+	// HL2SB: a material created here while the shader device cannot yet use
+	// graphics is queued for a late PrecacheVars -- see
+	// HL2SB_QueuePendingMaterialPrecache() at the top of this file.
+
 	CUtlVector<FileNameHandle_t> includes;
 	KeyValues *pKeyValues = new KeyValues("vmt");
 	KeyValues *pPatchKeyValues = new KeyValues( "vmt_patches" );
@@ -2846,6 +2918,7 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 			pKeyValues->SetInt( "$vertexalpha", 1 );
 			pKeyValues->SetInt( "$nolod", 1 );
 			bImageMaterial = true;
+			( void )bImageMaterial;
 		}
 		else
 		{
@@ -2864,9 +2937,12 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 		Q_strncpy( matNameWithExtension, pTemp, nLen );
 		Q_strncat( matNameWithExtension, ".vmt", nLen, COPY_ALL_CHARACTERS );
 
-		// Image materials are keyed by the image name GMod asked for, so
-		// mat:GetName() reports the .png rather than an implied .vmt.
-		const char *pMatName = bImageMaterial ? pMaterialName : matNameWithExtension;
+		// The material dictionary is keyed by the name lookups normalize to
+		// ("<dir>/<name>.vmt"), image materials included: FindMaterialEx strips
+		// the extension before every lookup, so keying an image material by its
+		// raw "....png" name would make each later lookup miss the cache and
+		// build yet another copy of the material.
+		const char *pMatName = matNameWithExtension;
 
 		IMaterialInternal *pMat = NULL;
 		if ( !Q_stricmp( pKeyValues->GetName(), "subrect" ) )
@@ -2884,6 +2960,13 @@ IMaterial* CMaterialSystem::FindMaterialEx( char const* pMaterialName, const cha
 				}
 				pMat->PrecacheVars( pKeyValues, pPatchKeyValues, &includes, nContext );
 				m_pForcedTextureLoadPathID = NULL;
+			}
+			else
+			{
+				// HL2SB: no shader params yet.  Precache it in BeginFrame() once
+				// the device can use graphics -- otherwise $basetexture never
+				// exists and whatever holds this material paints nothing.
+				HL2SB_QueuePendingMaterialPrecache( pMat, pKeyValues, pPatchKeyValues, nContext );
 			}
 		}
 		pKeyValues->deleteThis();
@@ -3491,6 +3574,10 @@ void CMaterialSystem::ReleaseStandardTextures()
 //-----------------------------------------------------------------------------
 void CMaterialSystem::BeginFrame( float frameTime )
 {
+	// HL2SB: materials that were created before the shader device could use
+	// graphics get their shader params (and their textures) here.
+	HL2SB_FlushPendingMaterialPrecaches();
+
 	// Safety measure (calls should only come from the main thread, also check correct pairing)
 	if ( !ThreadInMainThread() || IsInFrame() )
 		return;
