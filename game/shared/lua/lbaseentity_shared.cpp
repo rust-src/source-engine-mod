@@ -1515,6 +1515,15 @@ static int CBaseEntity_VPhysicsGetObject (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: GMod spells it GetPhysicsObject (this fork only had
+// VPhysicsGetObject).  weapon_fists/shared.lua:144 does
+//     local phys = tr.Entity:GetPhysicsObject()
+//     if ( IsValid( phys ) ) then phys:ApplyForceOffset( ... ) end
+// so without the alias the swing would stop there instead of shoving the target.
+static int CBaseEntity_GetPhysicsObject (lua_State *L) {
+  return CBaseEntity_VPhysicsGetObject( L );
+}
+
 static int CBaseEntity_VPhysicsGetObjectList (lua_State *L) {
   IPhysicsObject *pList[VPHYSICS_MAX_OBJECT_LIST_COUNT];
   int count = luaL_checkentity(L, 1)->VPhysicsGetObjectList( pList, ARRAYSIZE(pList) );
@@ -1766,7 +1775,54 @@ static int CBaseEntity_SetVelocity (lua_State *L) {
   return 0;
 }
 
+// HL2SB GMod compat: the direction vectors GMod exposes on every entity.  GMod
+// weapon scripts build their knockback from them - weapon_fists/shared.lua:127
+//     dmginfo:SetDamageForce( self.Owner:GetRight() * 4912 + self.Owner:GetForward() * 9998 )
+// and threw "attempt to call a nil value (method 'GetRight')" 185 times in one
+// run, which aborted DealDamage() before it could apply anything.
+static void lua_pushdirection (lua_State *L, CBaseEntity *pEntity, int nWhich) {
+  Vector vecForward, vecRight, vecUp;
+  AngleVectors( pEntity->GetAbsAngles(), &vecForward, &vecRight, &vecUp );
+
+  switch ( nWhich ) {
+    case 0:  lua_pushvector( L, vecForward ); break;
+    case 1:  lua_pushvector( L, vecRight ); break;
+    case 2:  lua_pushvector( L, -vecRight ); break;   // GetLeft
+    default: lua_pushvector( L, vecUp ); break;
+  }
+}
+
+static int CBaseEntity_GetForward (lua_State *L) { lua_pushdirection( L, luaL_checkentity(L, 1), 0 ); return 1; }
+static int CBaseEntity_GetRight (lua_State *L) { lua_pushdirection( L, luaL_checkentity(L, 1), 1 ); return 1; }
+static int CBaseEntity_GetLeft (lua_State *L) { lua_pushdirection( L, luaL_checkentity(L, 1), 2 ); return 1; }
+static int CBaseEntity_GetUp (lua_State *L) { lua_pushdirection( L, luaL_checkentity(L, 1), 3 ); return 1; }
+
+// HL2SB GMod compat: GMod's Entity:TakeDamageInfo( dmginfo ) - the call GMod
+// weapons make to actually apply a hit (weapon_fists/shared.lua:136).  It was
+// missing entirely: grepping "TakeDamageInfo" only finds the metatable alias in
+// lsrcinit.cpp, not a binding.  The server applies it through the same
+// CBaseEntity::TakeDamage() the existing TakeDamage binding uses; the client has
+// no damage authority, so it accepts and ignores the call.
+static int CBaseEntity_TakeDamageInfo (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  CTakeDamageInfo info = luaL_checkdamageinfo(L, 2);
+
+#ifndef CLIENT_DLL
+  pEntity->TakeDamage( info );
+#else
+  (void)pEntity;
+  (void)info;
+#endif
+
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
+  {"GetForward", CBaseEntity_GetForward},
+  {"GetRight", CBaseEntity_GetRight},
+  {"GetLeft", CBaseEntity_GetLeft},
+  {"GetUp", CBaseEntity_GetUp},
+  {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
   {"SetAngles", CBaseEntity_SetAngles},
   {"GetAngles", CBaseEntity_GetAngles},
   {"SetVelocity", CBaseEntity_SetVelocity},
@@ -2004,6 +2060,7 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"UpdateOnRemove", CBaseEntity_UpdateOnRemove},
   {"VPhysicsDestroyObject", CBaseEntity_VPhysicsDestroyObject},
   {"VPhysicsGetObject", CBaseEntity_VPhysicsGetObject},
+{"GetPhysicsObject", CBaseEntity_GetPhysicsObject},
   {"VPhysicsGetObjectList", CBaseEntity_VPhysicsGetObjectList},
   {"VPhysicsInitNormal", CBaseEntity_VPhysicsInitNormal},
   {"VPhysicsInitStatic", CBaseEntity_VPhysicsInitStatic},
