@@ -357,6 +357,27 @@ static const luaL_Reg CTakeDamageInfo_funcs[] = {
 /*
 ** Open CTakeDamageInfo object
 */
+// HL2SB GMod compat: GMod's *global* DamageInfo() constructor.  GMod weapon
+// scripts build every hit through it, e.g. weapon_fists' DealDamage():
+//     local dmginfo = DamageInfo()
+//     dmginfo:SetAttacker( attacker )
+//     dmginfo:SetDamage( math.random( 8, 12 ) )
+//     tr.Entity:TakeDamageInfo( dmginfo )
+// The library and its methods were registered, the global was not, so the fists
+// threw "attempt to call a nil value (global 'DamageInfo')" on every frame they
+// tried to land a hit (714 times in one run) - which also kept re-playing the hit
+// sound, because the error aborted DealDamage() before it could clear the melee.
+static int lua_DamageInfo (lua_State *L) {
+  CTakeDamageInfo info;
+
+  if ( lua_gettop( L ) >= 1 && luaL_testudata( L, 1, LUA_TAKEDAMAGEINFOLIBNAME ) != NULL ) {
+    info = luaL_checkdamageinfo( L, 1 );
+  }
+
+  lua_pushdamageinfo( L, info );
+  return 1;
+}
+
 LUALIB_API int luaopen_CTakeDamageInfo (lua_State *L) {
   luaL_newmetatable(L, LUA_TAKEDAMAGEINFOLIBNAME);
   luaL_register(L, NULL, CTakeDamageInfometa);
@@ -365,6 +386,11 @@ LUALIB_API int luaopen_CTakeDamageInfo (lua_State *L) {
   lua_pushstring(L, "damageinfo");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "damageinfo" */
   luaL_register(L, "_G", CTakeDamageInfo_funcs);
+
+  /* HL2SB: the GMod spelling of the constructor. */
+  lua_pushcfunction( L, lua_DamageInfo );
+  lua_setglobal( L, "DamageInfo" );
+
   lua_pop(L, 1);
   return 1;
 }
