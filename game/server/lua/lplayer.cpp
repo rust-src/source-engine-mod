@@ -530,6 +530,19 @@ static int CBasePlayer_RemoveSuit (lua_State *L) {
 }
 
 
+// HL2SB GMod compat: GMod's Player:LagCompensation( bool ) - "enable/disable lag
+// compensation for this player's traces".  The engine already keeps exactly that
+// flag (m_bLagCompensation, game/server/player.h, set from cl_lagcompensation in
+// gameinterface.cpp and read by player_lagcompensation.cpp), it just had no Lua
+// binding.  weapon_fists' DealDamage() opens with
+//     self.Owner:LagCompensation( true )
+// and threw "attempt to call a nil value (method 'LagCompensation')" 1204 times
+// in one session, which aborted the melee before its TakeDamageInfo().
+static int CBasePlayer_LagCompensation (lua_State *L) {
+  luaL_checkplayer(L, 1)->m_bLagCompensation = luaL_checkboolean(L, 2);
+  return 0;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
   {"GiveAmmo", CBasePlayer_GiveAmmo},
   {"SetBodyPitch", CBasePlayer_SetBodyPitch},
@@ -542,6 +555,7 @@ static const luaL_Reg CBasePlayermeta[] = {
   {"DrawDebugGeometryOverlays", CBasePlayer_DrawDebugGeometryOverlays},
   {"UpdateTransmitState", CBasePlayer_UpdateTransmitState},
   {"ForceRespawn", CBasePlayer_ForceRespawn},
+{"LagCompensation", CBasePlayer_LagCompensation},
   {"InitialSpawn", CBasePlayer_InitialSpawn},
   {"InitHUD", CBasePlayer_InitHUD},
   {"PlayerDeathThink", CBasePlayer_PlayerDeathThink},

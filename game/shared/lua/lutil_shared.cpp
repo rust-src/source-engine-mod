@@ -55,12 +55,98 @@ static int luasrc_SharedRandomAngle (lua_State *L) {
   return 1;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: GMod's util.TraceLine / util.TraceHull take a *table*
+//
+//     local tr = util.TraceLine( { start = a, endpos = b, filter = ply,
+//                                  mask = MASK_SHOT } )
+//
+// and return the trace, while this fork's binding takes positional arguments with
+// an out-parameter trace (#6 / #8).  Both spellings are accepted now: the table
+// form builds the trace itself and returns it (GMod's TraceResult).
+//
+// The ported flechette gun does exactly the GMod spelling and threw
+//     weapon_flechettegun/shared.lua:72: bad argument #6 to 'TraceLine'
+//     (CGameTrace expected, got no value)
+// so it never reached ents.Create() below it.
+//
+// Only a single entity filter is honoured (that is what the ported weapons pass);
+// GMod's "filter may also be a table" spelling is not implemented yet.
+//-----------------------------------------------------------------------------
+static bool luasrc_TraceArgsFromTable (lua_State *L, Vector *pStart, Vector *pEnd, Vector *pMins, Vector *pMaxs,
+                                        int *pMask, CBaseEntity **ppFilter, int *pCollisionGroup)
+{
+  *pStart = vec3_origin;
+  *pEnd = vec3_origin;
+  *pMins = vec3_origin;
+  *pMaxs = vec3_origin;
+  *pMask = MASK_SHOT;
+  *ppFilter = NULL;
+  *pCollisionGroup = COLLISION_GROUP_NONE;
+
+  lua_getfield( L, 1, "start" );
+  if ( !lua_isnoneornil( L, -1 ) ) *pStart = luaL_checkvector( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "endpos" );
+  if ( !lua_isnoneornil( L, -1 ) ) *pEnd = luaL_checkvector( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "mins" );
+  if ( !lua_isnoneornil( L, -1 ) ) *pMins = luaL_checkvector( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "maxs" );
+  if ( !lua_isnoneornil( L, -1 ) ) *pMaxs = luaL_checkvector( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "mask" );
+  if ( lua_isnumber( L, -1 ) ) *pMask = (int)lua_tointeger( L, -1 );
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "filter" );
+  *ppFilter = lua_toentity( L, -1 );        // NULL for nil, GMod's NULL sentinel or a table
+  lua_pop( L, 1 );
+
+  lua_getfield( L, 1, "collisiongroup" );
+  if ( lua_isnumber( L, -1 ) ) *pCollisionGroup = (int)lua_tointeger( L, -1 );
+  lua_pop( L, 1 );
+
+  return true;
+}
+
 static int luasrc_UTIL_TraceLine (lua_State *L) {
+  if ( lua_istable( L, 1 ) ) {
+    Vector vecStart, vecEnd, vecMins, vecMaxs;
+    CBaseEntity *pFilter = NULL;
+    int nMask = MASK_SHOT, nCollisionGroup = COLLISION_GROUP_NONE;
+    CGameTrace trace;
+
+    luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
+
+    UTIL_TraceLine( vecStart, vecEnd, nMask, pFilter, nCollisionGroup, &trace );
+    lua_pushtrace( L, trace );
+    return 1;
+  }
+
   UTIL_TraceLine(luaL_checkvector(L, 1), luaL_checkvector(L, 2), luaL_checkint(L, 3), lua_toentity(L, 4), luaL_checkint(L, 5), &luaL_checktrace(L, 6));
   return 0;
 }
 
 static int luasrc_UTIL_TraceHull (lua_State *L) {
+  if ( lua_istable( L, 1 ) ) {
+    Vector vecStart, vecEnd, vecMins, vecMaxs;
+    CBaseEntity *pFilter = NULL;
+    int nMask = MASK_SHOT, nCollisionGroup = COLLISION_GROUP_NONE;
+    CGameTrace trace;
+
+    luasrc_TraceArgsFromTable( L, &vecStart, &vecEnd, &vecMins, &vecMaxs, &nMask, &pFilter, &nCollisionGroup );
+
+    UTIL_TraceHull( vecStart, vecEnd, vecMins, vecMaxs, nMask, pFilter, nCollisionGroup, &trace );
+    lua_pushtrace( L, trace );
+    return 1;
+  }
+
   UTIL_TraceHull(luaL_checkvector(L, 1), luaL_checkvector(L, 2), luaL_checkvector(L, 3), luaL_checkvector(L, 4), luaL_checkint(L, 5), luaL_checkentity(L, 6), luaL_checkint(L, 7), &luaL_checktrace(L, 8));
   return 0;
 }
