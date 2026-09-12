@@ -1733,7 +1733,43 @@ static int CBaseEntity_IsValid (lua_State *L) {
 }
 
 
+// HL2SB GMod compat: GMod's Entity:SetAngles / GetAngles / SetVelocity, which
+// this fork only had as SetLocalAngles and (on the physics object only)
+// SetVelocity.  The ported flechette gun arms its projectile with
+//     ent:SetAngles( fwd:Angle() )
+//     ent:SetVelocity( fwd * 2000 )
+// so without them the shot still stops before the entity is spawned.
+static int CBaseEntity_SetAngles (lua_State *L) {
+  luaL_checkentity(L, 1)->SetLocalAngles( luaL_checkangle(L, 2) );
+  return 0;
+}
+
+static int CBaseEntity_GetAngles (lua_State *L) {
+  lua_pushangle(L, luaL_checkentity(L, 1)->GetLocalAngles());
+  return 1;
+}
+
+// GMod sets the physics velocity when the entity has a physics object and the
+// absolute velocity otherwise.
+static int CBaseEntity_SetVelocity (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity(L, 1);
+  Vector vecVelocity = luaL_checkvector(L, 2);
+  IPhysicsObject *pPhysics = pEntity->VPhysicsGetObject();
+
+  if ( pPhysics != NULL && !pPhysics->IsStatic() ) {
+    pPhysics->SetVelocity( &vecVelocity, NULL );
+  }
+  else {
+    pEntity->SetAbsVelocity( vecVelocity );
+  }
+
+  return 0;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
+  {"SetAngles", CBaseEntity_SetAngles},
+  {"GetAngles", CBaseEntity_GetAngles},
+  {"SetVelocity", CBaseEntity_SetVelocity},
   {"IsValid", CBaseEntity_IsValid},
   {"Activate", CBaseEntity_Activate},
   {"AddDataObjectType", CBaseEntity_AddDataObjectType},
