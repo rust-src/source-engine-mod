@@ -739,13 +739,14 @@ static int lua_MsgN (lua_State *L) {
 //     'SuppressHostEvents')
 //-----------------------------------------------------------------------------
 static int lua_SuppressHostEvents (lua_State *L) {
-  if ( lua_isnoneornil( L, 1 ) ) {
-    IPredictionSystem::SuppressHostEvents( NULL );
-  }
-  else {
-    IPredictionSystem::SuppressHostEvents( luaL_checkentity( L, 1 ) );
-  }
-
+  // GMod passes its NULL *sentinel* (a userdata, not Lua nil) to clear the
+  // suppress host, so this has to go through lua_toentity() - the converter that
+  // yields NULL for both - instead of luaL_checkentity(), which rejects the
+  // sentinel with "CBaseEntity expected, got NULL entity" and aborted the caller:
+  //   weapon_flechettegun/shared.lua:58 (before ents.Create, so the gun never
+  //   fired) and weapon_fists/shared.lua:135 (before TakeDamageInfo, so the fists
+  //   did no damage).
+  IPredictionSystem::SuppressHostEvents( lua_toentity( L, 1 ) );
   return 0;
 }
 #endif
