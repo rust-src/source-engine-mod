@@ -1015,7 +1015,32 @@ static int CBasePlayer_IsValid (lua_State *L) {
 }
 
 
+// HL2SB GMod compat: GMod's Player:LagCompensation( bool ) - "enable/disable lag
+// compensation for this player's traces".  On the server that is exactly the flag
+// the engine already keeps (m_bLagCompensation, read by player_lagcompensation
+// .cpp); C_BasePlayer has no such member, so the client side accepts the call and
+// ignores it, which is what GMod's own client does with a stale flag.
+//
+// weapon_fists' DealDamage() opens with self.Owner:LagCompensation( true ) and
+// threw "attempt to call a nil value (method 'LagCompensation')" on BOTH realms
+// (1144 times in one session), which aborted the melee before TakeDamageInfo().
+// It has to live in the shared library: the shared luaopen_CBasePlayer_shared()
+// is what installs the metatable the entity actually uses.
+static int CBasePlayer_LagCompensation (lua_State *L) {
+  CBasePlayer *pPlayer = luaL_checkplayer(L, 1);
+
+#ifndef CLIENT_DLL
+  pPlayer->m_bLagCompensation = luaL_checkboolean(L, 2);
+#else
+  (void)pPlayer;
+  luaL_checkboolean(L, 2);
+#endif
+
+  return 0;
+}
+
 static const luaL_Reg CBasePlayermeta[] = {
+  {"LagCompensation", CBasePlayer_LagCompensation},
   {"IsValid", CBasePlayer_IsValid},
   {"AbortReload", CBasePlayer_AbortReload},
   {"AddToPlayerSimulationList", CBasePlayer_AddToPlayerSimulationList},

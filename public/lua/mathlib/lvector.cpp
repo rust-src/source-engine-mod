@@ -86,6 +86,47 @@ static int Vector_Cross (lua_State *L) {
   return 1;
 }
 
+// HL2SB GMod compat: the Vector methods GMod scripts use that this fork never
+// bound.  Vector:Angle() is the first one a ported SWEP needs:
+// weapon_flechettegun/shared.lua:77 does ent:SetAngles( fwd:Angle() ) and threw
+//     attempt to call a nil value (method 'Angle')
+// 20 times in one session, stopping the shot before ents.Create() could run.
+static int Vector_Angle (lua_State *L) {
+  QAngle angAngles;
+  VectorAngles( luaL_checkvector(L, 1), angAngles );
+  lua_pushangle(L, angAngles);
+  return 1;
+}
+
+static int Vector_ToTable (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+
+  lua_newtable(L);
+  lua_pushnumber(L, vec.x); lua_setfield(L, -2, "x");
+  lua_pushnumber(L, vec.y); lua_setfield(L, -2, "y");
+  lua_pushnumber(L, vec.z); lua_setfield(L, -2, "z");
+  return 1;
+}
+
+static int Vector_GetNormalized (lua_State *L) {
+  Vector vec = luaL_checkvector(L, 1);
+  vec.NormalizeInPlace();
+  lua_pushvector(L, vec);
+  return 1;
+}
+
+// GMod's Vector:Normalize() normalises the vector.  A Lua vector here is a copy,
+// so the normalised value is returned (callers that use the return value - the
+// usual GMod spelling - behave identically).
+static int Vector_Normalize (lua_State *L) {
+  return Vector_GetNormalized( L );
+}
+
+static int Vector_Distance (lua_State *L) {
+  lua_pushnumber(L, luaL_checkvector(L, 1).DistTo(luaL_checkvector(L, 2)));
+  return 1;
+}
+
 static int Vector_DistTo (lua_State *L) {
   lua_pushnumber(L, luaL_checkvector(L, 1).DistTo(luaL_checkvector(L, 2)));
   return 1;
@@ -260,6 +301,11 @@ static int Vector___unm (lua_State *L) {
 
 static const luaL_Reg Vectormeta[] = {
   {"Cross", Vector_Cross},
+  {"Angle", Vector_Angle},
+  {"ToTable", Vector_ToTable},
+  {"GetNormalized", Vector_GetNormalized},
+  {"Normalize", Vector_Normalize},
+  {"Distance", Vector_Distance},
   {"DistTo", Vector_DistTo},
   {"DistToSqr", Vector_DistToSqr},
   {"Dot", Vector_Dot},
