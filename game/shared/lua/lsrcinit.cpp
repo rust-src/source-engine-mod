@@ -713,6 +713,18 @@ static int lua_game_IsDedicated (lua_State *L) {
 // a number, ...) falls through to Lua's own type().
 //-----------------------------------------------------------------------------
 static int lua_type_gmod (lua_State *L) {
+  // Only the types GMod's own type() actually reports.  GMod is deliberately
+  // conservative: engine handle classes like MessageWriter, FileHandle,
+  // NetChannelInfo or KeyValuesHandle still answer "userdata" there, and its own
+  // lua/includes/extensions/net.lua depends on that
+  // (type( v ) == "userdata" and getmetatable( v ) ~= nil).
+  static const char *s_pReportedTypes[] = {
+    "Entity", "Player", "Weapon", "NPC", "Vehicle",
+    "Vector", "Angle", "Matrix", "Color",
+    "Panel", "Material", "Texture", "PhysicsObject",
+    "EffectData", "Trace", "ConsoleVariable", "TakeDamageInfo",
+  };
+
   int nType = lua_type( L, 1 );
 
   if ( nType == LUA_TTABLE || nType == LUA_TUSERDATA ) {
@@ -722,10 +734,18 @@ static int lua_type_gmod (lua_State *L) {
 
       if ( pszNative != NULL ) {
         for ( int i = 0; s_LuaMetatableAliases[i].pszGModName; ++i ) {
-          if ( !Q_stricmp( s_LuaMetatableAliases[i].pszNativeName, pszNative ) ) {
-            lua_pushstring( L, s_LuaMetatableAliases[i].pszGModName );
-            return 1;
+          if ( Q_stricmp( s_LuaMetatableAliases[i].pszNativeName, pszNative ) ) {
+            continue;
           }
+
+          for ( int j = 0; j < ARRAYSIZE( s_pReportedTypes ); ++j ) {
+            if ( !Q_stricmp( s_pReportedTypes[j], s_LuaMetatableAliases[i].pszGModName ) ) {
+              lua_pushstring( L, s_LuaMetatableAliases[i].pszGModName );
+              return 1;
+            }
+          }
+
+          break;
         }
       }
 
