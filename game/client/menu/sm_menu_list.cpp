@@ -87,15 +87,14 @@ static bool SMenu_IsScriptedWeapon( const char *pszClass )
 }
 
 // HL2SB: what clicking a Weapons entry does.
-//   1 (default) - give it to the player, the way GMod's spawnmenu does.  This
-//                 menu originally spawned the weapon ENTITY in the world, and
-//                 sm_menu_give 0 restores exactly that (ent_create <weapon>).
-//   0           - ent_create: place the weapon entity in front of you.  A ported
-//                 Lua SWEP is NOT giveable this way (it has to be handed to the
-//                 player so the scripted weapon system picks it up), so this is
-//                 mainly useful for the stock weapon_* entries.
+//   0 (DEFAULT) - ent_create <weapon>: place the weapon ENTITY in the world,
+//                 where you are looking ("point and place").  This is what the
+//                 weapons page has always done, and what a spawn menu should do.
+//   1           - give it straight to the player instead, the way GMod's
+//                 spawnmenu does (handy for the stock weapon_* / item_* / ammo_*
+//                 entries, less so for ported Lua SWEPs).
 // (Declared before CSMList because AddEntityButton() below reads it.)
-ConVar sm_menu_give( "sm_menu_give", "1", FCVAR_CLIENTDLL, "SMenu: give weapons/items instead of spawning them" );
+ConVar sm_menu_give( "sm_menu_give", "0", FCVAR_CLIENTDLL, "SMenu weapons page: 0 (default) places the weapon entity where you look, 1 gives it to the player" );
 
 class CSMList : public vgui::PanelListPanel
 {
@@ -172,11 +171,11 @@ public:
 	{
 		char entspawn[MAX_PATH], normalImage[MAX_PATH], vtf[MAX_PATH], vtf_without_ex[MAX_PATH], vmt[MAX_PATH], png[MAX_PATH];
 
-		// HL2SB: weapons/items/ammo - and any ported GMod SWEP, whatever its
-		// classname - go into the player's hands, the way GMod's spawnmenu does;
-		// the engine's own "give" is allowed for a listen server host (see
-		// game/server/client.cpp).  Everything else is created in the world with
-		// ent_create, and sm_menu_give 0 makes the weapon entries do that too.
+		// HL2SB: the weapons page places the weapon ENTITY where you look
+		// (ent_create, the default), the way this menu has always done it;
+		// sm_menu_give 1 hands it to the player instead, like GMod's spawnmenu.
+		// Anything that is not a weapon/item/ammo is always created in the world,
+		// and a ported GMod SWEP counts as a weapon whatever its class name.
 		const bool bIsWeapon = !Q_strnicmp( entname, "weapon_", 7 ) ||
 							   !Q_strnicmp( entname, "item_", 5 ) ||
 							   !Q_strnicmp( entname, "ammo_", 5 ) ||
