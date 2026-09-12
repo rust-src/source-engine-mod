@@ -136,6 +136,17 @@ static int CGameTrace___index (lua_State *L) {
     lua_pushnumber(L, tr.fraction);
   else if (Q_strcmp(field, "HitWorld") == 0)
     lua_pushboolean(L, tr.DidHitWorld());
+  // HL2SB GMod compat: GMod's two most used trace fields were missing under their
+  // own names - tr.Entity (the hit entity) and tr.Hit (did the trace hit), while
+  // this fork only answered HitEntity and fraction.  GMod weapon scripts branch on
+  // them, and a nil answer is silent: weapon_fists does
+  //     if ( !IsValid( tr.Entity ) ) then tr = util.TraceHull( ... ) end
+  //     if ( SERVER && IsValid( tr.Entity ) && ... ) then
+  //         tr.Entity:TakeDamageInfo( dmginfo )      -- never ran => no damage
+  else if (Q_strcmp(field, "Entity") == 0)
+    lua_pushentity(L, tr.m_pEnt);
+  else if (Q_strcmp(field, "Hit") == 0)
+    lua_pushboolean(L, tr.fraction < 1.0f);
   else {
     lua_getmetatable(L, 1);
     lua_pushvalue(L, 2);
