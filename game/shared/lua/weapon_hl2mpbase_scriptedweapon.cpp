@@ -1236,6 +1236,17 @@ void CHL2MPScriptedWeapon::ItemPostFrame( void )
 	BEGIN_LUA_CALL_WEAPON_METHOD( "Think" );
 	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
 
+	// ...and SWEP:Tick() every frame as well.  GMod weapons put their per-frame
+	// prediction-safe work there, and weapon_fists lands its melee from it:
+	//     function SWEP:Tick()
+	//         local meleetime = self:GetNextMeleeAttack()
+	//         if ( meleetime > 0 && CurTime() > meleetime ) then
+	//             self:DealDamage()
+	// Without this dispatch DealDamage() is never reached, so the fists played
+	// their swing animation but never applied any damage.
+	BEGIN_LUA_CALL_WEAPON_METHOD( "Tick" );
+	END_LUA_CALL_WEAPON_METHOD( 0, 0 );
+
 	CBasePlayer *pOwner = ToBasePlayer( GetOwner() );
 
 	if ( pOwner != NULL && m_nTableReference >= 0 )
