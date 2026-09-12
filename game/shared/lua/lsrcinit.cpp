@@ -699,6 +699,48 @@ static int lua_game_IsDedicated (lua_State *L) {
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB GMod compat: GMod's type().
+//
+// GMod reports the engine's own types - "Player", "Entity", "Weapon", "Vector",
+// "Angle", "Panel", "Color", "Material", "TakeDamageInfo", ... - where stock Lua
+// only knows "table"/"userdata".  GMod scripts branch on it constantly, and a
+// wrong answer is silent: it is exactly what made the fork's old Lua
+// weapon_base's post-frame bail out on its first line
+// (type( pPlayer ) ~= "entity") and left every SWEP clicking empty.
+//
+// The mapping is the same alias table the metatable registry uses, read in the
+// native -> GMod direction; a value whose metatable has no __name (a plain table,
+// a number, ...) falls through to Lua's own type().
+//-----------------------------------------------------------------------------
+static int lua_type_gmod (lua_State *L) {
+  int nType = lua_type( L, 1 );
+
+  if ( nType == LUA_TTABLE || nType == LUA_TUSERDATA ) {
+    if ( lua_getmetatable( L, 1 ) ) {
+      lua_getfield( L, -1, "__name" );                    // [metatable, name]
+      const char *pszNative = lua_tostring( L, -1 );
+
+      if ( pszNative != NULL ) {
+        for ( int i = 0; s_LuaMetatableAliases[i].pszGModName; ++i ) {
+          if ( !Q_stricmp( s_LuaMetatableAliases[i].pszNativeName, pszNative ) ) {
+            lua_pushstring( L, s_LuaMetatableAliases[i].pszGModName );
+            return 1;
+          }
+        }
+      }
+
+      lua_pop( L, 2 );
+    }
+  }
+
+  // Lua's own type(), captured as this closure's upvalue.
+  lua_pushvalue( L, lua_upvalueindex( 1 ) );
+  lua_pushvalue( L, 1 );
+  lua_call( L, 1, 1 );
+  return 1;
+}
+
+//-----------------------------------------------------------------------------
 // HL2SB GMod compat: the console print globals.
 //
 // GMod has Msg() (no newline) and MsgN() (newline) on both realms, and its own
@@ -951,6 +993,12 @@ LUALIB_API void luasrc_openlibs (lua_State *L) {
   lua_setglobal( L, "Msg" );
   lua_pushcfunction( L, lua_MsgN );
   lua_setglobal( L, "MsgN" );
+
+  /* GMod's type(): keep the real one as an upvalue and install the wrapper in its
+  ** place (see lua_type_gmod above). */
+  lua_getglobal( L, "type" );
+  lua_pushcclosure( L, lua_type_gmod, 1 );
+  lua_setglobal( L, "type" );
 
 #ifndef CLIENT_DLL
   lua_pushcfunction( L, lua_SuppressHostEvents );
