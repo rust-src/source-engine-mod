@@ -5548,30 +5548,47 @@ bool CBasePlayer::GetInVehicle( IServerVehicle *pVehicle, int nRole )
 //-----------------------------------------------------------------------------
 void CBasePlayer::LeaveVehicle( const Vector &vecExitPoint, const QAngle &vecExitAngles )
 {
-	if ( NULL == m_hVehicle.Get() )
-		return;
+	// HL2SB: the vehicle is allowed to be GONE (or on its way out) here.
+	//
+	// This used to bail out on the first line when m_hVehicle.Get() was NULL, and
+	// that is what made "press undo while riding" unrecoverable: this function is
+	// the ONLY place the player's on-foot state is restored, so with the vehicle
+	// already removed the player stayed parented to a dead entity
+	// (EnterVehicle:5513 SetParent(pEnt)), MOVETYPE_NOCLIP (:5498),
+	// COLLISION_GROUP_IN_VEHICLE (:5515) and using the vehicle's view - black
+	// screen, no way out.  The player-side restoration below now runs in EVERY
+	// case; only the parts that genuinely need a live vehicle are skipped.
+	IServerVehicle *pVehicle = GetVehicle();	// NULL once the vehicle is gone
+	const bool bHasVehicle = ( pVehicle != NULL );
 
-	IServerVehicle *pVehicle = GetVehicle();
-	Assert( pVehicle );
-
-	int nRole = pVehicle->GetPassengerRole( this );
-	Assert( nRole >= 0 );
+	int nRole = -1;
+	if ( bHasVehicle )
+		nRole = pVehicle->GetPassengerRole( this );
 
 	SetParent( NULL );
 
 	// Find the first non-blocked exit point:
 	Vector vNewPos = GetAbsOrigin();
 	QAngle qAngles = GetAbsAngles();
-	if ( vecExitPoint == vec3_origin )
+	if ( vecExitPoint != vec3_origin )
+	{
+		vNewPos = vecExitPoint;
+		qAngles = vecExitAngles;
+	}
+	else if ( bHasVehicle && nRole >= 0 )
 	{
 		// FIXME: this might fail to find a safe exit point!!
 		pVehicle->GetPassengerExitPoint( nRole, &vNewPos, &qAngles );
 	}
 	else
 	{
-		vNewPos = vecExitPoint;
-		qAngles = vecExitAngles;
+		// HL2SB: nobody can tell us where to stand any more - the vehicle is gone,
+		// or we were never registered as one of its passengers.  Step up out of
+		// whatever is left where it used to be, so we do not end up stuck inside
+		// geometry.
+		vNewPos.z += 8.0f;
 	}
+
 	OnVehicleEnd( vNewPos );
 	SetAbsOrigin( vNewPos );
 	SetAbsAngles( qAngles );
@@ -5598,7 +5615,15 @@ void CBasePlayer::LeaveVehicle( const Vector &vecExitPoint, const QAngle &vecExi
 	}
 
 	m_hVehicle = NULL;
-	pVehicle->SetPassenger(nRole, NULL);
+
+	if ( bHasVehicle && nRole >= 0 )
+		pVehicle->SetPassenger( nRole, NULL );
+
+	// HL2SB: force the view back to the player.  For an ordinary exit this is
+	// already clear; when the vehicle was removed it is exactly what has to be
+	// cleared for the view to come back (otherwise the camera keeps rendering
+	// through something that no longer exists).
+	SetViewEntity( NULL );
 
 	// Re-deploy our weapon
 	if ( IsAlive() )

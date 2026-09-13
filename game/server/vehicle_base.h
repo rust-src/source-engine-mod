@@ -183,6 +183,10 @@ public:
 	virtual void	TraceAttack( const CTakeDamageInfo &info, const Vector &vecDir, trace_t *ptr, CDmgAccumulator *pAccumulator );
 	virtual void	Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info );
 
+	// HL2SB: eject every passenger before this vehicle is destroyed.  Overrides
+	// CBaseEntity::UpdateOnRemove, so no vtable slot is added.
+	virtual void	UpdateOnRemove( void );
+
 	// Vehicle handling
 	virtual void	VPhysicsCollision( int index, gamevcollisionevent_t *pEvent );
 	virtual int		VPhysicsGetObjectList( IPhysicsObject **pList, int listMax );
