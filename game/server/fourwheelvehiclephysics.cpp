@@ -158,6 +158,16 @@ CFourWheelVehiclePhysics::CFourWheelVehiclePhysics( CBaseAnimating *pOuter )
 	m_pOuter = NULL;
 	m_pOuterServerVehicle = NULL;
 	m_flMaxSpeed = 30;
+
+	// HL2SB: Initialize() only assigns the controller once the vehicle script has
+	// parsed, so these need a defined value before that.  Leaving them
+	// uninitialised gave a script-less vehicle a garbage m_pVehicle /
+	// m_wheelCount / m_pWheels[], which Teleport() and VPhysicsGetObjectList()
+	// then walked over (m_pWheels[i]->...) -- a wild virtual call on heap junk.
+	m_pVehicle = NULL;
+	m_wheelCount = 0;
+	for ( int i = 0; i < ARRAYSIZE( m_pWheels ); ++i )
+		m_pWheels[i] = NULL;
 }
 
 //-----------------------------------------------------------------------------
@@ -165,7 +175,15 @@ CFourWheelVehiclePhysics::CFourWheelVehiclePhysics( CBaseAnimating *pOuter )
 //-----------------------------------------------------------------------------
 CFourWheelVehiclePhysics::~CFourWheelVehiclePhysics ()
 {
-	physenv->DestroyVehicleController( m_pVehicle );
+	// HL2SB: never hand a bogus controller to vphysics.  Destroying something
+	// that was never created corrupts vphysics' own controller list, and every
+	// collision callback after that comes back with garbage game data -- one way
+	// to end up executing a freed object (crash_20260913_234437).
+	if ( m_pVehicle )
+	{
+		physenv->DestroyVehicleController( m_pVehicle );
+		m_pVehicle = NULL;
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -455,6 +473,9 @@ void CFourWheelVehiclePhysics::SetSteering( float flSteering, float flSteeringRa
 //-----------------------------------------------------------------------------
 void CFourWheelVehiclePhysics::SetSteeringDegrees( float flDegrees )
 {
+	if ( !m_pVehicle )
+		return;		// HL2SB: no controller (script failed) - nothing to change
+
 	vehicleparams_t &vehicleParams = m_pVehicle->GetVehicleParamsForChange();
 	vehicleParams.steering.degreesSlow = flDegrees;
 	vehicleParams.steering.degreesFast = flDegrees;
@@ -518,6 +539,9 @@ void CFourWheelVehiclePhysics::SetBoost( float flBoost )
 //------------------------------------------------------
 bool CFourWheelVehiclePhysics::UpdateBooster( void )
 {
+	if ( !m_pVehicle )
+		return false;	// HL2SB: no controller (script failed)
+
 	float retval = m_pVehicle->UpdateBooster(gpGlobals->frametime );
 	return ( retval > 0 );
 }
@@ -537,6 +561,12 @@ void CFourWheelVehiclePhysics::Teleport( matrix3x4_t& relativeTransform )
 {
 	// We basically just have to make sure the wheels are in the right place
 	// after teleportation occurs
+
+	// HL2SB: this is reached from the spawn path (CC_Ent_Create teleports what it
+	// just created, and CPropVehicle::Teleport forwards here), so it also runs for
+	// a vehicle whose script failed and which therefore has no wheels.
+	if ( !m_pVehicle || m_wheelCount <= 0 )
+		return;
 
 	for ( int i = 0; i < m_wheelCount; i++ )
 	{
@@ -569,6 +599,9 @@ void CFourWheelVehiclePhysics::Teleport( matrix3x4_t& relativeTransform )
 //-----------------------------------------------------------------------------
 void CFourWheelVehiclePhysics::DrawDebugGeometryOverlays()
 {
+	if ( !m_pVehicle )
+		return;		// HL2SB: no controller (script failed)
+
 	for ( int iWheel = 0; iWheel < m_wheelCount; iWheel++ )
 	{
 		IPhysicsObject *pWheel = m_pVehicle->GetWheel( iWheel );
@@ -644,6 +677,9 @@ void CFourWheelVehiclePhysics::DrawDebugGeometryOverlays()
 
 int CFourWheelVehiclePhysics::DrawDebugTextOverlays( int nOffset )
 {
+	if ( !m_pVehicle )
+		return nOffset;	// HL2SB: no controller (script failed)
+
 	const vehicle_operatingparams_t &params = m_pVehicle->GetOperatingParams();
 	char tempstr[512];
 	Q_snprintf( tempstr,sizeof(tempstr), "Speed %.1f  T/S/B (%.0f/%.0f/%.1f)", params.speed, m_controls.throttle, m_controls.steering, m_controls.brake );
@@ -670,6 +706,8 @@ void CFourWheelVehiclePhysics::PlaceWheelDust( int wheelIndex, bool ignoreSpeed 
 
 	// Old dust
 	Vector	vecPos, vecVel;
+	if ( !m_pVehicle )
+		return;		// HL2SB: no controller (script failed)
 	m_pVehicle->GetWheelContactPoint( wheelIndex, &vecPos, NULL );
 
 	vecVel.Random( -1.0f, 1.0f );
@@ -930,6 +968,9 @@ void CFourWheelVehiclePhysics::DisableMotion( void )
 
 float CFourWheelVehiclePhysics::GetHLSpeed() const
 {
+	if ( !m_pVehicle )
+		return 0.0f;	// HL2SB: no controller (script failed)
+
 	const vehicle_operatingparams_t &carState = m_pVehicle->GetOperatingParams();
 	return carState.speed;
 }
@@ -941,6 +982,9 @@ float CFourWheelVehiclePhysics::GetSteering() const
 
 float CFourWheelVehiclePhysics::GetSteeringDegrees() const
 {
+	if ( !m_pVehicle )
+		return 0.0f;	// HL2SB: no controller (script failed)
+
 	const vehicleparams_t vehicleParams = m_pVehicle->GetVehicleParams();
 	return vehicleParams.steering.degreesSlow;
 }
@@ -1053,6 +1097,11 @@ void CFourWheelVehiclePhysics::SteeringTurnAnalog( float carSpeed, const vehicle
 //-----------------------------------------------------------------------------
 void CFourWheelVehiclePhysics::UpdateDriverControls( CUserCmd *cmd, float flFrameTime )
 {
+	// HL2SB: this reads m_pVehicle immediately, and it sits under the vehicle
+	// think/input path, so a vehicle whose script failed must not reach it.
+	if ( !m_pVehicle )
+		return;
+
 	const float SPEED_THROTTLE_AS_BRAKE = 2.0f;
 	int nButtons = cmd->buttons;
 
@@ -1403,6 +1452,9 @@ void CFourWheelVehiclePhysics::UpdateDriverControls( CUserCmd *cmd, float flFram
 //-----------------------------------------------------------------------------
 bool CFourWheelVehiclePhysics::IsBoosting( void )
 {
+	if ( !m_pVehicle )
+		return false;	// HL2SB: no controller (script failed)
+
 	const vehicleparams_t *pVehicleParams = &m_pVehicle->GetVehicleParams();
 	const vehicle_operatingparams_t *pVehicleOperating = &m_pVehicle->GetOperatingParams();
 	if ( pVehicleParams && pVehicleOperating )
@@ -1419,6 +1471,10 @@ bool CFourWheelVehiclePhysics::IsBoosting( void )
 //-----------------------------------------------------------------------------
 void CFourWheelVehiclePhysics::SetDisableEngine( bool bDisable )
 {
+	// HL2SB: guard - inputs can be fired on a vehicle with no controller.
+	if ( !m_pVehicle )
+		return;
+
 	// Set the engine state.
 	m_pVehicle->SetEngineDisabled( bDisable );
 }
@@ -1441,7 +1497,10 @@ int CFourWheelVehiclePhysics::VPhysicsGetObjectList( IPhysicsObject **pList, int
 	int count = 0;
 	// add the body
 	count = AddPhysToList( pList, listMax, count, m_pOuter->VPhysicsGetObject() );
-	for ( int i = 0; i < 4; i++ )
+	// HL2SB: m_pWheels[] is only filled for m_wheelCount entries once
+	// Initialize() succeeded; the old hardcoded 4 walked the whole array even
+	// for a vehicle that never got one.
+	for ( int i = 0; i < m_wheelCount && i < ARRAYSIZE( m_pWheels ); i++ )
 	{
 		count = AddPhysToList( pList, listMax, count, m_pWheels[i] );
 	}

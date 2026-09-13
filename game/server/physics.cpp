@@ -977,6 +977,32 @@ int CCollisionEvent::ShouldSolvePenetration( IPhysicsObject *pObj0, IPhysicsObje
 	if ( g_PhysicsHook.m_bPaused )
 		return true;
 
+	// HL2SB: vphysics hands back exactly the `pGameData` pointers it was given
+	// when those physics objects were created.  If either entity has been
+	// destroyed since, this is a DANGLING CBaseEntity pointer, and the very next
+	// thing this function does is make a VIRTUAL call on it
+	// (FindOrAddPenetrateEvent -> EHANDLE::operator= -> the *virtual*
+	// CBaseEntity::GetRefEHandle(), baseentity.h:406).  A freed-then-recycled
+	// object makes that call jump to whatever now sits in its old vtable slot,
+	// which is how this crashed:
+	//
+	//   dumps/crash_20260913_234437_1_accessviolation.mdmp
+	//   EXECUTE violation, ExceptionInformation = [0x8, 0x1AA619FEA60]
+	//   RIP = 0x1AA619FEA60 (heap, no module)
+	//   [RSP] = server.dll+0x4233C0 = CCollisionEvent::FindOrAddPenetrateEvent+0x110
+	//           [game/server/physics.cpp:938  event.hEntity1 = pEntity1;]
+	//   [RSP+0x40] = CCollisionEvent::ShouldSolvePenetration+0x100 [physics.cpp:1001]
+	//   RCX = the freed entity, [RCX] = a heap address, i.e. `call [rax+off]` on
+	//   recycled memory.
+	//
+	// IsEntityPtr() walks the global entity list and compares POINTERS ONLY, so
+	// it is safe to run on a stale value -- unlike anything that dereferences it.
+	// Nothing else in this function may touch those two pointers afterwards.
+	if ( !gEntList.IsEntityPtr( pEntity0 ) || !gEntList.IsEntityPtr( pEntity1 ) )
+	{
+		return true;	// not ours to touch any more; let vphysics solve it
+	}
+
 	// solve it yourself here and return 0, or have the default implementation do it
 	if ( pEntity0 > pEntity1 )
 	{

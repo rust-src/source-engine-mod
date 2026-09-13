@@ -103,6 +103,26 @@ void HL2SB_UndoRecord( CBasePlayer *pOwner, CBaseEntity *pEnt )
 		return;
 	}
 
+	// HL2SB: never put an entity that is already gone into the undo stack.
+	//
+	// The undo stack is meant to be run LATER, so anything recorded here has to
+	// stay reachable until then.  A spawn that DispatchSpawn() gave up on is
+	// marked for deletion on the spot (a vehicle whose `vehiclescript` does not
+	// parse does exactly that: CFourWheelVehiclePhysics::Initialize ->
+	// UTIL_Remove), and recording it would leave `undo` holding a corpse.  With
+	// undo.lua's UndoValid() made real again, Do_Undo() would skip it -- but it
+	// must never get in there in the first place.
+	//
+	// IsEntityPtr() compares pointers in the global entity list without
+	// dereferencing them, so unlike IsMarkedForDeletion() it is safe even if the
+	// entity has already been freed.
+	if ( pEnt->IsMarkedForDeletion() || !gEntList.IsEntityPtr( pEnt ) )
+	{
+		Warning( "[HL2SB undo] HL2SB_UndoRecord: %s is already marked for deletion or no longer in the entity list, nothing recorded\n",
+				 pEnt->GetClassname() );
+		return;
+	}
+
 	if ( cvar && cvar->FindVar( "hl2sb_hud_debug" ) && cvar->FindVar( "hl2sb_hud_debug" )->GetInt() != 0 )
 		Warning( "[HL2SB undo] HL2SB_UndoRecord( %s, %s )\n", pOwner->GetPlayerName(), pEnt->GetClassname() );
 

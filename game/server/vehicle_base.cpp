@@ -99,7 +99,30 @@ void CPropVehicle::Spawn( )
 
 	m_VehiclePhysics.Spawn();
 	if (!m_VehiclePhysics.Initialize( STRING(m_vehicleScript), m_nVehicleType ))
+	{
+		// HL2SB: do NOT leave a half-initialised vehicle alive and thinking.
+		//
+		// On failure CFourWheelVehiclePhysics::Initialize() has already destroyed
+		// the container physics object (fourwheelvehiclephysics.cpp:378-382) and
+		// queued the entity with UTIL_Remove (ib. :387-391), but UTIL_Remove only
+		// lands at the end of the frame.  Until then the entity still thinks, and
+		// its think function reaches vehicle code that assumes a physics
+		// controller exists:
+		//
+		//   dumps/crash_20260913_232522: CPropAirboat::Think+0x63A ->
+		//   UpdateGauge() -> CFourWheelVehiclePhysics::GetMaxSpeed() on a NULL
+		//   m_pVehicle (read at address 0).
+		//
+		// Note this early return also skips SetNextThink() below, so the entity
+		// must not be left with a think function that something else can arm.
+		// Disarm it explicitly, then get rid of the entity in this frame rather
+		// than waiting for the deferred removal.
+		SetThink( NULL );
+		SetNextThink( TICK_NEVER_THINK );
+		AddEFlags( EFL_NO_THINK_FUNCTION );
+		UTIL_Remove( this );
 		return;
+	}
 	SetNextThink( gpGlobals->curtime );
 
 	m_vecSmoothedVelocity.Init();

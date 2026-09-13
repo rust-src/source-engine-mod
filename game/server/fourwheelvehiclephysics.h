@@ -74,7 +74,13 @@ public:
 
 	// Engine
 	void SetDisableEngine( bool bDisable );
-	bool IsEngineDisabled( void )							{ return m_pVehicle->IsEngineDisabled(); }
+	// HL2SB: guard - m_pVehicle is NULL until Initialize() succeeds, and an
+	// uninitialised vehicle must not be dereferenced (see GetMaxSpeed()).
+	bool IsEngineDisabled( void )							{ return m_pVehicle ? m_pVehicle->IsEngineDisabled() : true; }
+
+	// HL2SB: is this vehicle's physics controller alive?  Every accessor below
+	// and in the .cpp is expected to leave the object usable when it is false.
+	bool IsVehiclePhysicsInitialized( void ) const			{ return m_pVehicle != NULL; }
 
 	// Enable/Disable Motion
 	void EnableMotion( void );
@@ -100,9 +106,21 @@ public:
 	float GetWheelTotalHeight(int wheelIndex) { return m_wheelTotalHeight[wheelIndex]; }
 
 	IPhysicsVehicleController *GetVehicleController() { return m_pVehicle; }
-	const vehicleparams_t &GetVehicleParams( void ) { return m_pVehicle->GetVehicleParams(); }
+	// HL2SB: these two return references, so a dead vehicle hands out a zeroed
+	// stand-in instead of dereferencing NULL.  A function-local static is
+	// zero-initialised, and both types are plain aggregates (declared without an
+	// initialiser at fourwheelvehiclephysics.cpp:386).
+	const vehicleparams_t &GetVehicleParams( void )
+	{
+		static vehicleparams_t s_DefaultVehicleParams;
+		return m_pVehicle ? m_pVehicle->GetVehicleParams() : s_DefaultVehicleParams;
+	}
 	const vehicle_controlparams_t &GetVehicleControls( void ) { return m_controls; }
-	const vehicle_operatingparams_t &GetVehicleOperatingParams( void ) { return m_pVehicle->GetOperatingParams(); }
+	const vehicle_operatingparams_t &GetVehicleOperatingParams( void )
+	{
+		static vehicle_operatingparams_t s_DefaultOperatingParams;
+		return m_pVehicle ? m_pVehicle->GetOperatingParams() : s_DefaultOperatingParams;
+	}
 
 	int VPhysicsGetObjectList( IPhysicsObject **pList, int listMax );
 
