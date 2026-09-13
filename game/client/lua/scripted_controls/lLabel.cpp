@@ -462,8 +462,18 @@ LUA_BINDING_END( "Label", "The new label" )
 ** "Label", which is what FindMetaTable and GMod's vgui.Register look up.
 */
 static int luasrc_Label (lua_State *L) {
+  // HL2SB: BOTH optional, and argument 2 is the panel name -- which is what the
+  // comment above says, what lua_vgui_Create pads for (it passes parent, name and
+  // then "" as the text), and what lua/includes/modules/hl2sb_lua_errors.lua does
+  // with vgui.Create( "Label", frame, "Header" ).
+  //
+  // It was luaL_checkstring( L, 2 ), so the name was REQUIRED: the menu scripts
+  // build theirs with vgui.Create( "Label", parent ), and that died with
+  // "bad argument #2 to 'vgui.Label' (string expected, got nil)" before the panel
+  // existed at all (lua/gameui/contentsubgames.lua:67/79).  Defaults copied from
+  // Experiment's Panels.Label factory: name "Label", text "".
   Label *pLabel = new LLabel( luaL_optpanel( L, 1, VGui_GetClientLuaRootPanel() ),
-                              luaL_checkstring( L, 2 ),
+                              luaL_optstring( L, 2, "Label" ),
                               luaL_optstring( L, 3, "" ), L );
   lua_pushlabel( L, pLabel );
   return 1;
