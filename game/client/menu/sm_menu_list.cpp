@@ -39,6 +39,28 @@
 // always used: `give <class>` for weapons (only when sm_menu_give is 1) and
 // `ent_create <class>` otherwise.  No new console command is introduced.
 //
+// HL2SB layout (GMod's spawnmenu structure - see SMenu_TODO.md item 7):
+//
+//   +-----------------------------------------------------------------+
+//   | [Weapons][Entities][NPCs][Props][Vehicles][Props (models)]      | top tabs
+//   +----------------+------------------------------------------------+
+//   | addons/nyangun |                                                |
+//   | HL2SB Lua      |   icon grid of the selected source             |
+//   | Engine         |                                                |
+//   +----------------+------------------------------------------------+
+//
+// The top tabs answer WHAT a thing is: the same category classification this
+// menu always had (the old "Lua SWEPs" / "Stock weapons" split is gone from the
+// tabs because that IS the source axis now).  The LEFT sidebar answers WHICH
+// SOURCE an entry came from - the addon that shipped the Lua script, the tree's
+// own lua/, or the honest "Engine" bucket for the classes server.dll registers
+// with no game to attribute them to.  That is the same two-axis split as GMod's
+// menu (its sidebar IS the source list: contentsidebar.lua:10-17 selects the
+// source, gameprops.lua:126-150 fills it with mounted games and their
+// "games/16/<name>.png" icons, addonprops.lua:95-138 fills it with addons and
+// icon16/bricks.png, and both SKIP a source with nothing in it), with the
+// derivation this fork can actually support - see SMenu_AssignSource.
+//
 // $NoKeywords: $
 //===========================================================================//
 #include "cbase.h"
@@ -94,6 +116,7 @@ struct SMenuEntry_t
 	char			szClass[64];	// class name, or "props_x/model" for model entries
 	char			szFixedCmd[SMENU_FIXEDCMD_LEN];	// non-empty: run verbatim
 	char			szMaterial[128];// material to draw ("" = no icon, name only)
+	char			szSource[128];	// which source it came from - see SMenu_AssignSource
 	unsigned int	uFlags;
 };
 
@@ -109,14 +132,15 @@ struct SMenuCatDef_t
 	bool		bModelPage;		// the models/props_* scan instead of class entries
 };
 
+// HL2SB: TOP TABS = CATEGORIES, and nothing else.  GMod's spawnmenu tabs answer
+// the same question ("which kind of thing is this?"); the Lua/stock split that
+// used to live here as indented sub-tabs is now the LEFT sidebar's source
+// dimension (SMenu_AssignSource / g_SMenuCatSources), so it is deliberately not
+// duplicated as a tab any more.
 static const SMenuCatDef_t s_SMenuCats[] =
 {
 	{ "Weapons",				SMCAT_WEAPON,							0,				false },
-	{ "    Lua SWEPs",			SMCAT_WEAPON | SMFLAG_LUA,				0,				false },
-	{ "    Stock weapons",		SMCAT_WEAPON,							SMFLAG_LUA,		false },
 	{ "Entities",				SMCAT_LUAENT | SMCAT_ENTITY,			0,				false },
-	{ "    Lua entities",		SMCAT_LUAENT,							0,				false },
-	{ "    Stock entities",		SMCAT_ENTITY,							0,				false },
 	{ "NPCs",					SMCAT_NPC,								0,				false },
 	{ "Props",					SMCAT_PROP,								0,				false },
 	{ "Vehicles",				SMCAT_VEHICLE,							0,				false },
@@ -124,6 +148,29 @@ static const SMenuCatDef_t s_SMenuCats[] =
 };
 
 #define SMENU_CAT_COUNT		ARRAYSIZE( s_SMenuCats )
+
+//-----------------------------------------------------------------------------
+// HL2SB: THE SECOND AXIS - which SOURCE an entry comes from.
+//
+// This is the left-hand sidebar.  One source list PER CATEGORY, filled by
+// SMenu_BuildSources(); a source that has no entry in that category simply does
+// not appear, which is how GMod hides an addon with nothing in it
+// (addonprops.lua:101-102).
+//-----------------------------------------------------------------------------
+#define SMENU_SRC_OWN		"HL2SB Lua"		// the tree's own lua/ (and gamemode content)
+#define SMENU_SRC_ENGINE	"Engine"		// server.dll-registered, no derivable source
+#define SMENU_SRC_HL2		"Half-Life 2"	// the models page - provably HL2 content
+#define SMENU_SRC_ADDONS	"addons/"		// prefix of an addon source id
+
+struct SMenuSource_t
+{
+	char	szId[128];		// "addons/<folder>" | "HL2SB Lua" | "Half-Life 2" | "Engine"
+	char	szLabel[128];	// what the sidebar row prints
+	char	szMaterial[128];// 16x16 icon, existence-gated ("" = name only, never purple)
+	int		nCount;			// entries of the current category in this source
+};
+
+static CUtlVector< SMenuSource_t > g_SMenuCatSources[SMENU_CAT_COUNT];
 
 // HL2SB: what clicking a Weapons entry does.
 //   0 (DEFAULT) - ent_create <weapon>: place the weapon ENTITY in the world,
@@ -362,6 +409,44 @@ static bool SMenu_MaterialExists( const char *pszMaterial )
 
 		if ( SMenu_FileExists( szPath ) )
 			return true;
+	}
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: the bindable name of a material, extension included - or false when
+// there is no file behind it at all.
+//
+// "the .vmt exists" is not the question (see SMenu_MaterialExists), and neither
+// is "the name looks right": the icon16 / games/16 sets GMod's spawnmenu uses
+// are raw .png files, and a raw image is bound by its NAME INCLUDING the
+// extension (materialsystem/hl2sb_pngtexture.cpp).  So the candidate's extension
+// is discovered here instead of assumed, and a candidate with nothing on disk
+// leaves pOut empty - which is what keeps an icon-less source from drawing a
+// purple cell.
+//-----------------------------------------------------------------------------
+static bool SMenu_ResolveMaterialName( const char *pszCandidate, char *pOut, int nOutLen )
+{
+	// .png first: every icon this menu asks for by this route is a raw image.
+	static const char *s_pExts[] = { ".png", ".vtf", ".jpg", ".jpeg", ".tga" };
+
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !pszCandidate || !pszCandidate[0] || !pOut || nOutLen <= 0 )
+		return false;
+
+	char szPath[MAX_PATH];
+	for ( int i = 0; i < ARRAYSIZE( s_pExts ); ++i )
+	{
+		Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pszCandidate, s_pExts[i] );
+
+		if ( SMenu_FileExists( szPath ) )
+		{
+			Q_snprintf( pOut, nOutLen, "%s%s", pszCandidate, s_pExts[i] );
+			return true;
+		}
 	}
 
 	return false;
@@ -708,6 +793,276 @@ static bool SMenu_BuildVehicleCommand( const char *pszClass, char *pOut, int nOu
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB: WHERE an entry comes from - the left-hand source sidebar.
+//
+// GMod's spawnmenu separates WHAT a thing is (its top tabs) from WHICH SOURCE it
+// comes from (its sidebar), and that is the split this file now mirrors:
+//
+//   "addons/<folder>"   a Lua class whose script lives in an addon   (bricks.png)
+//   "HL2SB Lua"         a Lua class whose script lives in the tree's own lua/,
+//                       the unpacked lua_cache/ or a gamemode's content/
+//   "Half-Life 2"       the models page, which only ever lists HL2's props_*
+//   "Engine"            everything server.dll registered with no derivable source
+//
+// The derivation does not guess.  Two mechanisms, in order:
+//
+//   1. THE LOADER, authoritatively.  luasrc_LoadOneWeapon / luasrc_LoadOneEntity
+//      know the exact file a class was loaded from (they already log it with
+//      their "[Lua] weapon/entity '<class>' <- <path>" line), and that file is
+//      read back through luasrc_GetClassScriptFile() (luamanager.h).  This is
+//      the reliable route: a mounted addon's script has the SAME MOD-relative
+//      name as the tree's own ("lua/weapons/<class>.lua") because
+//      mountaddons.cpp mounts every addon folder as its own search path, so the
+//      loader stores it with the addon folder folded back in:
+//      "addons/nyangun/lua/weapons/weapon_nyangun.lua".
+//   2. THE FILE SYSTEM, as a fallback for a Lua class the loaders never saw (a
+//      class the server published, a SWEP registered from an addon's
+//      lua/autorun/): probe addons/<x>/lua/{weapons,entities}/<class>.lua and
+//      then lua/{weapons,entities}/<class>.lua through the engine file system,
+//      plus GMod's folder layout <class>/shared.lua.  Every probe is CACHED
+//      (g_SMenuSourceProbes); one pass per rebuild.
+//
+// Either way an entry always lands in a bucket - "Engine" is the honest one for
+// anything that cannot be attributed - and Lua content is never filtered out or
+// hidden.
+//-----------------------------------------------------------------------------
+static CUtlDict< CUtlString, unsigned short > g_SMenuSourceProbes;
+
+static CUtlVector< CUtlString > g_SMenuAddonDirs;
+static bool g_bSMenuAddonDirsScanned = false;
+
+// Q_strncpy can leave the destination UNTERMINATED when the source is longer
+// than the buffer (V_strncpy copies exactly maxLen characters), so every
+// variable-length source string goes through this.
+static void SMenu_CopyString( char *pDest, const char *pSrc, int nDestLen )
+{
+	if ( !pDest || nDestLen <= 0 )
+		return;
+
+	Q_strncpy( pDest, pSrc ? pSrc : "", nDestLen );
+	pDest[nDestLen - 1] = 0;
+}
+
+// addons/* read once.  Every addon folder is also its own MOD search path
+// (mountaddons.cpp:64), so this list exists only to build probe paths.
+static void SMenu_ScanAddonDirs( void )
+{
+	if ( g_bSMenuAddonDirsScanned )
+		return;
+
+	g_bSMenuAddonDirsScanned = true;
+
+	FileFindHandle_t hFind = FILESYSTEM_INVALID_FIND_HANDLE;
+	const char *pszFound = filesystem->FindFirstEx( "addons/*", "MOD", &hFind );
+
+	for ( ; pszFound && pszFound[0]; pszFound = filesystem->FindNext( hFind ) )
+	{
+		if ( pszFound[0] == '.' || !filesystem->FindIsDirectory( hFind ) )
+			continue;
+
+		bool bSeen = false;
+		for ( int i = 0; i < g_SMenuAddonDirs.Count(); ++i )
+		{
+			if ( !Q_stricmp( g_SMenuAddonDirs[i], pszFound ) )
+			{
+				bSeen = true;
+				break;
+			}
+		}
+
+		if ( !bSeen )
+			g_SMenuAddonDirs.AddToTail( CUtlString( pszFound ) );
+	}
+
+	if ( hFind != FILESYSTEM_INVALID_FIND_HANDLE )
+		filesystem->FindClose( hFind );
+}
+
+// The fallback probe.  Returns the source-qualified script found, or "".
+static const char *SMenu_ProbeClassScript( const char *pszClass )
+{
+	unsigned short i = g_SMenuSourceProbes.Find( pszClass );
+
+	if ( i != g_SMenuSourceProbes.InvalidIndex() )
+		return (const char *)g_SMenuSourceProbes[i];
+
+	SMenu_ScanAddonDirs();
+
+	// Both GMod layouts: <class>.lua and <class>/shared.lua (the loaders accept
+	// cl_init.lua / init.lua as well - see luasrc_LoadOneWeapon).
+	static const char *s_pScriptNames[] = { "%s.lua", "%s/shared.lua", "%s/cl_init.lua", "%s/init.lua" };
+	static const char *s_pKinds[] = { "weapons", "entities" };
+
+	char szFound[MAX_PATH];
+	szFound[0] = 0;
+
+	// addons first (the user's own content), then the tree's own lua/.
+	for ( int nKind = 0; nKind < ARRAYSIZE( s_pKinds ) && !szFound[0]; ++nKind )
+	{
+		for ( int nRoot = -1; nRoot < g_SMenuAddonDirs.Count() && !szFound[0]; ++nRoot )
+		{
+			const bool bAddon = ( nRoot >= 0 );
+
+			for ( int nName = 0; nName < ARRAYSIZE( s_pScriptNames ) && !szFound[0]; ++nName )
+			{
+				char szBase[MAX_PATH];
+
+				if ( bAddon )
+					Q_snprintf( szBase, sizeof( szBase ), "addons/%s/lua/%s/%s", g_SMenuAddonDirs[nRoot], s_pKinds[nKind], pszClass );
+				else
+					Q_snprintf( szBase, sizeof( szBase ), "lua/%s/%s", s_pKinds[nKind], pszClass );
+
+				char szScript[MAX_PATH];
+				Q_snprintf( szScript, sizeof( szScript ), s_pScriptNames[nName], szBase );
+
+				if ( SMenu_FileExists( szScript ) )
+					SMenu_CopyString( szFound, szScript, sizeof( szFound ) );
+			}
+		}
+	}
+
+	unsigned short nNew = g_SMenuSourceProbes.Insert( pszClass, CUtlString( szFound ) );
+
+	if ( nNew == g_SMenuSourceProbes.InvalidIndex() )
+		return "";
+
+	return (const char *)g_SMenuSourceProbes[nNew];
+}
+
+// "addons/nyangun/lua/weapons/weapon_nyangun.lua" -> "addons/nyangun";
+// "lua/entities/sent_ball.lua" -> "HL2SB Lua"; "" -> "" (caller picks the floor).
+static void SMenu_SourceIdFromScript( const char *pszScript, char *pOut, int nOutLen )
+{
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !pszScript || !pszScript[0] || !pOut || nOutLen <= 0 )
+		return;
+
+	if ( !Q_strnicmp( pszScript, SMENU_SRC_ADDONS, 7 ) )
+	{
+		const char *pFolder = pszScript + 7;
+		const char *pSlash = strchr( pFolder, '/' );
+		const int nLen = pSlash ? (int)( pSlash - pFolder ) : Q_strlen( pFolder );
+
+		if ( nLen <= 0 )
+			return;
+
+		char szFolder[128];
+		int nCopy = MIN( nLen, (int)sizeof( szFolder ) - 1 );
+		Q_memcpy( szFolder, pFolder, nCopy );
+		szFolder[nCopy] = 0;
+
+		Q_snprintf( pOut, nOutLen, SMENU_SRC_ADDONS "%s", szFolder );
+		return;
+	}
+
+	// The fork's own tree.  lua_cache/ is the same lua/ tree under a prefix, and
+	// a gamemode's content/ folder is first-party content too.
+	if ( !Q_strnicmp( pszScript, "lua/", 4 ) || !Q_strnicmp( pszScript, "lua_cache/", 10 ) ||
+		 !Q_strnicmp( pszScript, "gamemodes/", 10 ) )
+	{
+		SMenu_CopyString( pOut, SMENU_SRC_OWN, nOutLen );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: place one entry in a source.  Runs ONCE per rebuild, after every flag
+// has settled (the Lua lists may recategorise a class, and only a Lua class has
+// a script to attribute), so the sidebar can never contradict its entries.
+//-----------------------------------------------------------------------------
+static void SMenu_AssignSource( SMenuEntry_t &entry )
+{
+	char szSource[sizeof( entry.szSource )];
+	szSource[0] = 0;
+
+	if ( entry.uFlags & SMFLAG_LUA )
+	{
+		// 1. what the loader actually read - authoritative.
+		SMenu_SourceIdFromScript( luasrc_GetClassScriptFile( entry.szClass ), szSource, sizeof( szSource ) );
+
+		// 2. the file system fallback, cached.
+		if ( !szSource[0] )
+			SMenu_SourceIdFromScript( SMenu_ProbeClassScript( entry.szClass ), szSource, sizeof( szSource ) );
+	}
+
+	// 3. The honest bucket.  Everything server.dll registers lands here: this
+	//    fork has no per-game registration data to attribute a stock class to
+	//    (SMenu_TODO.md item 7.1 - do NOT invent a game for a class we cannot
+	//    attribute).  The models page is the one exception and names itself.
+	if ( !szSource[0] )
+		SMenu_CopyString( szSource, SMENU_SRC_ENGINE, sizeof( szSource ) );
+
+	SMenu_CopyString( entry.szSource, szSource, sizeof( entry.szSource ) );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: a source's 16x16 icon, by GMod's own convention:
+//   * the provable Half-Life 2 page -> "games/16/hl2.png"
+//     (gameprops.lua:146 builds exactly this name from the game entry)
+//   * an addon -> "icon16/bricks.png" (addonprops.lua:104)
+//   * EVERY source -> icon16/plugin.png as the existence-gated last resort
+//     (the same floor SMenu_ResolveIcon uses for a cell)
+// Nothing is taken on faith: a candidate with no file on disk is skipped, and a
+// source that ends up with no icon draws its NAME only - never a purple cell.
+//-----------------------------------------------------------------------------
+static void SMenu_ResolveSourceIcon( SMenuSource_t &src )
+{
+	src.szMaterial[0] = 0;
+
+	if ( !Q_stricmp( src.szId, SMENU_SRC_HL2 ) )
+		SMenu_ResolveMaterialName( "games/16/hl2", src.szMaterial, sizeof( src.szMaterial ) );
+	else if ( !Q_strnicmp( src.szId, SMENU_SRC_ADDONS, 7 ) )
+		SMenu_ResolveMaterialName( "icon16/bricks", src.szMaterial, sizeof( src.szMaterial ) );
+
+	if ( !src.szMaterial[0] )
+		SMenu_ResolveMaterialName( "icon16/plugin", src.szMaterial, sizeof( src.szMaterial ) );
+}
+
+// The user's own content first, then the tree's own Lua, then the built-in
+// pages; alphabetical inside a group (GMod lists games before addons and sorts
+// each group by title).
+static int SMenu_SourceRank( const SMenuSource_t &src )
+{
+	if ( !Q_strnicmp( src.szId, SMENU_SRC_ADDONS, 7 ) )
+		return 0;
+	if ( !Q_stricmp( src.szId, SMENU_SRC_OWN ) )
+		return 1;
+	if ( !Q_stricmp( src.szId, SMENU_SRC_HL2 ) )
+		return 2;
+
+	return 3;			// Engine
+}
+
+static int __cdecl SMenu_SortSources( const SMenuSource_t *pLeft, const SMenuSource_t *pRight )
+{
+	const int nLeft = SMenu_SourceRank( *pLeft );
+	const int nRight = SMenu_SourceRank( *pRight );
+
+	if ( nLeft != nRight )
+		return nLeft - nRight;
+
+	return Q_stricmp( pLeft->szId, pRight->szId );
+}
+
+static SMenuSource_t *SMenu_FindOrAddSource( int nCat, const char *pszSource )
+{
+	for ( int i = 0; i < g_SMenuCatSources[nCat].Count(); ++i )
+	{
+		if ( !Q_stricmp( g_SMenuCatSources[nCat][i].szId, pszSource ) )
+			return &g_SMenuCatSources[nCat][i];
+	}
+
+	SMenuSource_t &src = g_SMenuCatSources[nCat][g_SMenuCatSources[nCat].AddToTail()];
+	Q_memset( &src, 0, sizeof( src ) );
+	SMenu_CopyString( src.szId, pszSource, sizeof( src.szId ) );
+	SMenu_CopyString( src.szLabel, pszSource, sizeof( src.szLabel ) );
+	SMenu_ResolveSourceIcon( src );
+
+	return &src;
+}
+
+//-----------------------------------------------------------------------------
 // HL2SB: add one class to the list (deduplicated, filtered, classified).
 //-----------------------------------------------------------------------------
 static int SMenu_FindEntry( const char *pszClass )
@@ -916,6 +1271,12 @@ static unsigned int SMenu_HashEntries( void )
 		for ( const char *p = g_SMenuEntries[i].szClass; *p; ++p )
 			uHash = ( uHash ^ (unsigned char)*p ) * 16777619u;
 
+		// HL2SB: the SOURCE is part of an entry's identity now - if an addon
+		// mounts a script for a class that used to sit in another bucket, the
+		// sidebar has to follow, so it is hashed with the class and the flags.
+		for ( const char *p = g_SMenuEntries[i].szSource; *p; ++p )
+			uHash = ( uHash ^ (unsigned char)*p ) * 16777619u;
+
 		uHash = ( uHash ^ g_SMenuEntries[i].uFlags ) * 16777619u;
 	}
 
@@ -967,6 +1328,12 @@ static void SMenu_BuildEntries( void )
 		SMenu_MergeLuaList( s_SMenuLuaLists[i].pszListId, s_SMenuLuaLists[i].uForceCat );
 
 	g_SMenuEntries.Sort( SMenu_SortEntries );
+
+	// HL2SB: the source dimension, resolved AFTER every flag has settled (the
+	// Lua lists above may recategorise a class) - one pass per rebuild, and the
+	// probes behind it are cached.
+	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
+		SMenu_AssignSource( g_SMenuEntries[i] );
 
 	int nWeapons = 0, nLua = 0, nNpc = 0, nVeh = 0;
 	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
@@ -1088,6 +1455,48 @@ static void SMenu_CountCategories( void )
 		}
 
 		s_nSMenuCatCounts[i] = n;
+	}
+}
+
+static void SMenu_BuildSources( bool bModelPagePossible )
+{
+	for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
+	{
+		g_SMenuCatSources[i].RemoveAll();
+
+		if ( s_SMenuCats[i].bModelPage )
+		{
+			// The models page can only ever list HL2's models/props_* files, so
+			// it has exactly one source and that source IS provably Half-Life 2
+			// (SMenu_TODO.md 1.1: never invent "Half-Life 2" for a class we
+			// cannot attribute - this page is the one place where it is
+			// provable, and it is also where GMod shows the game's own icon).
+			if ( bModelPagePossible )
+			{
+				SMenuSource_t &src = g_SMenuCatSources[i][g_SMenuCatSources[i].AddToTail()];
+				Q_memset( &src, 0, sizeof( src ) );
+				SMenu_CopyString( src.szId, SMENU_SRC_HL2, sizeof( src.szId ) );
+				SMenu_CopyString( src.szLabel, SMENU_SRC_HL2, sizeof( src.szLabel ) );
+				SMenu_ResolveSourceIcon( src );
+			}
+			continue;
+		}
+
+		// Only the sources that really have entries in THIS category appear -
+		// which is also what makes an empty source impossible (GMod skips an
+		// addon with nothing in it: addonprops.lua:101-102).
+		for ( int j = 0; j < g_SMenuEntries.Count(); ++j )
+		{
+			if ( !SMenu_EntryMatchesCat( i, g_SMenuEntries[j] ) )
+				continue;
+
+			SMenuSource_t *pSrc = SMenu_FindOrAddSource( i, g_SMenuEntries[j].szSource );
+
+			if ( pSrc )
+				pSrc->nCount++;
+		}
+
+		g_SMenuCatSources[i].Sort( SMenu_SortSources );
 	}
 }
 
@@ -1247,10 +1656,33 @@ public:
 		m_bPageBuilt = false;
 		m_bHasItems = false;
 		m_flBuildStart = 0.0;
+		m_szSource[0] = 0;
 		SetFirstColumnWidth( 0 );
 		SetNumColumns( 1 );
 		SetVerticalBufferPixels( 2 );
 	}
+
+	//-----------------------------------------------------------------------------
+	// HL2SB: THE SOURCE DIMENSION.  A page is the (category, source) pair the
+	// left sidebar selected; the machinery around it is unchanged - the page is
+	// still created empty, still filled in 4 ms slices the first time it is
+	// shown, and still never mutated while the menu is opening.
+	//
+	// Selecting a different source is a user action (a click on the sidebar), so
+	// it is the one place a built page is refilled; that is what GMod does when a
+	// source node is selected (it fills that node's ViewPanel:
+	// gameprops.lua:87-120, addonprops.lua:105-131).
+	//-----------------------------------------------------------------------------
+	void SetSourceFilter( const char *pszSource )
+	{
+		if ( !Q_stricmp( m_szSource, pszSource ) )
+			return;
+
+		SMenu_CopyString( m_szSource, pszSource, sizeof( m_szSource ) );
+		InvalidatePage();
+	}
+
+	const char *GetSourceFilter( void ) const	{ return m_szSource; }
 
 	void AddEntry( const SMenuEntry_t &entry )
 	{
@@ -1308,7 +1740,7 @@ public:
 		{
 			const SMenuEntry_t &entry = g_SMenuEntries[m_nBuildCursor];
 
-			if ( SMenu_EntryMatchesCat( nCat, entry ) )
+			if ( SMenu_EntryMatchesCat( nCat, entry ) && MatchesSource( entry ) )
 			{
 				AddEntry( entry );
 				++m_nCellsAdded;
@@ -1328,13 +1760,13 @@ public:
 		if ( m_nBuildCursor >= nTotal )
 		{
 			m_bPageBuilt = true;
-			SMenu_Debug( "page \"%s\" built: %d cells from %d entries, %.2f ms",
-						 s_SMenuCats[nCat].pszTitle, m_nCellsAdded, nTotal, SMenu_Now() - m_flBuildStart );
+			SMenu_Debug( "page \"%s\" / \"%s\" built: %d cells from %d entries, %.2f ms",
+						 s_SMenuCats[nCat].pszTitle, m_szSource, m_nCellsAdded, nTotal, SMenu_Now() - m_flBuildStart );
 			return true;
 		}
 
-		SMenu_Debug( "page \"%s\": +%d cells (%d/%d entries scanned, %.2f ms)",
-					 s_SMenuCats[nCat].pszTitle, nThisSlice, m_nBuildCursor, nTotal, SMenu_Now() - flSliceStart );
+		SMenu_Debug( "page \"%s\" / \"%s\": +%d cells (%d/%d entries scanned, %.2f ms)",
+					 s_SMenuCats[nCat].pszTitle, m_szSource, nThisSlice, m_nBuildCursor, nTotal, SMenu_Now() - flSliceStart );
 		return false;
 	}
 
@@ -1358,6 +1790,16 @@ public:
 	}
 
 private:
+	// Empty source = "no source dimension yet", which matches everything; the
+	// caller always sets a real one before the page is first built.
+	bool MatchesSource( const SMenuEntry_t &entry ) const
+	{
+		if ( !m_szSource[0] )
+			return true;
+
+		return !Q_stricmp( m_szSource, entry.szSource );
+	}
+
 	int		m_nColumns;
 	int		m_nBuildCursor;
 	int		m_nCellsAdded;
@@ -1365,20 +1807,279 @@ private:
 	bool	m_bPageBuilt;
 	bool	m_bHasItems;
 	double	m_flBuildStart;
+	char	m_szSource[128];
 };
 
 //-----------------------------------------------------------------------------
-// HL2SB: the left-hand category list.  A PanelListPanel of buttons sends its
-// "Command" message to the list itself (Panel::OnCommand is part of the base
-// message map, so it does NOT bubble to us), hence the forwarder.
+// HL2SB: the widgets of the two-axis layout.
+//
+//   * CSMTabButton    - one TOP tab (a category).  Highlights while active.
+//   * CSMTabBar       - the tab strip: lays its buttons out left to right and
+//                       forwards their "Command" messages to the menu, because
+//                       Panel::OnCommand is part of the base message map and
+//                       does NOT bubble up to the frame.
+//   * CSMSourceButton - one LEFT sidebar row: the source's 16x16 icon plus its
+//                       name, the way GMod's sidebar DTree shows a game's
+//                       "games/16/<name>.png" and an addon's icon16/bricks.png
+//                       (gameprops.lua:146, addonprops.lua:104).
+//   * CSMSourceList   - the sidebar itself, one row per source of the current
+//                       category.
+//
+// Both rows are hand-drawn panels rather than vgui::Button for the reason
+// CSMIconButton already is: scheme()->GetImage() prepends "vgui/" to every name
+// (vgui2/src/Scheme.cpp:1260) and can therefore only reach materials/vgui/*,
+// while these icons live in materials/icon16/ and materials/games/16/.  Drawing
+// through ISurface::DrawSetTextureFile addresses materials/ directly.
 //-----------------------------------------------------------------------------
 class CSMenu;
 
-class CSMCatList : public vgui::PanelListPanel
+class CSMTabButton : public vgui::Button
+{
+	typedef vgui::Button BaseClass;
+public:
+	CSMTabButton( vgui::Panel *pParent, const char *pName, const char *pText, const char *pCmd )
+		: BaseClass( pParent, pName, pText, pParent, pCmd )
+	{
+		m_bActive = false;
+	}
+
+	void SetActiveTab( bool bActive )
+	{
+		if ( m_bActive == bActive )
+			return;
+
+		m_bActive = bActive;
+		Repaint();
+	}
+
+	virtual void Paint()
+	{
+		// A flat wash behind the active tab: the strip has to say which category
+		// the grid belongs to, and a plain vgui::Button has no selected look.
+		if ( m_bActive )
+		{
+			int w = 0, h = 0;
+			GetSize( w, h );
+			surface()->DrawSetColor( 255, 255, 255, 40 );
+			surface()->DrawFilledRect( 0, 0, w, h );
+		}
+
+		BaseClass::Paint();
+	}
+
+private:
+	bool	m_bActive;
+};
+
+#define SMENU_SRCROW_H	20
+
+class CSMSourceButton : public vgui::Panel
+{
+	typedef vgui::Panel BaseClass;
+public:
+	CSMSourceButton( CSMenu *pOwner, vgui::Panel *pParent, const SMenuSource_t &src, int nIndex, bool bSelected )
+		: BaseClass( pParent, "SMenuSource" )
+	{
+		m_pOwner = pOwner;
+		m_nIndex = nIndex;
+		m_bSelected = bSelected;
+		m_bHover = false;
+		m_bBound = false;
+		m_nTexture = surface()->CreateNewTextureID();
+
+		SMenu_CopyString( m_szMaterial, src.szMaterial, sizeof( m_szMaterial ) );
+
+		SetSize( 160, SMENU_SRCROW_H );
+		SetPaintBackgroundEnabled( false );
+		SetMouseInputEnabled( true );
+
+		m_pLabel = new vgui::Label( this, "SourceName", src.szLabel );
+		m_pLabel->SetContentAlignment( vgui::Label::a_west );
+		m_pLabel->SetMouseInputEnabled( false );
+		m_pLabel->SetBounds( 22, 2, 136, 16 );
+	}
+
+	void SetSelected( bool bSelected )
+	{
+		if ( m_bSelected == bSelected )
+			return;
+
+		m_bSelected = bSelected;
+		Repaint();
+	}
+
+	virtual void ApplySchemeSettings( vgui::IScheme *pScheme )
+	{
+		BaseClass::ApplySchemeSettings( pScheme );
+
+		if ( m_pLabel )
+			m_pLabel->SetFont( pScheme->GetFont( "DefaultVerySmall", true ) );
+	}
+
+	virtual void PerformLayout()
+	{
+		BaseClass::PerformLayout();
+
+		int w = 0, h = 0;
+		GetSize( w, h );
+
+		if ( m_pLabel )
+			m_pLabel->SetBounds( 22, 2, w - 26, h - 4 );
+	}
+
+	virtual void Paint()
+	{
+		int w = 0, h = 0;
+		GetSize( w, h );
+
+		if ( m_bSelected )
+		{
+			surface()->DrawSetColor( 255, 255, 255, 48 );
+			surface()->DrawFilledRect( 0, 0, w, h );
+		}
+		else if ( m_bHover )
+		{
+			surface()->DrawSetColor( 255, 255, 255, 24 );
+			surface()->DrawFilledRect( 0, 0, w, h );
+		}
+
+		// The source icon is a 16x16 image; it is bound on first paint, so a
+		// sidebar nobody looks at decodes nothing (the same rule as the cells).
+		// An empty name means "no icon on disk" - the row then prints its source
+		// name only, never a purple square.
+		if ( m_szMaterial[0] && m_nTexture != -1 )
+		{
+			if ( !m_bBound )
+			{
+				surface()->DrawSetTextureFile( m_nTexture, m_szMaterial, true, false );
+				m_bBound = true;
+			}
+
+			surface()->DrawSetColor( 255, 255, 255, 255 );
+			surface()->DrawSetTexture( m_nTexture );
+			surface()->DrawTexturedRect( 2, 2, 18, 18 );
+		}
+
+		BaseClass::Paint();
+	}
+
+	virtual void OnCursorEntered()
+	{
+		m_bHover = true;
+		Repaint();
+	}
+
+	virtual void OnCursorExited()
+	{
+		m_bHover = false;
+		Repaint();
+	}
+
+	virtual void OnMouseReleased( vgui::MouseCode code );
+
+private:
+	CSMenu			*m_pOwner;
+	vgui::Label		*m_pLabel;
+	char			m_szMaterial[128];
+	int				m_nIndex;
+	int				m_nTexture;
+	bool			m_bBound;
+	bool			m_bHover;
+	bool			m_bSelected;
+};
+
+class CSMTabBar : public vgui::Panel
+{
+	typedef vgui::Panel BaseClass;
+public:
+	CSMTabBar( vgui::Panel *pParent, const char *pName ) : BaseClass( pParent, pName )
+	{
+		m_pOwner = NULL;
+		SetPaintBackgroundEnabled( false );
+	}
+
+	void SetOwner( CSMenu *pOwner ) { m_pOwner = pOwner; }
+
+	// Rough text metric: the strip must not need a font handle before
+	// ApplySchemeSettings has run, and the titles are short.
+	static int TabWidth( const char *pszText )
+	{
+		int nWidth = 16 + 7 * ( pszText ? Q_strlen( pszText ) : 0 );
+
+		if ( nWidth < 64 ) nWidth = 64;
+		if ( nWidth > 170 ) nWidth = 170;
+
+		return nWidth;
+	}
+
+	// How tall the strip has to be to hold every button: one row unless the
+	// frame is dragged narrow.
+	int GetPreferredHeight( int nWidth )
+	{
+		int x = 0, nRows = 1;
+
+		for ( int i = 0; i < GetChildCount(); ++i )
+		{
+			vgui::Panel *pChild = GetChild( i );
+			if ( !pChild )
+				continue;
+
+			int w = 0, h = 0;
+			pChild->GetSize( w, h );
+
+			if ( x > 0 && x + w > nWidth )
+			{
+				nRows++;
+				x = 0;
+			}
+
+			x += w + 2;
+		}
+
+		return nRows * 22 + ( nRows - 1 ) * 2;
+	}
+
+	virtual void PerformLayout()
+	{
+		BaseClass::PerformLayout();
+
+		int w = 0, h = 0;
+		GetSize( w, h );
+		NOTE_UNUSED( h );
+
+		int x = 0, y = 0;
+
+		for ( int i = 0; i < GetChildCount(); ++i )
+		{
+			vgui::Panel *pChild = GetChild( i );
+			if ( !pChild )
+				continue;
+
+			int cw = 0, ch = 0;
+			pChild->GetSize( cw, ch );
+
+			if ( x > 0 && x + cw > w )
+			{
+				x = 0;
+				y += ch + 2;
+			}
+
+			pChild->SetPos( x, y );
+			x += cw + 2;
+		}
+	}
+
+	virtual void OnCommand( const char *command );
+
+private:
+	CSMenu	*m_pOwner;
+};
+
+class CSMSourceList : public vgui::PanelListPanel
 {
 	typedef vgui::PanelListPanel BaseClass;
 public:
-	CSMCatList( vgui::Panel *pParent, const char *pName ) : BaseClass( pParent, pName )
+	CSMSourceList( vgui::Panel *pParent, const char *pName ) : BaseClass( pParent, pName )
 	{
 		m_pOwner = NULL;
 		SetFirstColumnWidth( 0 );
@@ -1388,10 +2089,29 @@ public:
 
 	void SetOwner( CSMenu *pOwner ) { m_pOwner = pOwner; }
 
+	void AddSourceRow( CSMSourceButton *pRow )
+	{
+		m_pRows.AddToTail( pRow );
+		AddItem( NULL, pRow );
+	}
+
+	void ClearRows( void )
+	{
+		DeleteAllItems();
+		m_pRows.RemoveAll();
+	}
+
+	void SetSelection( int nIndex )
+	{
+		for ( int i = 0; i < m_pRows.Count(); ++i )
+			m_pRows[i]->SetSelected( i == nIndex );
+	}
+
 	virtual void OnCommand( const char *command );
 
 private:
-	CSMenu	*m_pOwner;
+	CSMenu							*m_pOwner;
+	CUtlVector< CSMSourceButton * >	m_pRows;
 };
 
 //-----------------------------------------------------------------------------
@@ -1412,20 +2132,30 @@ public:
 		m_uBuiltHash = 0;
 		m_bBuiltOnce = false;
 		m_nCurrentCat = 0;
+		m_nSidebarCat = -1;
+		m_bSidebarDirty = true;
 		m_bModelPagePossible = false;
 		m_bModelPageBuilt = false;
 
-		m_pTree = new CSMCatList( this, "CategoryList" );
-		m_pTree->SetOwner( this );
+		// GMod's structure: a tab strip of CATEGORIES on top, the SOURCE list
+		// down the left, the icon grid on the right.
+		m_pTabs = new CSMTabBar( this, "CategoryTabs" );
+		m_pTabs->SetOwner( this );
+
+		m_pSourceList = new CSMSourceList( this, "SourceList" );
+		m_pSourceList->SetOwner( this );
 
 		m_pGridHost = new vgui::Panel( this, "GridHost" );
 
-		// One page per tree node; the tree buttons themselves are (re)built by
-		// RebuildTree(), which skips every category that came up empty - an
+		// One page per category.  The page buttons themselves are (re)built by
+		// RebuildTabs(), which skips every category that came up empty - an
 		// empty category must not reserve a dead tab (GMod hides those too).
+		// The SOURCES of the selected category are a second, independent list.
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
 		{
 			m_bCatVisible[i] = false;
+			m_pTabButtons[i] = NULL;
+			m_szSelSource[i][0] = 0;
 
 			char szName[32];
 			Q_snprintf( szName, sizeof( szName ), "Page%d", i );
@@ -1447,7 +2177,7 @@ public:
 		// vgui treats the popup as the key focus and swallows WASD before the
 		// engine can fire +forward/+back/+moveleft/+moveright, so the player
 		// cannot walk while the menu is open.  Mouse input stays enabled so the
-		// tree and the icons still respond to clicks.
+		// tabs, the source list and the icons still respond to clicks.
 		SetKeyBoardInputEnabled( false );
 		SetMouseInputEnabled( true );
 	}
@@ -1466,14 +2196,23 @@ public:
 		if ( w <= 0 || h <= 0 )
 			return;
 
-		int nTreeW = w / 5;
-		if ( nTreeW < 150 )
-			nTreeW = 150;
-		if ( nTreeW > 260 )
-			nTreeW = 260;
+		// The top strip takes what its buttons need (one row unless the frame is
+		// dragged narrow); the sidebar keeps the width it always had.
+		const int nTabH = m_pTabs->GetPreferredHeight( w - 8 ) + 4;
 
-		m_pTree->SetBounds( x + 4, y + 4, nTreeW, h - 8 );
-		m_pGridHost->SetBounds( x + nTreeW + 10, y + 4, w - nTreeW - 14, h - 8 );
+		int nSideW = w / 4;
+		if ( nSideW < 170 )
+			nSideW = 170;
+		if ( nSideW > 260 )
+			nSideW = 260;
+
+		int nBodyH = h - nTabH - 12;
+		if ( nBodyH < 10 )
+			nBodyH = 10;
+
+		m_pTabs->SetBounds( x + 4, y + 4, w - 8, nTabH );
+		m_pSourceList->SetBounds( x + 4, y + 4 + nTabH + 4, nSideW, nBodyH );
+		m_pGridHost->SetBounds( x + nSideW + 10, y + 4 + nTabH + 4, w - nSideW - 14, nBodyH );
 
 		// The visible page fills the host; the others keep their stale bounds
 		// and are simply not drawn.
@@ -1491,13 +2230,27 @@ public:
 			return;
 		}
 
-		int nCat = -1;
+		// Top tab: pick the category (and with it, the source list to show).
 		if ( !Q_strnicmp( command, "smcat ", 6 ) )
-			nCat = atoi( command + 6 );
-
-		if ( nCat >= 0 && nCat < (int)SMENU_CAT_COUNT )
 		{
-			ShowCategory( nCat );
+			const int nCat = atoi( command + 6 );
+
+			if ( nCat >= 0 && nCat < (int)SMENU_CAT_COUNT )
+				ShowCategory( nCat );
+
+			return;
+		}
+
+		// Left sidebar: pick the source inside the current category.
+		if ( !Q_strnicmp( command, "smsrc ", 6 ) )
+		{
+			const int nSrc = atoi( command + 6 );
+
+			if ( m_nCurrentCat >= 0 && m_nCurrentCat < (int)SMENU_CAT_COUNT &&
+				 nSrc >= 0 && nSrc < g_SMenuCatSources[m_nCurrentCat].Count() )
+			{
+				ShowSource( m_nCurrentCat, nSrc );
+			}
 		}
 	}
 
@@ -1593,30 +2346,60 @@ private:
 
 		const double flCounted = SMenu_Now();
 
+		// HL2SB: the source lists of every category.  This is not panel work -
+		// it is a pass over g_SMenuEntries - and it must happen AFTER the models
+		// probe above, because that probe decides whether the models page has its
+		// single "Half-Life 2" source at all.
+		SMenu_BuildSources( m_bModelPagePossible );
+
+		const double flSourced = SMenu_Now();
+
+		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
+		{
+			for ( int j = 0; j < g_SMenuCatSources[i].Count(); ++j )
+				SMenu_Debug( "source: %-14s / %-14s -> %d entries, icon \"%s\"",
+							 s_SMenuCats[i].pszTitle, g_SMenuCatSources[i][j].szId,
+							 g_SMenuCatSources[i][j].nCount, g_SMenuCatSources[i][j].szMaterial );
+		}
+
 		m_bBuiltOnce = true;
 
-		RebuildTree();
+		// The sidebar belongs to the selected category and its content just
+		// changed, so it is rebuilt on the next ShowCategory - not here.
+		m_bSidebarDirty = true;
+		m_nSidebarCat = -1;
+
+		RebuildTabs();
 
 		const double flEnd = SMenu_Now();
 
-		SMenu_Debug( "open: %d entries - read %.2f ms, count %.2f ms, tabs %.2f ms, TOTAL %.2f ms (pages are lazy)",
-					 g_SMenuEntries.Count(), flBuilt - flStart, flCounted - flBuilt, flEnd - flCounted, flEnd - flStart );
+		SMenu_Debug( "open: %d entries - read %.2f ms, count %.2f ms, sources %.2f ms, tabs %.2f ms, TOTAL %.2f ms (pages are lazy)",
+					 g_SMenuEntries.Count(), flBuilt - flStart, flCounted - flBuilt, flSourced - flCounted,
+					 flEnd - flSourced, flEnd - flStart );
 
 		return true;
 	}
 
 	//-----------------------------------------------------------------------------
-	// HL2SB: one button per non-empty category.  A category with nothing in it
+	// HL2SB: one TOP tab per non-empty category.  A category with nothing in it
 	// (Vehicles on a server that does not publish its entity list, for instance)
-	// is left out instead of showing a dead tab.  Built from the per-category
-	// COUNTS, so it does not need any page to exist yet.
+	// is left out instead of showing a dead tab - the same rule GMod applies to
+	// an empty spawnlist.  Built from the per-category COUNTS, so it needs no
+	// page to exist yet.
 	//-----------------------------------------------------------------------------
-	void RebuildTree( void )
+	void RebuildTabs( void )
 	{
-		m_pTree->DeleteAllItems();
-
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
+		{
 			m_bCatVisible[i] = false;
+
+			if ( m_pTabButtons[i] )
+			{
+				m_pTabButtons[i]->SetParent( (vgui::Panel *)NULL );
+				delete m_pTabButtons[i];
+				m_pTabButtons[i] = NULL;
+			}
+		}
 
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
 		{
@@ -1638,11 +2421,13 @@ private:
 			char szCmd[32];
 			Q_snprintf( szCmd, sizeof( szCmd ), "smcat %d", i );
 
-			vgui::Button *pButton = new vgui::Button( m_pTree, szName, s_SMenuCats[i].pszTitle, m_pTree, szCmd );
-			pButton->SetContentAlignment( vgui::Label::a_west );
-			pButton->SetSize( 180, 22 );
-			m_pTree->AddItem( NULL, pButton );
+			CSMTabButton *pButton = new CSMTabButton( m_pTabs, szName, s_SMenuCats[i].pszTitle, szCmd );
+			pButton->SetContentAlignment( vgui::Label::a_center );
+			pButton->SetSize( CSMTabBar::TabWidth( s_SMenuCats[i].pszTitle ), 22 );
+			m_pTabButtons[i] = pButton;
 		}
+
+		m_pTabs->InvalidateLayout( true );
 	}
 
 	//-----------------------------------------------------------------------------
@@ -1695,6 +2480,7 @@ private:
 				SMenuEntry_t entry;
 				Q_memset( &entry, 0, sizeof( entry ) );
 				entry.uFlags = SMCAT_PROP;
+				SMenu_CopyString( entry.szSource, SMENU_SRC_HL2, sizeof( entry.szSource ) );
 				Q_strncpy( entry.szClass, szModel, sizeof( entry.szClass ) );
 				Q_snprintf( entry.szFixedCmd, sizeof( entry.szFixedCmd ), "prop_physics_create %s", szModel );
 				Q_snprintf( entry.szMaterial, sizeof( entry.szMaterial ), "vgui/smenu/models/%s", szModel );
@@ -1745,12 +2531,50 @@ private:
 		pPage->BuildSomeCells( SMENU_BUILD_BUDGET_MS, m_nCurrentCat );
 	}
 
+	//-----------------------------------------------------------------------------
+	// HL2SB: show the source list of category nCat - one row per source that
+	// actually HAS entries in it (SMenu_BuildSources built that list; the icons
+	// were resolved there).  The list is only rebuilt when the category changed
+	// or the entry set was rebuilt, so clicking around does not churn panels.
+	//-----------------------------------------------------------------------------
+	void RebuildSidebarIfNeeded( int nCat )
+	{
+		if ( !m_bSidebarDirty && m_nSidebarCat == nCat )
+			return;
+
+		m_pSourceList->ClearRows();
+
+		for ( int i = 0; i < g_SMenuCatSources[nCat].Count(); ++i )
+		{
+			CSMSourceButton *pRow = new CSMSourceButton( this, m_pSourceList, g_SMenuCatSources[nCat][i], i, false );
+			m_pSourceList->AddSourceRow( pRow );
+		}
+
+		m_nSidebarCat = nCat;
+		m_bSidebarDirty = false;
+	}
+
+	// The index of a remembered source id inside a category's list, or -1.
+	int FindSourceIndex( int nCat, const char *pszSourceId )
+	{
+		if ( !pszSourceId || !pszSourceId[0] )
+			return -1;
+
+		for ( int i = 0; i < g_SMenuCatSources[nCat].Count(); ++i )
+		{
+			if ( !Q_stricmp( g_SMenuCatSources[nCat][i].szId, pszSourceId ) )
+				return i;
+		}
+
+		return -1;
+	}
+
 	void ShowCategory( int nCat )
 	{
 		if ( nCat < 0 || nCat >= (int)SMENU_CAT_COUNT || !m_bCatVisible[nCat] )
 		{
-			// The requested page is empty or gone (the tree hides those), so
-			// land on the first page that does have entries.
+			// The requested page is empty or gone (the tab strip hides those),
+			// so land on the first category that does have entries.
 			nCat = -1;
 			for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
 			{
@@ -1768,6 +2592,12 @@ private:
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
 			m_pPages[i]->SetVisible( i == nCat );
 
+		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
+		{
+			if ( m_pTabButtons[i] )
+				m_pTabButtons[i]->SetActiveTab( i == nCat );
+		}
+
 		m_nCurrentCat = nCat;
 
 		if ( m_pPages[nCat] )
@@ -1776,27 +2606,83 @@ private:
 			m_pPages[nCat]->InvalidateLayout( true );
 		}
 
+		RebuildSidebarIfNeeded( nCat );
+
+		// Remember the source per category (GMod's sidebar keeps the selected
+		// node for the tab you are on), falling back to the first one.  The
+		// remembered id, not the index: a rebuild can reorder the list.
+		int nSrc = FindSourceIndex( nCat, m_szSelSource[nCat] );
+		if ( nSrc < 0 )
+			nSrc = 0;
+
+		ShowSource( nCat, nSrc );
+	}
+
+	// Select one source inside one category: highlight the row, point the page's
+	// source filter at it and build its first slice right away.
+	void ShowSource( int nCat, int nSrc )
+	{
+		if ( nCat < 0 || nCat >= (int)SMENU_CAT_COUNT )
+			return;
+
+		if ( nSrc < 0 || nSrc >= g_SMenuCatSources[nCat].Count() )
+			return;
+
+		SMenu_CopyString( m_szSelSource[nCat], g_SMenuCatSources[nCat][nSrc].szId, sizeof( m_szSelSource[nCat] ) );
+
+		if ( m_nSidebarCat == nCat )
+			m_pSourceList->SetSelection( nSrc );
+
+		if ( CSMList *pPage = m_pPages[nCat] )
+		{
+			pPage->SetSourceFilter( g_SMenuCatSources[nCat][nSrc].szId );
+			pPage->SetBounds( 0, 0, m_pGridHost->GetWide(), m_pGridHost->GetTall() );
+			pPage->InvalidateLayout( true );
+		}
+
 		// HL2SB: build the first slice right now, so the click shows content
 		// immediately; OnTick() finishes the page over the next frames.
 		StepCurrentPage();
 	}
 
-	CSMCatList	*m_pTree;
-	vgui::Panel	*m_pGridHost;
-	CSMList		*m_pPages[SMENU_CAT_COUNT];
-	bool		m_bCatVisible[SMENU_CAT_COUNT];
-	int			m_nCurrentCat;
-	char		m_szBuiltLevel[256];
-	unsigned int m_uBuiltHash;
-	bool		m_bBuiltOnce;
-	bool		m_bModelPagePossible;	// materials/vgui/smenu/models/ exists
-	bool		m_bModelPageBuilt;
+	CSMTabBar			*m_pTabs;
+	CSMSourceList		*m_pSourceList;
+	vgui::Panel			*m_pGridHost;
+	CSMTabButton		*m_pTabButtons[SMENU_CAT_COUNT];	// NULL = category hidden
+	CSMList				*m_pPages[SMENU_CAT_COUNT];
+	bool				m_bCatVisible[SMENU_CAT_COUNT];
+	int					m_nCurrentCat;
+	int					m_nSidebarCat;			// which category the sidebar lists (-1 = none)
+	bool				m_bSidebarDirty;
+	char				m_szSelSource[SMENU_CAT_COUNT][128];
+	char				m_szBuiltLevel[256];
+	unsigned int		m_uBuiltHash;
+	bool				m_bBuiltOnce;
+	bool				m_bModelPagePossible;	// materials/vgui/smenu/models/ exists
+	bool				m_bModelPageBuilt;
 };
 
-void CSMCatList::OnCommand( const char *command )
+void CSMTabBar::OnCommand( const char *command )
 {
 	if ( m_pOwner )
 		m_pOwner->OnCommand( command );
+}
+
+void CSMSourceList::OnCommand( const char *command )
+{
+	if ( m_pOwner )
+		m_pOwner->OnCommand( command );
+}
+
+void CSMSourceButton::OnMouseReleased( vgui::MouseCode code )
+{
+	if ( code != MOUSE_LEFT || !m_pOwner )
+		return;
+
+	char szCmd[32];
+	Q_snprintf( szCmd, sizeof( szCmd ), "smsrc %d", m_nIndex );
+
+	m_pOwner->OnCommand( szCmd );
 }
 
 class CSMPanelInterface : public SMPanel
