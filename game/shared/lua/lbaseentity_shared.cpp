@@ -757,6 +757,10 @@ static int CBaseEntity_Health (lua_State *L) {
 // field the Lua side cannot represent (array, embedded class, function pointer)
 // yields nil rather than a wrong number.
 //-----------------------------------------------------------------------------
+#if defined( CLIENT_DLL )
+static bool HL2SB_PushClientFieldFallback (lua_State *L, CBaseEntity *pEntity, const char *pszName);
+#endif
+
 static int CBaseEntity_GetInternalVariable (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity(L, 1);
   const char *pszName = luaL_checkstring(L, 2);
@@ -839,6 +843,13 @@ static int CBaseEntity_GetInternalVariable (lua_State *L) {
       return 1;
     }
   }
+
+#if defined( CLIENT_DLL )
+  // No data description had it: the client may still answer it from its own
+  // accessors (defined further down, next to GetSaveTable).
+  if ( HL2SB_PushClientFieldFallback( L, pEntity, pszName ) )
+    return 1;
+#endif
 
   lua_pushnil(L);
   return 1;
@@ -2649,6 +2660,55 @@ static bool HL2SB_ValueToSaveString (lua_State *L, int nArg, char *pOut, int nOu
   }
 }
 
+#if defined( CLIENT_DLL )
+//-----------------------------------------------------------------------------
+// HL2SB: the client half of the save-table trio.
+//
+// The client's classes declare almost no data descriptions (a player came back
+// with THREE keys), so GetSaveTable / GetInternalVariable would answer nil for
+// exactly the fields addons read on the client - health, origin, angles, flags -
+// even though GMod hands those back on both realms.  Answer them from the
+// client-side accessors that already carry the networked value, and only when
+// the datamap has no such field: a real declared field (m_fFlags is one) and the
+// whole server path keep priority untouched.
+//-----------------------------------------------------------------------------
+static const char *const s_pHL2SB_ClientFields[] = {
+  "m_iHealth", "m_iMaxHealth", "m_vecOrigin", "m_angRotation", "m_vecVelocity", "m_fFlags",
+};
+
+static bool HL2SB_PushClientFieldFallback (lua_State *L, CBaseEntity *pEntity, const char *pszName) {
+  if ( pEntity == NULL || pszName == NULL )
+    return false;
+
+  if ( !Q_strcmp( pszName, "m_iHealth" ) ) {
+    lua_pushinteger( L, pEntity->GetHealth() );
+    return true;
+  }
+  if ( !Q_strcmp( pszName, "m_iMaxHealth" ) ) {
+    lua_pushinteger( L, pEntity->GetMaxHealth() );
+    return true;
+  }
+  if ( !Q_strcmp( pszName, "m_vecOrigin" ) ) {
+    lua_pushvector( L, pEntity->GetAbsOrigin() );
+    return true;
+  }
+  if ( !Q_strcmp( pszName, "m_angRotation" ) ) {
+    lua_pushangle( L, pEntity->GetAbsAngles() );
+    return true;
+  }
+  if ( !Q_strcmp( pszName, "m_vecVelocity" ) ) {
+    lua_pushvector( L, pEntity->GetAbsVelocity() );
+    return true;
+  }
+  if ( !Q_strcmp( pszName, "m_fFlags" ) ) {
+    lua_pushinteger( L, pEntity->GetFlags() );
+    return true;
+  }
+
+  return false;
+}
+#endif // CLIENT_DLL
+
 static int CBaseEntity_GetSaveTable (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity( L, 1 );
 
@@ -2688,6 +2748,28 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
       lua_rawset( L, -3 );										// [ t ]
     }
   }
+
+#if defined( CLIENT_DLL )
+  // Then the client-only stand-ins, for names the datamap did not declare.
+  // Stack notes: after lua_rawget the key has been REPLACED by what it read, so
+  // the stack is [t, val] and only one item may be popped; the fallback pushes
+  // its value straight on top of the key we re-push, giving [t, key, val].
+  for ( int i = 0; i < ARRAYSIZE( s_pHL2SB_ClientFields ); ++i ) {
+    lua_pushstring( L, s_pHL2SB_ClientFields[ i ] );				// [ t, key ]
+    bool bPresent = ( lua_rawget( L, -2 ) != LUA_TNIL );			// [ t, val ]
+    lua_pop( L, 1 );												// [ t ]
+
+    if ( bPresent )
+      continue;
+
+    if ( !HL2SB_PushClientFieldFallback( L, pEntity, s_pHL2SB_ClientFields[ i ] ) )
+      continue;													// nothing to answer: leave the key out
+
+    lua_pushstring( L, s_pHL2SB_ClientFields[ i ] );				// [ t, val, key ]
+    lua_insert( L, -2 );											// [ t, key, val ]
+    lua_rawset( L, -3 );											// [ t ]
+  }
+#endif
 
   return 1;
 }
