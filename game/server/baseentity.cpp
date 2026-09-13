@@ -7482,25 +7482,41 @@ void CC_Ent_Create( const CCommand& args )
 
 		DispatchSpawn(entity);
 
-		// Now attempt to drop into the world
-		trace_t tr;
-		Vector forward;
-		pPlayer->EyeVectors( &forward );
-		UTIL_TraceLine(pPlayer->EyePosition(),
-			pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH,MASK_SOLID, 
-			pPlayer, COLLISION_GROUP_NONE, &tr );
-		if ( tr.fraction != 1.0 )
+		// HL2SB: DispatchSpawn() may decide the entity is not viable and queue it
+		// for removal.  A vehicle whose `vehiclescript` does not parse does
+		// exactly that (CFourWheelVehiclePhysics::Initialize ->
+		// UTIL_Remove, fourwheelvehiclephysics.cpp:387-391), and
+		// CPropVehicle::Spawn() now disarms it as well.
+		//
+		// Everything below this point would then run against an entity that is
+		// already dead: Teleport() (which drives CFourWheelVehiclePhysics::
+		// Teleport over the wheel array), UTIL_DropToFloor() and Activate(), and
+		// worst of all HL2SB_UndoRecord(), which would push the corpse into the
+		// player's undo stack so that a later `undo` operates on freed memory.
+		// A vehicle that failed to initialise is not something the player can use
+		// anyway, so stop here.
+		if ( !entity->IsMarkedForDeletion() )
 		{
-			// Raise the end position a little up off the floor, place the npc and drop him down
-			tr.endpos.z += 12;
-			entity->Teleport( &tr.endpos, NULL, NULL );
-			UTIL_DropToFloor( entity, MASK_SOLID );
+			// Now attempt to drop into the world
+			trace_t tr;
+			Vector forward;
+			pPlayer->EyeVectors( &forward );
+			UTIL_TraceLine(pPlayer->EyePosition(),
+				pPlayer->EyePosition() + forward * MAX_TRACE_LENGTH,MASK_SOLID, 
+				pPlayer, COLLISION_GROUP_NONE, &tr );
+			if ( tr.fraction != 1.0 )
+			{
+				// Raise the end position a little up off the floor, place the npc and drop him down
+				tr.endpos.z += 12;
+				entity->Teleport( &tr.endpos, NULL, NULL );
+				UTIL_DropToFloor( entity, MASK_SOLID );
+			}
+
+			entity->Activate();
+
+			// HL2SB: record this spawn in the player's undo stack (spawnmenu undo).
+			HL2SB_UndoRecord( pPlayer, entity );
 		}
-
-		entity->Activate();
-
-		// HL2SB: record this spawn in the player's undo stack (spawnmenu undo).
-		HL2SB_UndoRecord( pPlayer, entity );
 	}
 	CBaseEntity::SetAllowPrecache( allowPrecache );
 }
