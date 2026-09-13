@@ -2476,6 +2476,245 @@ static int CBaseEntity_SendLua (lua_State *L) {
   return 0;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB GMod compat: Entity:GetSaveTable(), Entity:GetInternalVariable( name )
+// and Entity:SetSaveValue( name, value ).
+//
+// All three read the entity's own data descriptions: CBaseEntity::GetDataDescMap()
+// plus its ->baseMap chain.  That chain starts at the MOST DERIVED class, so the
+// first match is the one the engine itself would use - and it is also why the save
+// table contains inherited fields like m_iHealth / m_vecOrigin, exactly like GMod's.
+//
+// Reading uses the field's declared type and offset (the same pair the engine's own
+// Save/Restore path uses) and only the types we can name; writing goes through
+// ParseKeyvalue(), i.e. the field's own parse hook, so no offset is ever computed
+// by hand here.  Anything we cannot type-check is left out rather than guessed at:
+// a plugin gets a missing key, never a wrong value or a bad write.
+//
+// Deliberate, reported limits (see AGENTS.md section 15):
+//   * ParseKeyvalue is defined in game/server/saverestore_gamedll.cpp, so on the
+//     client SetSaveValue returns false instead of writing what it cannot validate.
+//   * FIELD_CUSTOM (pSaveRestoreOps), FIELD_COLOR32 and arrays (fieldSize > 1) are
+//     not pushed, and neither is anything reached through a pointer field
+//     (FTYPEDESC_PTR).  Everything scalar, Vector, engine-string and EHANDLE is -
+//     with the SAME type list as CBaseEntity_GetInternalVariable above, so the two
+//     can never disagree about what a field means.
+//   * A realm only sees the data descriptions its own classes declare, so an entity
+//     without one yields an empty table / nil - same answer as "no such field".
+//-----------------------------------------------------------------------------
+
+#include "datamap.h"			// datamap_t / typedescription_t / FIELD_* / TD_OFFSET_NORMAL
+#include "mathlib/lvector.h"	// lua_pushvector / luaL_checkvector / luaL_checkangle
+
+// Push one data-description field as its Lua value.  Returns false for the field
+// kinds we do not expose (embedded classes, function pointers, arrays), so every
+// caller skips them in one place and never guesses a layout.
+//
+// The type list mirrors CBaseEntity_GetInternalVariable above on purpose - same
+// engine, same answer for the same field.
+static bool HL2SB_PushDataDescField (lua_State *L, CBaseEntity *pEntity, const typedescription_t *pField) {
+  if ( pField->fieldName == NULL || pField->fieldSize != 1 )
+    return false;
+
+  if ( pField->flags & FTYPEDESC_PTR )
+    return false;
+
+  const char *pMember = (const char *)pEntity + pField->fieldOffset[ TD_OFFSET_NORMAL ];
+
+  switch ( pField->fieldType ) {
+  case FIELD_BOOLEAN:
+    lua_pushboolean( L, *reinterpret_cast< const bool * >( pMember ) != 0 );
+    break;
+  case FIELD_CHARACTER:
+    lua_pushinteger( L, *reinterpret_cast< const char * >( pMember ) );
+    break;
+  case FIELD_SHORT:
+    lua_pushinteger( L, *reinterpret_cast< const short * >( pMember ) );
+    break;
+  case FIELD_INTEGER:
+  case FIELD_TICK:
+  case FIELD_MODELINDEX:
+  case FIELD_MATERIALINDEX:
+    lua_pushinteger( L, *reinterpret_cast< const int * >( pMember ) );
+    break;
+  case FIELD_INTEGER64:
+    lua_pushinteger( L, (lua_Integer)*reinterpret_cast< const int64 * >( pMember ) );
+    break;
+  case FIELD_FLOAT:
+  case FIELD_TIME:
+    lua_pushnumber( L, *reinterpret_cast< const float * >( pMember ) );
+    break;
+  case FIELD_VECTOR:
+  case FIELD_POSITION_VECTOR:
+    lua_pushvector( L, *reinterpret_cast< const Vector * >( pMember ) );
+    break;
+  case FIELD_STRING:
+  case FIELD_MODELNAME:
+  case FIELD_SOUNDNAME:
+    lua_pushstring( L, STRING( *reinterpret_cast< const string_t * >( pMember ) ) );
+    break;
+  case FIELD_EHANDLE:
+    CBaseEntity::PushLuaInstanceSafe( L, reinterpret_cast< const CHandle< CBaseEntity > * >( pMember )->Get() );
+    break;
+  default:
+    return false;
+  }
+
+  return true;
+}
+
+// The first (most derived) data description that declares pszName, or NULL.
+// Used by GetSaveTable's dedup check indirectly (it walks the same chain); kept
+// because SetSaveValue validates a name before it lets ParseKeyvalue near it.
+static const typedescription_t *HL2SB_FindDataDescField (CBaseEntity *pEntity, const char *pszName) {
+  if ( pEntity == NULL || pszName == NULL )
+    return NULL;
+
+  for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL; pMap = pMap->baseMap ) {
+    for ( int i = 0; i < pMap->dataNumFields; ++i ) {
+      const typedescription_t *pField = &pMap->dataDesc[ i ];
+      if ( pField->fieldName != NULL && !Q_strcmp( pField->fieldName, pszName ) )
+        return pField;
+    }
+  }
+
+  return NULL;
+}
+
+// Render a Lua value the way the engine's keyvalue parser wants to read it.
+// Returns false for anything we refuse to coerce (nil, entities, functions...).
+static bool HL2SB_ValueToSaveString (lua_State *L, int nArg, char *pOut, int nOut) {
+  switch ( lua_type( L, nArg ) ) {
+  case LUA_TSTRING:
+    Q_strncpy( pOut, lua_tostring( L, nArg ), nOut );
+    return true;
+
+  case LUA_TBOOLEAN:
+    Q_strncpy( pOut, lua_toboolean( L, nArg ) ? "1" : "0", nOut );
+    return true;
+
+  case LUA_TNUMBER: {
+    const lua_Number v = lua_tonumber( L, nArg );
+    if ( v == (lua_Number)(int)v )
+      Q_snprintf( pOut, nOut, "%d", (int)v );
+    else
+      Q_snprintf( pOut, nOut, "%.6f", v );
+    return true;
+  }
+
+  case LUA_TUSERDATA: {
+    // GMod accepts a real Vector/Angle object here.
+    if ( luaL_testudata( L, nArg, "Vector" ) != NULL ) {
+      const Vector &v = luaL_checkvector( L, nArg );
+      Q_snprintf( pOut, nOut, "%.6f %.6f %.6f", v.x, v.y, v.z );
+      return true;
+    }
+    if ( luaL_testudata( L, nArg, "QAngle" ) != NULL ) {
+      const QAngle &a = luaL_checkangle( L, nArg );
+      Q_snprintf( pOut, nOut, "%.6f %.6f %.6f", a.x, a.y, a.z );
+      return true;
+    }
+    return false;
+  }
+
+  case LUA_TTABLE: {
+    // { x=, y=, z= } or { [1], [2], [3] }, which is how GMod's vectors look.
+    float vOut[ 3 ] = { 0.0f, 0.0f, 0.0f };
+
+    for ( int i = 0; i < 3; ++i ) {
+      lua_rawgeti( L, nArg, i + 1 );
+      if ( lua_isnumber( L, -1 ) ) {
+        vOut[ i ] = (float)lua_tonumber( L, -1 );
+        lua_pop( L, 1 );
+        continue;
+      }
+      lua_pop( L, 1 );
+
+      lua_getfield( L, nArg, (i == 0) ? "x" : (i == 1) ? "y" : "z" );
+      if ( lua_isnumber( L, -1 ) ) {
+        vOut[ i ] = (float)lua_tonumber( L, -1 );
+        lua_pop( L, 1 );
+        continue;
+      }
+      lua_pop( L, 1 );
+      return false;
+    }
+
+    Q_snprintf( pOut, nOut, "%.6f %.6f %.6f", vOut[ 0 ], vOut[ 1 ], vOut[ 2 ] );
+    return true;
+  }
+
+  default:
+    return false;
+  }
+}
+
+static int CBaseEntity_GetSaveTable (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+
+  lua_newtable( L );
+
+  if ( pEntity == NULL )
+    return 1;
+
+  for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL; pMap = pMap->baseMap ) {
+    for ( int i = 0; i < pMap->dataNumFields; ++i ) {
+      const typedescription_t *pField = &pMap->dataDesc[ i ];
+
+      if ( pField->fieldName == NULL )
+        continue;
+
+      // Most derived wins: only fill a key nothing closer already set.
+      lua_pushstring( L, pField->fieldName );
+      if ( lua_rawget( L, -2 ) != LUA_TNIL ) {
+        lua_pop( L, 2 );			// the key and its value; the table stays
+        continue;
+      }
+      lua_pop( L, 1 );				// the nil we just read; the key stays
+
+      if ( !HL2SB_PushDataDescField( L, pEntity, pField ) ) {
+        lua_pop( L, 1 );			// drop the key we are not filling
+        continue;
+      }
+
+      lua_rawset( L, -3 );
+    }
+  }
+
+  return 1;
+}
+
+static int CBaseEntity_SetSaveValue (lua_State *L) {
+  CBaseEntity *pEntity = luaL_checkentity( L, 1 );
+  const char *pszName = luaL_checkstring( L, 2 );
+
+  bool bDone = false;
+
+#if defined( GAME_DLL )
+  extern bool ParseKeyvalue( void *pObject, typedescription_t *pFields, int iNumFields, const char *szKeyName, const char *szValue );
+
+  if ( pEntity != NULL ) {
+    char szValue[ 512 ];
+
+    // Validate the name against the entity's own data descriptions first, so a
+    // typo can never be answered by some unrelated field whose external name
+    // happens to parse.
+    if ( HL2SB_FindDataDescField( pEntity, pszName ) != NULL &&
+         HL2SB_ValueToSaveString( L, 3, szValue, sizeof( szValue ) ) ) {
+      for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL && !bDone; pMap = pMap->baseMap )
+        bDone = ParseKeyvalue( pEntity, pMap->dataDesc, pMap->dataNumFields, pszName, szValue ) ? true : false;
+    }
+  }
+#else
+  ( void )pszName;
+  HL2SB_WarnOnce( "entity-setsavevalue-client",
+    "Entity:SetSaveValue is server-only in this engine (ParseKeyvalue lives in game/server), returning false\n" );
+#endif
+
+  lua_pushboolean( L, bDone ? 1 : 0 );
+  return 1;
+}
+
 static const luaL_Reg CBaseEntitymeta[] = {
   {"GetForward", CBaseEntity_GetForward},
   {"GetRight", CBaseEntity_GetRight},
@@ -2483,6 +2722,8 @@ static const luaL_Reg CBaseEntitymeta[] = {
   {"GetUp", CBaseEntity_GetUp},
   {"IsConstraint", CBaseEntity_IsConstraint},
   {"SendLua", CBaseEntity_SendLua},
+  {"GetSaveTable", CBaseEntity_GetSaveTable},
+  {"SetSaveValue", CBaseEntity_SetSaveValue},
   {"TakeDamageInfo", CBaseEntity_TakeDamageInfo},
   {"SetAngles", CBaseEntity_SetAngles},
   {"GetAngles", CBaseEntity_GetAngles},
