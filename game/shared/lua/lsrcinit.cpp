@@ -619,6 +619,26 @@ static void luasrc_install_lib_aliases (lua_State *L) {
   }
 }
 
+/*
+** HL2SB: the same alias table, for a state that did not go through
+** luasrc_openlibs().
+**
+** The main menu state (luasrc_init_gameui, game/shared/lua/luamanager.cpp)
+** opens a hand-picked library list instead of calling luasrc_openlibs, so it
+** never reached the loop above and had no GMod spellings at all: no `file`, no
+** `system`, no `render`, no `util`.  That is not cosmetic -- every GMod script
+** written against those names, and our own lua/gameui/*.lua, fail on them:
+** contentsubgames.lua guarded itself with `if ( not file ) then return end` and
+** went quiet, which is why the Content dialog listed nothing.
+**
+** Exposed rather than re-listed there on purpose: s_pGModLibAliases has to stay
+** the single place to audit, because several of these libraries are realm-gated
+** and the merge rule above (never clobber an existing table) matters for each.
+*/
+void luasrc_install_gmod_lib_aliases (lua_State *L) {
+  luasrc_install_lib_aliases(L);
+}
+
 //-----------------------------------------------------------------------------
 // HL2SB: the engine half of GMod's `game` library.
 //

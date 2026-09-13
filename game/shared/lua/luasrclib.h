@@ -336,6 +336,11 @@ LUALIB_API int (luaopen_VMatrix) (lua_State *L);
 /* open all Source Engine libraries */
 LUALIB_API void (luasrc_openlibs) (lua_State *L); 
 
+/* HL2SB: install GMod's lowercase library spellings (file, system, render, ...)
+** into a state that was opened library-by-library instead of via
+** luasrc_openlibs -- the main menu state (luasrc_init_gameui) is the one. */
+LUALIB_API void (luasrc_install_gmod_lib_aliases) (lua_State *L);
+
 
 
 // HL2SB: Experiment: Source declares its binding macros in this header; they live in
