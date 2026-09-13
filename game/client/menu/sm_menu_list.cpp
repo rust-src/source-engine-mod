@@ -1599,7 +1599,9 @@ static const char *SMenu_ProbeClassScript( const char *pszClass )
 				char szBase[MAX_PATH];
 
 				if ( bAddon )
-					Q_snprintf( szBase, sizeof( szBase ), "addons/%s/lua/%s/%s", g_SMenuAddonDirs[nRoot], s_pKinds[nKind], pszClass );
+					// CUtlString is a class: clang refuses to pass it through a
+					// variadic call ([-Wnon-pod-varargs]); hand over the char*.
+					Q_snprintf( szBase, sizeof( szBase ), "addons/%s/lua/%s/%s", g_SMenuAddonDirs[nRoot].Get(), s_pKinds[nKind], pszClass );
 				else
 					Q_snprintf( szBase, sizeof( szBase ), "lua/%s/%s", s_pKinds[nKind], pszClass );
 
