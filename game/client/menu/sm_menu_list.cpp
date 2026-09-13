@@ -42,9 +42,9 @@
 // HL2SB layout (GMod's spawnmenu structure - see SMenu_TODO.md item 7):
 //
 //   +-----------------------------------------------------------------+
-//   | [Weapons][Entities][NPCs][Props][Vehicles][Props (models)]      | top tabs
+//   | [Weapons][Entities][NPCs][Props][Vehicles][Models]              | top tabs
 //   +----------------+------------------------------------------------+
-//   | addons/nyangun |                                                |
+//   | nyangun        |                                                |
 //   | HL2SB Lua      |   icon grid of the selected source             |
 //   | Engine         |                                                |
 //   +----------------+------------------------------------------------+
@@ -75,6 +75,7 @@
 #include <vgui_controls/Controls.h>
 #include <vgui_controls/PanelListPanel.h>
 #include <vgui_controls/Frame.h>
+#include "vgui/ILocalize.h"
 #include "filesystem.h"
 #include "iclassmap.h"
 #include "networkstringtable_clientdll.h"
@@ -114,6 +115,7 @@ enum
 struct SMenuEntry_t
 {
 	char			szClass[64];	// class name, or "props_x/model" for model entries
+	char			szName[128];	// HL2SB: display name - never empty, see SMenu_ResolveDisplayName
 	char			szFixedCmd[SMENU_FIXEDCMD_LEN];	// non-empty: run verbatim
 	char			szMaterial[128];// material to draw ("" = no icon, name only)
 	char			szSource[128];	// which source it came from - see SMenu_AssignSource
@@ -144,7 +146,14 @@ static const SMenuCatDef_t s_SMenuCats[] =
 	{ "NPCs",					SMCAT_NPC,								0,				false },
 	{ "Props",					SMCAT_PROP,								0,				false },
 	{ "Vehicles",				SMCAT_VEHICLE,							0,				false },
-	{ "Props (models)",			0,										0,				true },
+	// HL2SB: "Models", not "Props (models)".  GMod's own tab for a list of
+	// spawnable models is `#spawnmenu.content_tab`, whose English text is
+	// "Spawnlists" (resource/localization/en/spawnmenu.properties:2), and which
+	// exists because GMod's model content is grouped into user-editable
+	// spawnlists.  This page is not that: it is a flat scan of models/props_*,
+	// so it gets the plain, readable name of what it actually lists.  The
+	// parenthetical was the one tab title a user cannot read at a glance.
+	{ "Models",					0,										0,				true },
 };
 
 #define SMENU_CAT_COUNT		ARRAYSIZE( s_SMenuCats )
@@ -353,20 +362,20 @@ static unsigned int SMenu_Classify( const char *pszClass, const char *pszCPP, bo
 
 //-----------------------------------------------------------------------------
 // HL2SB: pick the thumbnail for one entry.
-//   1. the fork's own icon set  - materials/vgui/smenu/<class>.vmt
+//   1. the fork's own icon set  - materials/vgui/smenu/<class>
 //   2. GMod's spawnmenu thumbs   - materials/entities/<class>.png
 //   3. one generic icon per category, and then - unconditionally, for every
 //      category - GMod's own guaranteed floor, icon16/plugin.png
 //
-// The two per-class tests are the only file system work here and they are
-// CACHED, because the list is refreshed on every open (an addon may register
-// content at any time) and re-probing ~700 class names would turn that into a
-// visible hitch.
+// The per-class probe is the only file system work here and it is CACHED,
+// because the list is refreshed on every open (an addon may register content at
+// any time) and re-probing ~700 class names would turn that into a visible
+// hitch.  What the cache stores is the RESOLVED, BINDABLE name - not a guess
+// that still has to be turned into one.
 //-----------------------------------------------------------------------------
 struct SMenuIconProbe_t
 {
-	unsigned char nSmenuIcon;	// materials/vgui/smenu/<class>.vmt + its texture
-	unsigned char nEntityThumb;	// materials/entities/<class>.png
+	char szSpecific[128];	// the resolved material for this class ("" = nothing on disk)
 };
 
 static CUtlDict< SMenuIconProbe_t, unsigned short > g_SMenuIconProbes;
@@ -376,47 +385,242 @@ static bool SMenu_FileExists( const char *pszFile )
 	return filesystem->FileExists( pszFile );
 }
 
+// Q_strncpy can leave the destination UNTERMINATED when the source is longer
+// than the buffer (V_strncpy copies exactly maxLen characters), so every
+// variable-length source string goes through this.
+static void SMenu_CopyString( char *pDest, const char *pSrc, int nDestLen )
+{
+	if ( !pDest || nDestLen <= 0 )
+		return;
+
+	Q_strncpy( pDest, pSrc ? pSrc : "", nDestLen );
+	pDest[nDestLen - 1] = 0;
+}
+
 //-----------------------------------------------------------------------------
-// HL2SB: can the engine really bind this material NAME?
+// HL2SB: THE MENU'S TEXT METRICS.
 //
-// "the .vmt exists" is NOT the same question, and that gap is what drew the
-// purple/black cells:
-//   * 73 of the 208 materials/vgui/smenu/*.vmt have no texture behind them.
-//     Every one of those .vmt files uses "$basetexture vgui/smenu/<own name>"
-//     (checked all 208, zero exceptions), so the texture a .vmt needs is always
-//     the file sitting next to it.  Binding one of the broken ones draws the
-//     ERROR material...
-//   * ...and it also SHADOWED the perfectly good GMod thumbnail in
-//     materials/entities/<class>.png, because the .vmt probe used to win
-//     outright.  That is why so many NPC cells were broken even though the very
-//     same class had a working thumbnail on disk.
+// Every label this menu draws is measured instead of guessed at, and every
+// label is shortened ONLY by an explicit "...", never by the panel rectangle
+// chopping a glyph in half (which is what the user saw).  The font is the one
+// font clientscheme.res is guaranteed to define - see AGENTS.md 5.1, where
+// GetFont("DefaultBold") returning INVALID_FONT is the recorded trap.
+//-----------------------------------------------------------------------------
+static HFont SMenu_LabelFont( vgui::Panel *pPanel = NULL )
+{
+	ISchemeManager *pSchemes = scheme();
+	if ( !pSchemes )
+		return INVALID_FONT;
+
+	// The panel's own scheme is the one its ApplySchemeSettings got, so it is
+	// asked first; the client's first loaded scheme is the fallback for the
+	// measurements that happen before a panel has been through its scheme.
+	if ( pPanel )
+	{
+		IScheme *pPanelScheme = pSchemes->GetIScheme( pPanel->GetScheme() );
+		if ( pPanelScheme )
+		{
+			HFont hPanelFont = pPanelScheme->GetFont( "DefaultVerySmall", true );
+			if ( hPanelFont != INVALID_FONT )
+				return hPanelFont;
+		}
+	}
+
+	IScheme *pScheme = pSchemes->GetIScheme( pSchemes->GetDefaultScheme() );
+	if ( !pScheme )
+		return INVALID_FONT;
+
+	return pScheme->GetFont( "DefaultVerySmall", true );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: THE MENU'S OWN LABEL FONTS.
 //
-// A name is bindable when a file with that name and an extension this build can
-// load is on disk: the .vtf a sibling .vmt references, or a raw image
-// (materialsystem/hl2sb_pngtexture.cpp:45-48 - .png/.jpg/.jpeg/.tga, which is
-// also the only reason weapon_fists.png / weapon_default.png resolve at all).
-// Verified against the complete icon set: this rule agrees exactly with
-// resolving each .vmt's $basetexture - 135 usable, 73 broken.
+// This menu is laid out in UNSCALED pixels (76x80 cells, 20 px sidebar rows,
+// an 820x620 frame), but a font that comes from resource/clientscheme.res is
+// NOT: the engine scales a scheme font by the screen height, and every scheme
+// font here declares "yres 480 599".  Measured in-game, `DefaultVerySmall`
+// (Verdana tall 12 as written) reports GetFontTall() == 32 - about 2.7x its
+// written size, i.e. the client was running a ~1280 px tall window.  A 32 px
+// label in a 20 px row cannot fit, which is precisely what the user saw and
+// reported twice: clipped cell names ("nron...") and a sidebar whose text was
+// "still too big".
+//
+// So the two label areas get their own fonts, built the way this fork's own Lua
+// UI fonts are built (lua/includes/modules/gmod_vgui.lua:362-363: an empty
+// CreateFont() handle filled in by SetFontGlyphSet with 0x010 =
+// FONTFLAG_ANTIALIAS), at sizes chosen for THIS layout's pixels:
+//
+//   * grid cells  - Verdana 13, in the 24 px band under the 56 px thumbnail
+//   * sidebar     - Verdana 11, in a 20 px row (one step smaller still, which is
+//                   what the user asked for on the sidebar specifically)
+//
+// The range arguments are deliberately left at their defaults (0, 0): per
+// AGENTS.md 5.4 the engine's amalgam logic then lets the foreign fallback font
+// cover 0x0100-0xFFFF, so a CJK addon title still draws.  Passing a full range
+// instead would claim the whole BMP and render CJK as boxes.
+//-----------------------------------------------------------------------------
+#define SMENU_CELL_FONT_TALL	13
+#define SMENU_SOURCE_FONT_TALL	11
+
+static HFont SMenu_MakeFont( const char *pszFace, int nTall )
+{
+	ISurface *pSurface = surface();
+	if ( !pSurface )
+		return INVALID_FONT;
+
+	const HFont hFont = pSurface->CreateFont();
+	if ( hFont == INVALID_FONT )
+		return INVALID_FONT;
+
+	if ( !pSurface->SetFontGlyphSet( hFont, pszFace, nTall, 0, 0, 0, ISurface::FONTFLAG_ANTIALIAS ) )
+		return INVALID_FONT;
+
+	return hFont;
+}
+
+static HFont SMenu_CellFont( void )
+{
+	static HFont s_hFont = INVALID_FONT;
+	static bool s_bTried = false;
+
+	if ( !s_bTried )
+	{
+		s_bTried = true;
+		s_hFont = SMenu_MakeFont( "Verdana", SMENU_CELL_FONT_TALL );
+	}
+
+	return s_hFont;
+}
+
+static HFont SMenu_SourceFont( void )
+{
+	static HFont s_hFont = INVALID_FONT;
+	static bool s_bTried = false;
+
+	if ( !s_bTried )
+	{
+		s_bTried = true;
+		s_hFont = SMenu_MakeFont( "Verdana", SMENU_SOURCE_FONT_TALL );
+	}
+
+	return s_hFont;
+}
+
+static int SMenu_TextWidth( HFont hFont, const char *pszText, int nMaxChars = -1 )
+{
+	if ( !pszText || !pszText[0] || hFont == INVALID_FONT || !g_pVGuiLocalize )
+		return 0;
+
+	wchar_t wszText[192];
+	g_pVGuiLocalize->ConvertANSIToUnicode( pszText, wszText, sizeof( wszText ) );
+
+	int nChars = ( nMaxChars >= 0 ) ? nMaxChars : V_wcslen( wszText );
+	if ( nChars > (int)ARRAYSIZE( wszText ) - 1 )
+		nChars = (int)ARRAYSIZE( wszText ) - 1;
+
+	if ( nChars <= 0 )
+		return 0;
+
+	wszText[nChars] = 0;
+
+	int nWide = 0, nTall = 0;
+	surface()->GetTextSize( hFont, wszText, nWide, nTall );
+
+	return nWide;
+}
+
+// Shorten a label to fit nMaxWidth.  Returns true when it had to.
+static bool SMenu_ShortenText( HFont hFont, const char *pszText, int nMaxWidth, char *pOut, int nOutLen )
+{
+	SMenu_CopyString( pOut, pszText, nOutLen );
+
+	if ( !pszText || !pszText[0] || nMaxWidth <= 0 )
+		return false;
+
+	if ( SMenu_TextWidth( hFont, pszText ) <= nMaxWidth )
+		return false;
+
+	const int nEllipsis = SMenu_TextWidth( hFont, "..." );
+	const int nLen = Q_strlen( pszText );
+
+	int nKeep = nLen;
+	while ( nKeep > 0 && SMenu_TextWidth( hFont, pszText, nKeep ) + nEllipsis > nMaxWidth )
+		--nKeep;
+
+	if ( nKeep <= 0 )
+	{
+		SMenu_CopyString( pOut, "...", nOutLen );
+		return true;
+	}
+
+	char szHead[192];
+	const int nCopy = MIN( nKeep, (int)sizeof( szHead ) - 1 );
+	Q_memcpy( szHead, pszText, nCopy );
+	szHead[nCopy] = 0;
+
+	Q_snprintf( pOut, nOutLen, "%s...", szHead );
+	return true;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: can the engine really BIND this material name?
+//
+// "a file with this name is on disk" is not the question, and getting it wrong
+// is what drew the purple/black cells and the "--- Missing Vgui material" lines
+// the user found in the log:
+//
+//   * A LONE .vtf IS NOT BINDABLE.  DrawSetTextureFile goes through
+//     CMatSystemTexture::SetMaterial (vguimatsurface/TextureDictionary.cpp:718-
+//     732), i.e. g_pMaterialSystem->FindMaterial(name) - a MATERIAL, not a raw
+//     texture, and a material is a .vmt.  With no .vmt the engine synthesises an
+//     UnlitGeneric material ONLY when a raw image sits next to it
+//     (materialsystem/hl2sb_pngtexture.cpp loads .png/.jpg/.jpeg/.tga), so
+//     `vgui/smenu/sent_ball` (a .vtf with no .vmt and no image) came back as the
+//     ERROR material.  Those are exactly the classes in the user's log:
+//     sent_ball, combine_mine, grenade_helicopter, prop_thumper - and there are
+//     36 such names in materials/vgui/smenu/.  Every one of the 36 ALSO has a
+//     real GMod spawnmenu thumbnail at materials/entities/<class>.png, which the
+//     old ".vtf counts as loadable" probe was shadowing.
+//
+//   * A .vmt IS BINDABLE ONLY WHEN THE TEXTURE IT NAMES IS ON DISK TOO.  All 208
+//     .vmt here use "$basetexture vgui/smenu/<their own name>", so the texture is
+//     the sibling .vtf (73 of them do not have one) - or a sibling raw image,
+//     which the same fallback covers: weapon_default.vmt resolves through
+//     weapon_default.png, and the log proves it loads
+//     (`[HL2SB] image texture "vgui/smenu/weapon_default" (256x128)`).
+//
+// So: bindable  ==  (a raw image exists)  ||  (.vmt exists AND .vtf exists).
+// Re-checked against the whole icon set after the change (244 base names, 380
+// files under materials/vgui/smenu): 131 .vmt+.vtf pairs and 4 .vmt+sibling
+// image names stay bindable, 73 .vmt-only and 36 .vtf-only names now correctly
+// fall through to GMod's thumbnail (or to the generic floor) instead of binding
+// the ERROR material.
 //-----------------------------------------------------------------------------
 static bool SMenu_MaterialExists( const char *pszMaterial )
 {
-	static const char *s_pExts[] = { ".vtf", ".png", ".jpg", ".jpeg", ".tga" };
+	static const char *s_pImages[] = { ".png", ".jpg", ".jpeg", ".tga" };
 
 	char szPath[MAX_PATH];
-	for ( int i = 0; i < ARRAYSIZE( s_pExts ); ++i )
+	for ( int i = 0; i < ARRAYSIZE( s_pImages ); ++i )
 	{
-		Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pszMaterial, s_pExts[i] );
+		Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pszMaterial, s_pImages[i] );
 
 		if ( SMenu_FileExists( szPath ) )
 			return true;
 	}
 
-	return false;
+	Q_snprintf( szPath, sizeof( szPath ), "materials/%s.vmt", pszMaterial );
+	if ( !SMenu_FileExists( szPath ) )
+		return false;
+
+	Q_snprintf( szPath, sizeof( szPath ), "materials/%s.vtf", pszMaterial );
+	return SMenu_FileExists( szPath );
 }
 
 //-----------------------------------------------------------------------------
-// HL2SB: the bindable name of a material, extension included - or false when
-// there is no file behind it at all.
+// HL2SB: the bindable name of a RAW IMAGE, extension included - or false when
+// there is no image behind it at all.
 //
 // "the .vmt exists" is not the question (see SMenu_MaterialExists), and neither
 // is "the name looks right": the icon16 / games/16 sets GMod's spawnmenu uses
@@ -428,8 +632,12 @@ static bool SMenu_MaterialExists( const char *pszMaterial )
 //-----------------------------------------------------------------------------
 static bool SMenu_ResolveMaterialName( const char *pszCandidate, char *pOut, int nOutLen )
 {
-	// .png first: every icon this menu asks for by this route is a raw image.
-	static const char *s_pExts[] = { ".png", ".vtf", ".jpg", ".jpeg", ".tga" };
+	// Raw images only.  A LONE .vtf must NOT be returned here even when it is on
+	// disk: binding "entities/x.vtf" would ask FindMaterial for
+	// "entities/x.vtf.vmt", miss, and draw the ERROR material - which is the bug
+	// this whole block exists to kill.  A .vtf is reachable ONLY through a .vmt
+	// (SMenu_ResolveIconName / SMenu_MaterialExists handle that pair).
+	static const char *s_pExts[] = { ".png", ".jpg", ".jpeg", ".tga" };
 
 	if ( pOut && nOutLen > 0 )
 		pOut[0] = 0;
@@ -452,6 +660,59 @@ static bool SMenu_ResolveMaterialName( const char *pszCandidate, char *pOut, int
 	return false;
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: the name to BIND for a material base.
+//
+// A .vmt wins when it can be bound: it carries the shader settings, and the
+// engine's own "texture missing -> sibling raw image" fallback keeps it out of
+// the ERROR material.  Otherwise the raw image's name is used, extension and
+// all.  Returns false when neither exists, which is what makes the caller walk
+// on to the next candidate instead of drawing a checkerboard.
+//-----------------------------------------------------------------------------
+static bool SMenu_ResolveIconName( const char *pszBase, char *pOut, int nOutLen )
+{
+	char szVmt[MAX_PATH];
+	Q_snprintf( szVmt, sizeof( szVmt ), "materials/%s.vmt", pszBase );
+
+	if ( SMenu_FileExists( szVmt ) && SMenu_MaterialExists( pszBase ) )
+	{
+		SMenu_CopyString( pOut, pszBase, nOutLen );
+		return true;
+	}
+
+	return SMenu_ResolveMaterialName( pszBase, pOut, nOutLen );
+}
+
+// The generic floor is the same handful of names for every entry of a category,
+// so resolve each one once instead of once per cell.
+static const char *SMenu_GenericIcon( int nSlot )
+{
+	static char s_szGeneric[6][128];
+	static bool s_bResolved[6] = { false, false, false, false, false, false };
+
+	Assert( nSlot >= 0 && nSlot < 6 );
+
+	if ( !s_bResolved[nSlot] )
+	{
+		s_bResolved[nSlot] = true;
+
+		static const char *s_pNames[] =
+		{
+			"vgui/smenu/weapon_default",	// 0: weapons / everything else
+			"icon16/monkey",				// 1: NPCs
+			"icon16/car",					// 2: vehicles
+			"icon16/box",					// 3: props
+			"icon16/plugin",				// 4: addon / Lua content
+			"icon16/plugin",				// 5: the unconditional floor
+		};
+
+		if ( !SMenu_ResolveIconName( s_pNames[nSlot], s_szGeneric[nSlot], sizeof( s_szGeneric[nSlot] ) ) )
+			SMenu_ResolveIconName( "icon16/plugin", s_szGeneric[nSlot], sizeof( s_szGeneric[nSlot] ) );
+	}
+
+	return s_szGeneric[nSlot];
+}
+
 static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 {
 	entry.szMaterial[0] = 0;
@@ -459,33 +720,28 @@ static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 	unsigned short i = g_SMenuIconProbes.Find( entry.szClass );
 	if ( i == g_SMenuIconProbes.InvalidIndex() )
 	{
-		char szPath[MAX_PATH];
-		char szMaterial[MAX_PATH];
-
 		SMenuIconProbe_t probe;
+		probe.szSpecific[0] = 0;
 
-		// 1. the fork's own icon set - but only when the texture it points at
-		//    is on disk too (see SMenu_MaterialExists).
-		Q_snprintf( szMaterial, sizeof( szMaterial ), "vgui/smenu/%s", entry.szClass );
-		probe.nSmenuIcon = SMenu_MaterialExists( szMaterial ) ? 1 : 0;
+		char szBase[MAX_PATH];
 
-		// 2. GMod's spawnmenu thumbnail - a raw .png, so the file IS the
-		//    material and the name has to keep its extension.
-		Q_snprintf( szPath, sizeof( szPath ), "materials/entities/%s.png", entry.szClass );
-		probe.nEntityThumb = SMenu_FileExists( szPath ) ? 1 : 0;
+		// 1. the fork's own icon set - bound only when the engine can really
+		//    load it (see SMenu_MaterialExists).
+		Q_snprintf( szBase, sizeof( szBase ), "vgui/smenu/%s", entry.szClass );
+		if ( !SMenu_ResolveIconName( szBase, probe.szSpecific, sizeof( probe.szSpecific ) ) )
+		{
+			// 2. GMod's spawnmenu thumbnail - a raw .png, so the file IS the
+			//    material and the name has to keep its extension.
+			Q_snprintf( szBase, sizeof( szBase ), "entities/%s", entry.szClass );
+			SMenu_ResolveMaterialName( szBase, probe.szSpecific, sizeof( probe.szSpecific ) );
+		}
 
 		i = g_SMenuIconProbes.Insert( entry.szClass, probe );
 	}
 
-	if ( g_SMenuIconProbes[i].nSmenuIcon )
+	if ( i != g_SMenuIconProbes.InvalidIndex() && g_SMenuIconProbes[i].szSpecific[0] )
 	{
-		Q_snprintf( entry.szMaterial, sizeof( entry.szMaterial ), "vgui/smenu/%s", entry.szClass );
-		return;
-	}
-
-	if ( g_SMenuIconProbes[i].nEntityThumb )
-	{
-		Q_snprintf( entry.szMaterial, sizeof( entry.szMaterial ), "entities/%s.png", entry.szClass );
+		SMenu_CopyString( entry.szMaterial, g_SMenuIconProbes[i].szSpecific, sizeof( entry.szMaterial ) );
 		return;
 	}
 
@@ -494,27 +750,374 @@ static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 	//    spawnmenu uses (the log shows it loading: `image texture
 	//    "icon16/plugin.png" (16x16)`), so a cell can never be left holding a
 	//    material name that resolves to nothing.  Neither candidate is taken on
-	//    faith: SMenu_MaterialExists is the file system check.
-	const char *pszGeneric = "vgui/smenu/weapon_default";
+	//    faith: SMenu_ResolveIconName is the file system check.
+	int nSlot = 0;
 
 	if ( entry.uFlags & SMCAT_NPC )
-		pszGeneric = "icon16/monkey";
+		nSlot = 1;
 	else if ( entry.uFlags & SMCAT_VEHICLE )
-		pszGeneric = "icon16/car";
+		nSlot = 2;
 	else if ( entry.uFlags & SMCAT_PROP )
-		pszGeneric = "icon16/box";
+		nSlot = 3;
 	else if ( entry.uFlags & ( SMCAT_LUAENT | SMFLAG_LUA ) )
-		pszGeneric = "icon16/plugin";	// addon/plugin content - GMod's icon
+		nSlot = 4;	// addon/plugin content - GMod's icon
 
-	if ( SMenu_MaterialExists( pszGeneric ) )
+	SMenu_CopyString( entry.szMaterial, SMenu_GenericIcon( nSlot ), sizeof( entry.szMaterial ) );
+
+	if ( !entry.szMaterial[0] )
+		SMenu_CopyString( entry.szMaterial, SMenu_GenericIcon( 5 ), sizeof( entry.szMaterial ) );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: THE DISPLAY NAME.
+//
+// GMod labels a spawnmenu icon with the entry's NICE NAME, never with its spawn
+// name: contenticon.lua:61-66 (`SetName(obj.nicename)`), and the content types
+// build that name from the content's own data -
+//   weapons.lua:4     nicename = ent.PrintName or ent.ClassName
+//   entities.lua:10   nicename = ent.PrintName or ent.SpawnName
+//   npcs.lua:12       nicename = ent.Name      or ent.SpawnName
+//   vehicles.lua:9    nicename = ent.PrintName or ent.SpawnName
+// - so a spawnmenu cell reads "SMG", "Nyan Gun", "Sexyness", never
+// "weapon_smg1".  This menu printed the raw class name instead, which is exactly
+// what the user complained about.  Resolution order, best first:
+//
+//   1. the Lua registry for the class - `list.Set("Weapon", ...)` stores
+//      SWEP.PrintName (weapons.lua:58-67) and `list.Set("SpawnableEntities",
+//      ...)` the SENT's PrintName (scripted_ents.lua:123-125);
+//   2. the ENGINE weapon script, scripts/<class>.txt `printname` - how every
+//      stock HL2 weapon names itself, and the very string
+//      CBaseCombatWeapon::GetPrintName() returns (basecombatweapon_shared.cpp:347,
+//      which reads GetWpnData().szPrintName out of the same cached database);
+//   3. a language token keyed by the class name ("#<class>");
+//   4. the class name - and, for the weapon-ish classes this menu files under
+//      Weapons (weapon_/item_/ammo_), the class name with its prefix dropped and
+//      its underscores turned into spaces, so that page can never show
+//      "weapon_fists".  That is the user's rule, and it is the honest floor:
+//      this fork's own SWEPs spell their PrintName as a language token that no
+//      mounted language file defines ("#GMOD_Fists", "#weapon_medkit",
+//      "#sent_ball" - none of them are in hl2/hl2sb resource/*.txt), so without
+//      this step they would fall all the way back to the class name.
+//
+// A token is resolved the way the HUD resolves it (hud_weaponselection.cpp:1216-
+// 1244): the fork's own "<token>_Menu" entry wins - it is the compact menu name,
+// and it is what resource/hl2sb_english.txt adds for the stock weapons
+// ("HL2_SMG1_Menu" = "SMG") - then the plain token, and only its FIRST LINE is
+// used because Valve's plain tokens carry the description on a second line
+// ("SMG\n(SUBMACHINE GUN)").  A '#' token that resolves to NOTHING is not shown
+// at all: the chain falls through instead, which is what turns "#GMOD_Fists"
+// into "Fists" rather than into a raw token.
+//
+// Both the Lua probe and the script probe are CACHED per class for the life of
+// the process (g_SMenuNameCache): the entry set is rebuilt on every menu open,
+// but a class's display name cannot change without a level change.
+//-----------------------------------------------------------------------------
+static CUtlDict< CUtlString, unsigned short > g_SMenuNameCache;
+
+// The number of Lua-registered entries the last build saw.  When it changes the
+// Lua loaders have run (or run again), so every cached display name is re-asked
+// - see the long note in SMenu_BuildEntries.
+static int s_nSMenuLastNameLuaCount = -1;
+
+// One `list.GetEntry(listid, class).<field>` lookup.  Never leaves a value on
+// the Lua stack (luasrc_pcall pops its own error object).
+static bool SMenu_LuaListField( const char *pszListId, const char *pszClass, const char *pszField, char *pOut, int nOutLen )
+{
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !L || !pszListId || !pszClass || !pszField || !pOut || nOutLen <= 0 )
+		return false;
+
+	lua_getglobal( L, "list" );
+	if ( !lua_istable( L, -1 ) )
 	{
-		Q_strncpy( entry.szMaterial, pszGeneric, sizeof( entry.szMaterial ) );
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_getfield( L, -1, "GetEntry" );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+
+	lua_remove( L, -2 );					// [GetEntry]
+	lua_pushstring( L, pszListId );			// [GetEntry][listid]
+	lua_pushstring( L, pszClass );			// [GetEntry][listid][class]
+
+	if ( luasrc_pcall( L, 2, 1, 0 ) != 0 )
+		return false;						// the error object is already popped
+
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_getfield( L, -1, pszField );
+
+	bool bFound = false;
+	if ( lua_type( L, -1 ) == LUA_TSTRING )
+	{
+		const char *pszValue = lua_tostring( L, -1 );
+		if ( pszValue && pszValue[0] )
+		{
+			SMenu_CopyString( pOut, pszValue, nOutLen );
+			bFound = true;
+		}
+	}
+
+	lua_pop( L, 2 );
+	return bFound;
+}
+
+// One `<module>.<method>(class).<field>` lookup, never leaving a value on the
+// Lua stack.  Used for the SWEP/SENT tables themselves (weapons.GetStored /
+// scripted_ents.GetStored), which is where a script's own PrintName lives.
+static bool SMenu_LuaModuleField( const char *pszModule, const char *pszMethod, const char *pszClass, const char *pszField, char *pOut, int nOutLen )
+{
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !L || !pszModule || !pszMethod || !pszClass || !pszField || !pOut || nOutLen <= 0 )
+		return false;
+
+	lua_getglobal( L, pszModule );
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_getfield( L, -1, pszMethod );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 2 );
+		return false;
+	}
+
+	lua_remove( L, -2 );					// [method]
+	lua_pushstring( L, pszClass );			// [method][class]
+
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+		return false;						// the error object is already popped
+
+	if ( !lua_istable( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_getfield( L, -1, pszField );
+
+	bool bFound = false;
+	if ( lua_type( L, -1 ) == LUA_TSTRING )
+	{
+		const char *pszValue = lua_tostring( L, -1 );
+		if ( pszValue && pszValue[0] )
+		{
+			SMenu_CopyString( pOut, pszValue, nOutLen );
+			bFound = true;
+		}
+	}
+
+	lua_pop( L, 2 );
+	return bFound;
+}
+
+// scripts/<class>.txt `printname`, straight out of the engine's own cached
+// weapon-info database.  Silent and cheap when the class has no weapon script:
+// the file is probed on the file system first, so the database is never
+// polluted with a slot for a class that is not a weapon at all.
+static bool SMenu_WeaponScriptName( const char *pszClass, char *pOut, int nOutLen )
+{
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !pszClass || !pszClass[0] || !pOut || nOutLen <= 0 )
+		return false;
+
+	char szScript[MAX_PATH];
+	Q_snprintf( szScript, sizeof( szScript ), "scripts/%s.txt", pszClass );
+
+	if ( !SMenu_FileExists( szScript ) )
+		return false;
+
+	WEAPON_FILE_INFO_HANDLE hWeapon = LookupWeaponInfoSlot( pszClass );
+	if ( hWeapon == GetInvalidWeaponInfoHandle() )
+	{
+		if ( !ReadWeaponDataFromFileForSlot( filesystem, pszClass, &hWeapon, NULL ) )
+			return false;
+	}
+
+	FileWeaponInfo_t *pInfo = GetFileWeaponInfoFromHandle( hWeapon );
+	if ( !pInfo || !pInfo->szPrintName[0] )
+		return false;
+
+	SMenu_CopyString( pOut, pInfo->szPrintName, nOutLen );
+	return true;
+}
+
+// Resolve one candidate string to something a cell can print.  Returns true when
+// the candidate was usable: a plain string always is, a "#token" only when a
+// language file knows it.
+static bool SMenu_LocalizeCandidate( const char *pszRaw, char *pOut, int nOutLen )
+{
+	if ( pOut && nOutLen > 0 )
+		pOut[0] = 0;
+
+	if ( !pszRaw || !pszRaw[0] || !pOut || nOutLen <= 0 )
+		return false;
+
+	const bool bToken = ( pszRaw[0] == '#' );
+	const char *pszKey = bToken ? pszRaw + 1 : pszRaw;
+
+	if ( g_pVGuiLocalize && pszKey[0] )
+	{
+		char szMenuKey[160];
+		Q_snprintf( szMenuKey, sizeof( szMenuKey ), "%s_Menu", pszKey );
+
+		wchar_t *pWide = g_pVGuiLocalize->Find( szMenuKey );
+		if ( !pWide )
+			pWide = g_pVGuiLocalize->Find( pszKey );
+
+		if ( pWide && pWide[0] )
+		{
+			// Valve's own tokens keep the description on the second line
+			// ("SMG\n(SUBMACHINE GUN)"); a grid cell wants the name.
+			wchar_t wszLine[192];
+			int i = 0;
+			for ( ; pWide[i] && pWide[i] != L'\n' && i < (int)ARRAYSIZE( wszLine ) - 1; ++i )
+				wszLine[i] = pWide[i];
+			wszLine[i] = 0;
+
+			char szAnsi[256];
+			if ( wszLine[0] && g_pVGuiLocalize->ConvertUnicodeToANSI( wszLine, szAnsi, sizeof( szAnsi ) ) )
+				SMenu_CopyString( pOut, szAnsi, nOutLen );
+		}
+	}
+
+	// Not a token, and the language files had nothing to say about it: it is
+	// already a name (a SWEP's "Nyan Gun", an addon's "Sexyness").
+	if ( !pOut[0] && !bToken )
+		SMenu_CopyString( pOut, pszRaw, nOutLen );
+
+	return pOut[0] != 0;
+}
+
+// The last resort for a class with no name anywhere - see the note above.
+static void SMenu_HumanizeClassName( const char *pszClass, char *pOut, int nOutLen )
+{
+	static const char *s_pPrefixes[] = { "weapon_", "item_", "ammo_" };
+
+	const char *pszName = pszClass;
+
+	for ( int i = 0; i < ARRAYSIZE( s_pPrefixes ); ++i )
+	{
+		const int nPrefix = Q_strlen( s_pPrefixes[i] );
+
+		if ( !Q_strnicmp( pszClass, s_pPrefixes[i], nPrefix ) && pszClass[nPrefix] )
+		{
+			pszName = pszClass + nPrefix;
+			break;
+		}
+	}
+
+	if ( pszName == pszClass )
+	{
+		SMenu_CopyString( pOut, pszClass, nOutLen );
 		return;
 	}
 
-	if ( SMenu_MaterialExists( "icon16/plugin" ) )
-		Q_strncpy( entry.szMaterial, "icon16/plugin", sizeof( entry.szMaterial ) );
+	int j = 0;
+	for ( int i = 0; pszName[i] && j < nOutLen - 1; ++i )
+	{
+		char c = pszName[i];
+
+		if ( c == '_' )
+			c = ' ';
+		else if ( j == 0 && c >= 'a' && c <= 'z' )
+			c = (char)( c - 'a' + 'A' );
+
+		pOut[j++] = c;
+	}
+
+	pOut[j] = 0;
 }
+
+static void SMenu_ResolveDisplayName( SMenuEntry_t &entry )
+{
+	unsigned short i = g_SMenuNameCache.Find( entry.szClass );
+
+	if ( i == g_SMenuNameCache.InvalidIndex() )
+	{
+		char szCandidate[128];
+		char szName[128];
+
+		szName[0] = 0;
+
+		// 1. the Lua registries.  THE FORK'S OWN SWEP REGISTRY COMES FIRST:
+		//    luasrc_LoadOneWeapon registers every SWEP through Team Sandbox's
+		//    `weapon.register` (luamanager.cpp:1506-1513 ->
+		//    lua/includes/modules/weapon.lua:75-80), which keeps its OWN table -
+		//    it does not touch GMod's `weapons` module - so `weapon.get` is the
+		//    registry that actually holds this fork's and its addons' SWEPs
+		//    (proved by the log: weapons.GetStored("weapon_nyangun") is nil while
+		//    weapon.get returns the SWEP with its PrintName).  GMod's module and
+		//    the list entries are still asked, for a GMod-style addon that
+		//    registers itself.
+		if ( SMenu_LuaModuleField( "weapon", "get", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaModuleField( "weapons", "GetStored", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaModuleField( "scripted_ents", "GetStored", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaListField( "Weapon", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaListField( "SpawnableEntities", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaListField( "Vehicles", entry.szClass, "PrintName", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		if ( !szName[0] && SMenu_LuaListField( "NPC", entry.szClass, "Name", szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		// 2. the engine weapon script - stock HL2 weapons name themselves there.
+		if ( !szName[0] && SMenu_WeaponScriptName( entry.szClass, szCandidate, sizeof( szCandidate ) ) )
+			SMenu_LocalizeCandidate( szCandidate, szName, sizeof( szName ) );
+
+		// 3. a language token keyed by the class name.
+		if ( !szName[0] )
+		{
+			char szKey[80];
+			Q_snprintf( szKey, sizeof( szKey ), "#%s", entry.szClass );
+			SMenu_LocalizeCandidate( szKey, szName, sizeof( szName ) );
+		}
+
+		// 4. the class name - humanized for the weapon-ish entries.
+		if ( !szName[0] )
+			SMenu_HumanizeClassName( entry.szClass, szName, sizeof( szName ) );
+
+		unsigned short nNew = g_SMenuNameCache.Insert( entry.szClass, CUtlString( szName ) );
+		if ( nNew == g_SMenuNameCache.InvalidIndex() )
+		{
+			SMenu_CopyString( entry.szName, szName, sizeof( entry.szName ) );
+			return;
+		}
+
+		i = nNew;
+	}
+
+	SMenu_CopyString( entry.szName, (const char *)g_SMenuNameCache[i], sizeof( entry.szName ) );
+}
+
 
 //-----------------------------------------------------------------------------
 // HL2SB: VEHICLES - why this is not just `ent_create <class>`.
@@ -826,22 +1429,110 @@ static bool SMenu_BuildVehicleCommand( const char *pszClass, char *pOut, int nOu
 // anything that cannot be attributed - and Lua content is never filtered out or
 // hidden.
 //-----------------------------------------------------------------------------
+// HL2SB: what a sidebar row PRINTS.
+//
+// GMod labels a source node with the addon's real title, not with its folder
+// path: addonprops.lua:104 `MyNode:AddNode(addon.title .. " (" ..
+// addon.models .. ")")`, where the title comes from the addon's own metadata.
+// `addons/<folder>` is technically correct and user-hostile - it is a PATH, it
+// is long enough that the sidebar clipped it, and the user asked for it to go -
+// so the folder is looked up:
+//
+//   * addons/<x>/addon.json - the "title" member (GMod's own addon metadata);
+//   * addons/<x>/addon.txt  - "name" inside the AddonInfo block (the older
+//                             workshop layout; this tree's "The Ultimate Admin
+//                             Gun Fixed" ships exactly that);
+//   * otherwise the folder name itself, prefixes chopped and underscores turned
+//     into spaces so the row still reads like a title.
+//
+// The ID keeps its `addons/<folder>` spelling: that is the filter key the pages
+// match on (SMenu_AssignSource produces it), and only the label is cosmetic.
+//-----------------------------------------------------------------------------
+static bool SMenu_ReadAddonMetadataTitle( const char *pszFolder, char *pOut, int nOutLen )
+{
+	if ( !pOut || nOutLen <= 0 )
+		return false;
+
+	pOut[0] = 0;
+
+	static const char *s_pFiles[] = { "addon.json", "addon.txt" };
+	static const char *s_pKeys[] = { "\"title\"", "\"name\"" };
+
+	for ( int i = 0; i < ARRAYSIZE( s_pFiles ); ++i )
+	{
+		char szPath[MAX_PATH];
+		Q_snprintf( szPath, sizeof( szPath ), "addons/%s/%s", pszFolder, s_pFiles[i] );
+
+		FileHandle_t hFile = filesystem->Open( szPath, "rb", "MOD" );
+		if ( !hFile )
+			continue;
+
+		const int nSize = filesystem->Size( hFile );
+		char szBuffer[4096];
+		int nRead = 0;
+
+		if ( nSize > 0 )
+			nRead = filesystem->Read( szBuffer, MIN( nSize, (int)sizeof( szBuffer ) - 1 ), hFile );
+
+		filesystem->Close( hFile );
+
+		szBuffer[ ( nRead > 0 ) ? nRead : 0 ] = 0;
+
+		const char *pKey = Q_stristr( szBuffer, s_pKeys[i] );
+		if ( !pKey )
+			continue;
+
+		// The value is the next quoted string after the key.
+		const char *pValue = strchr( pKey + Q_strlen( s_pKeys[i] ), '"' );
+		if ( !pValue )
+			continue;
+
+		++pValue;
+
+		const char *pEnd = strchr( pValue, '"' );
+		if ( !pEnd || pEnd <= pValue )
+			continue;
+
+		const int nLen = MIN( (int)( pEnd - pValue ), nOutLen - 1 );
+
+		Q_memcpy( pOut, pValue, nLen );
+		pOut[nLen] = 0;
+		return true;
+	}
+
+	return false;
+}
+
+static void SMenu_SourceLabel( const char *pszSourceId, char *pOut, int nOutLen )
+{
+	SMenu_CopyString( pOut, pszSourceId, nOutLen );
+
+	// "HL2SB Lua" / "Half-Life 2" / "Engine" already read fine - they are names,
+	// not paths.
+	if ( Q_strnicmp( pszSourceId, SMENU_SRC_ADDONS, 7 ) != 0 )
+		return;
+
+	const char *pszFolder = pszSourceId + 7;
+
+	char szTitle[128];
+	if ( SMenu_ReadAddonMetadataTitle( pszFolder, szTitle, sizeof( szTitle ) ) )
+	{
+		SMenu_CopyString( pOut, szTitle, nOutLen );
+		return;
+	}
+
+	int j = 0;
+	for ( int i = 0; pszFolder[i] && j < nOutLen - 1; ++i )
+		pOut[j++] = ( pszFolder[i] == '_' ) ? ' ' : pszFolder[i];
+
+	pOut[j] = 0;
+}
+
+//-----------------------------------------------------------------------------
 static CUtlDict< CUtlString, unsigned short > g_SMenuSourceProbes;
 
 static CUtlVector< CUtlString > g_SMenuAddonDirs;
 static bool g_bSMenuAddonDirsScanned = false;
-
-// Q_strncpy can leave the destination UNTERMINATED when the source is longer
-// than the buffer (V_strncpy copies exactly maxLen characters), so every
-// variable-length source string goes through this.
-static void SMenu_CopyString( char *pDest, const char *pSrc, int nDestLen )
-{
-	if ( !pDest || nDestLen <= 0 )
-		return;
-
-	Q_strncpy( pDest, pSrc ? pSrc : "", nDestLen );
-	pDest[nDestLen - 1] = 0;
-}
 
 // addons/* read once.  Every addon folder is also its own MOD search path
 // (mountaddons.cpp:64), so this list exists only to build probe paths.
@@ -1056,7 +1747,7 @@ static SMenuSource_t *SMenu_FindOrAddSource( int nCat, const char *pszSource )
 	SMenuSource_t &src = g_SMenuCatSources[nCat][g_SMenuCatSources[nCat].AddToTail()];
 	Q_memset( &src, 0, sizeof( src ) );
 	SMenu_CopyString( src.szId, pszSource, sizeof( src.szId ) );
-	SMenu_CopyString( src.szLabel, pszSource, sizeof( src.szLabel ) );
+	SMenu_SourceLabel( pszSource, src.szLabel, sizeof( src.szLabel ) );
 	SMenu_ResolveSourceIcon( src );
 
 	return &src;
@@ -1299,9 +1990,274 @@ static unsigned int SMenu_HashEntries( void )
 // Cheap enough to repeat on every menu open: with the icon probe cache it is
 // string work only.
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// HL2SB: DOES GMod CONTENT REALLY RESOLVE?
+//
+// The user's fourth complaint was that GMod assets looked unimported and the VPK
+// possibly unmounted.  A directory listing cannot answer that: the DATA of a
+// multi-chunk VPK is not in the _dir file at all - the engine strips "_dir" and
+// rebuilds the names by convention, opening the directory file as
+// "<base>_dir.vpk" and every chunk as "<base>_%03d.vpk" in the same directory
+// (vpklib/packedstore.cpp:285-287 and :450).  The only meaningful test is the
+// engine's own file system, so this reads one asset that exists ONLY inside a
+// numbered GMod chunk and one loose control:
+//
+//   * materials/widgets/scale2.png - archive chunk 1 of garrysmod_dir.vpk
+//     (i.e. inside garrysmod_001.vpk, 1239 bytes, verified against the VPK tree,
+//     and not present loose anywhere on this game's search paths).  Finding and
+//     READING it proves the numbered chunks are being followed.
+//   * materials/entities/npc_zombie.png - the loose control, so a failure of the
+//     first probe cannot be blamed on the search path itself.
+//
+// Printed once per process, from the first list build, so it lands in the log
+// next to the other "[HL2SB] SMenu:" lines - the panel's constructor runs before
+// cfg/autoexec.cfg (and therefore con_logfile) has been executed, so a Msg from
+// there never reaches ds_debug.log.
+//-----------------------------------------------------------------------------
+static void SMenu_ProbeGModContent( void )
+{
+	static bool s_bProbed = false;
+	if ( s_bProbed )
+		return;
+
+	s_bProbed = true;
+
+	struct SMenuProbe_t
+	{
+		const char	*pszPath;
+		const char	*pszWhat;
+	};
+
+	static const SMenuProbe_t s_pProbes[] =
+	{
+		{ "materials/widgets/scale2.png",		"garrysmod_001.vpk chunk" },
+		{ "materials/entities/npc_zombie.png",	"loose control" },
+	};
+
+	for ( int i = 0; i < ARRAYSIZE( s_pProbes ); ++i )
+	{
+		const char *pszPath = s_pProbes[i].pszPath;
+		const bool bExists = filesystem->FileExists( pszPath );
+
+		FileHandle_t hFile = filesystem->Open( pszPath, "rb", "GAME" );
+		int nSize = hFile ? filesystem->Size( hFile ) : -1;
+		int nRead = 0;
+		unsigned char pHeader[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+		if ( hFile )
+		{
+			nRead = filesystem->Read( pHeader, sizeof( pHeader ), hFile );
+			filesystem->Close( hFile );
+		}
+
+		Msg( "[HL2SB] SMenu: mount probe [%s] \"%s\" - FileExists=%d, size=%d, read=%d, magic=%02x%02x\n",
+			 s_pProbes[i].pszWhat, pszPath, bExists ? 1 : 0, nSize, nRead, pHeader[0], pHeader[1] );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: what the display names actually resolve to, in the log.
+//
+// SMenu_ResolveDisplayName is a chain (Lua registry -> engine weapon script ->
+// language token -> class name), so the only way to see which link answered for
+// a given class is to ask it.  This prints one line for a few representative
+// classes - the stock weapons the user complained about, the fork's own SWEPs
+// whose "#token" print name no mounted language file defines, and a SENT - so
+// any launch documents that a weapon is no longer labelled `weapon_xxx`.
+//
+// It waits for a build that has Lua-registered entries (nLuaNow > 0): the very
+// first build after a map load happens before luasrc_LoadWeapons has run, and
+// reporting THAT would report the fallback names, not the real ones.
+//-----------------------------------------------------------------------------
+// One-off: dump what each link of the chain actually sees for one class, so a
+// mis-resolved name can be diagnosed from the log instead of guessed at.  Runs
+// once, together with the name probe.
+static void SMenu_DumpLuaChain( const char *pszClass )
+{
+	if ( !L )
+	{
+		Msg( "[HL2SB] SMenu: lua chain \"%s\" - the Lua state is NULL\n", pszClass );
+		return;
+	}
+
+	struct SMenuChainStep_t
+	{
+		const char	*pszModule;
+		const char	*pszMethod;
+		const char	*pszField;
+	};
+
+	static const SMenuChainStep_t s_pSteps[] =
+	{
+		{ "weapon",			"get",			"PrintName" },
+		{ "weapons",		"GetStored",	"PrintName" },
+		{ "scripted_ents",	"GetStored",	"PrintName" },
+		{ "list",			"GetEntry",		"PrintName" },
+	};
+
+	for ( int i = 0; i < ARRAYSIZE( s_pSteps ); ++i )
+	{
+		const char *pszValue = "(unavailable)";
+
+		lua_getglobal( L, s_pSteps[i].pszModule );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, s_pSteps[i].pszMethod );
+			if ( lua_isfunction( L, -1 ) )
+			{
+				lua_remove( L, -2 );			// [method]
+
+				// weapons.GetStored / scripted_ents.GetStored take the class name;
+				// list.GetEntry takes (listid, class).
+				int nArgs = 1;
+				if ( !Q_stricmp( s_pSteps[i].pszModule, "list" ) )
+				{
+					lua_pushstring( L, "Weapon" );	// [method][listid]
+					lua_pushstring( L, pszClass );	// [method][listid][class]
+					nArgs = 2;
+				}
+				else
+				{
+					lua_pushstring( L, pszClass );	// [method][class]
+				}
+
+				if ( luasrc_pcall( L, nArgs, 1, 0 ) == 0 )
+				{
+					if ( lua_istable( L, -1 ) )
+					{
+						lua_getfield( L, -1, s_pSteps[i].pszField );
+						if ( lua_type( L, -1 ) == LUA_TSTRING )
+							pszValue = lua_tostring( L, -1 );
+						else
+							pszValue = lua_typename( L, lua_type( L, -1 ) );
+						lua_pop( L, 1 );
+					}
+					else
+					{
+						pszValue = lua_typename( L, lua_type( L, -1 ) );
+					}
+
+					lua_pop( L, 1 );
+				}
+				else
+				{
+					pszValue = "(pcall failed)";
+				}
+			}
+			else
+			{
+				lua_pop( L, 2 );
+			}
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+
+		Msg( "[HL2SB] SMenu: lua chain %s.%s(\"%s\").%s = \"%s\"\n",
+			 s_pSteps[i].pszModule, s_pSteps[i].pszMethod, pszClass, s_pSteps[i].pszField, pszValue );
+	}
+}
+
+static void SMenu_ProbeNames( int nLuaNow )
+{
+	static bool s_bProbed = false;
+	if ( s_bProbed || nLuaNow <= 0 )
+		return;
+
+	s_bProbed = true;
+
+	SMenu_DumpLuaChain( "weapon_nyangun" );
+	SMenu_DumpLuaChain( "pist_weagon" );
+
+	static const char *s_pClasses[] =
+	{
+		"weapon_smg1",			// stock HL2: scripts/weapon_smg1.txt printname
+		"weapon_357",			// stock HL2
+		"weapon_physcannon",	// stock HL2
+		"weapon_fists",			// fork SWEP, PrintName is an undefined "#GMOD_Fists"
+		"weapon_medkit",		// fork SWEP, "#weapon_medkit"
+		"weapon_nyangun",		// addon SWEP, a real PrintName ("Nyan Gun")
+		"pist_weagon",			// addon SWEP, a real PrintName ("Sexyness")
+		"sent_ball",			// fork SENT, "#sent_ball"
+		"npc_zombie",			// stock NPC: nothing better than the class name
+	};
+
+	for ( int i = 0; i < ARRAYSIZE( s_pClasses ); ++i )
+	{
+		SMenuEntry_t entry;
+		Q_memset( &entry, 0, sizeof( entry ) );
+		SMenu_CopyString( entry.szClass, s_pClasses[i], sizeof( entry.szClass ) );
+		SMenu_ResolveDisplayName( entry );
+
+		Msg( "[HL2SB] SMenu: name probe \"%s\" -> \"%s\"\n", s_pClasses[i], entry.szName );
+	}
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: THE DEFAULT SIZE IS GMOD'S.
+//
+// GMod's spawn menu is not a small window: `PANEL:Init` opens with
+// `self:Dock( FILL )` (spawnmenu.lua:19) and the content is then inset on every
+// side by
+//
+//     MarginX = clamp( (ScrW - 1024) * spawnmenu_border, 25, 256 )
+//     MarginY = clamp( (ScrH -  768) * spawnmenu_border, 25, 256 )   // :138-139
+//     ... both set to 0 when ScrW < 1024 or ScrH < 768                // :141-145
+//
+// with spawnmenu_border defaulting to 0.1 (:2).  That is ~80-92% of the screen,
+// which is what a spawn menu looks like in GMod.  This frame opened at a fixed
+// 820x620 instead, so the user had to drag it bigger by hand every session.
+//
+// The size is now computed from the same formula, and the frame is placed at the
+// margins - which is exactly where GMod's inset leaves it.  The border factor is
+// a constant on purpose: this fork's standing rule is "no new console commands
+// or cvars", and 0.1 is GMod's own default for it.
+//-----------------------------------------------------------------------------
+#define SMENU_BORDER_FRACTION	0.1f
+
+static int s_nSMenuFrameW = 0;
+static int s_nSMenuFrameH = 0;
+
+//-----------------------------------------------------------------------------
+// HL2SB: the two label fonts, in numbers, so the user's "the sidebar text is
+// still too big" is checkable from the log rather than by eye.  The sidebar has
+// its own (smaller) font - see SMenu_SourceFont - and the grid gets its own too.
+//-----------------------------------------------------------------------------
+static void SMenu_ProbeFonts( void )
+{
+	static bool s_bProbed = false;
+	if ( s_bProbed )
+		return;
+
+	s_bProbed = true;
+
+	ISurface *pSurface = surface();
+	if ( !pSurface )
+		return;
+
+	const HFont hSource = SMenu_SourceFont();
+	const HFont hGrid = SMenu_CellFont();
+
+	int nScreenW = 0, nScreenH = 0;
+	pSurface->GetScreenSize( nScreenW, nScreenH );
+
+	Msg( "[HL2SB] SMenu: frame %dx%d, GMod-default size on a %dx%d screen; label fonts - sidebar \"Verdana %d\" tall=%d, grid \"Verdana %d\" tall=%d (scheme \"DefaultVerySmall\" tall=%d)\n",
+		 s_nSMenuFrameW, s_nSMenuFrameH, nScreenW, nScreenH,
+		 SMENU_SOURCE_FONT_TALL, pSurface->GetFontTall( hSource ),
+		 SMENU_CELL_FONT_TALL, pSurface->GetFontTall( hGrid ),
+		 pSurface->GetFontTall( SMenu_LabelFont() ) );
+}
+
 static void SMenu_BuildEntries( void )
 {
 	g_SMenuEntries.RemoveAll();
+
+	// HL2SB: one-shot proof that GMod's multi-chunk VPKs really resolve, so the
+	// log of any launch answers "is the VPK mounted?" - see
+	// SMenu_ProbeGModContent.  Done here rather than in the constructor because
+	// this runs after cfg/autoexec.cfg has set con_logfile.
+	SMenu_ProbeGModContent();
 
 	// 1. client class dictionary
 	const int nClasses = ClassMap_GetEntryCount();
@@ -1334,6 +2290,40 @@ static void SMenu_BuildEntries( void )
 	// probes behind it are cached.
 	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
 		SMenu_AssignSource( g_SMenuEntries[i] );
+
+	//-----------------------------------------------------------------------------
+	// HL2SB: THE DISPLAY NAMES - resolved HERE, after the Lua merge, and not
+	// while the class dictionary is being read.
+	//
+	// Two things make the position matter:
+	//
+	//   * the Lua registries are what answer for a SWEP/SENT, and they are not
+	//     loaded yet when the menu is opened on the very first frame (the log's
+	//     "0 Lua" build, which `+smenu` produces every time).  Resolving earlier
+	//     cached the class-name fallback and kept it forever: the probe showed
+	//     "weapon_nyangun -> Nyangun" instead of the SWEP's own "Nyan Gun".
+	//   * so the cache is dropped whenever the number of Lua-registered entries
+	//     changes.  The second, proper build then asks Lua again and replaces
+	//     every fallback name with the real one.
+	//-----------------------------------------------------------------------------
+	int nLuaNow = 0;
+	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
+	{
+		if ( g_SMenuEntries[i].uFlags & SMFLAG_LUA )
+			++nLuaNow;
+	}
+
+	if ( nLuaNow != s_nSMenuLastNameLuaCount )
+	{
+		s_nSMenuLastNameLuaCount = nLuaNow;
+		g_SMenuNameCache.RemoveAll();
+	}
+
+	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
+		SMenu_ResolveDisplayName( g_SMenuEntries[i] );
+
+	SMenu_ProbeNames( nLuaNow );
+	SMenu_ProbeFonts();
 
 	int nWeapons = 0, nLua = 0, nNpc = 0, nVeh = 0;
 	for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
@@ -1501,55 +2491,68 @@ static void SMenu_BuildSources( bool bModelPagePossible )
 }
 
 //-----------------------------------------------------------------------------
-// HL2SB: one icon-grid cell - thumbnail + class name, click = spawn.
+// HL2SB: one icon-grid cell - thumbnail + display name, click = spawn.
 //
 // Not vgui::ImageButton/ImagePanel: scheme()->GetImage() prepends "vgui/" to
 // every name (vgui2/src/Scheme.cpp:1260), so it can only reach
 // materials/vgui/... while GMod's thumbnails live in materials/entities/.
-// Drawing through ISurface::DrawSetTextureFile addresses materials/ directly
-// and lets the entry show its class name as well.
+// Drawing through ISurface::DrawSetTextureFile addresses materials/ directly.
 //-----------------------------------------------------------------------------
+
+// The cell's default size, and the widest it may grow while chasing a long
+// name.  Beyond the cap a name is shortened with an explicit "..." rather than
+// stealing the whole row - the genuine last resort the user asked for, not the
+// default (see CSMList::SetWantedCellWidth).
+#define SMENU_CELL_W		76
+#define SMENU_CELL_H		80
+#define SMENU_CELL_MAX_W	180
+
+// The widest the sidebar may get while chasing a long source label.
+#define SMENU_SIDE_MAX_W	320
+
 class CSMIconButton : public vgui::Panel
 {
 	typedef vgui::Panel BaseClass;
 public:
 	CSMIconButton( vgui::Panel *pParent, const SMenuEntry_t &entry ) : BaseClass( pParent, "SMenuIcon" )
 	{
-		Q_strncpy( m_szClass, entry.szClass, sizeof( m_szClass ) );
-		Q_strncpy( m_szFixedCmd, entry.szFixedCmd, sizeof( m_szFixedCmd ) );
-		Q_strncpy( m_szMaterial, entry.szMaterial, sizeof( m_szMaterial ) );
+		SMenu_CopyString( m_szClass, entry.szClass, sizeof( m_szClass ) );
+		SMenu_CopyString( m_szFixedCmd, entry.szFixedCmd, sizeof( m_szFixedCmd ) );
+		SMenu_CopyString( m_szMaterial, entry.szMaterial, sizeof( m_szMaterial ) );
+		SMenu_CopyString( m_szName, entry.szName[0] ? entry.szName : entry.szClass, sizeof( m_szName ) );
 		m_bWeapon = ( entry.uFlags & SMFLAG_WEAPON ) != 0;
 		m_bHover = false;
 		m_bBound = false;
+		m_hFont = INVALID_FONT;
+		m_szDrawn[0] = 0;
 		m_nTexture = surface()->CreateNewTextureID();
 
-		SetSize( 72, 76 );
+		SetSize( SMENU_CELL_W, SMENU_CELL_H );
 		SetPaintBackgroundEnabled( false );
 		SetMouseInputEnabled( true );
-
-		m_pLabel = new vgui::Label( this, "Name", m_szClass );
-		m_pLabel->SetContentAlignment( vgui::Label::a_center );
-		m_pLabel->SetMouseInputEnabled( false );
-		m_pLabel->SetBounds( 0, 58, 72, 18 );
 	}
 
 	virtual void ApplySchemeSettings( vgui::IScheme *pScheme )
 	{
 		BaseClass::ApplySchemeSettings( pScheme );
 
-		if ( m_pLabel )
-			m_pLabel->SetFont( pScheme->GetFont( "DefaultVerySmall", true ) );
+		// The cell uses its own, unscaled font sized for this cell (see
+		// SMenu_CellFont); the scheme font is only the fallback if that one could
+		// not be built.
+		m_hFont = SMenu_CellFont();
+		if ( m_hFont == INVALID_FONT )
+			m_hFont = pScheme->GetFont( "DefaultVerySmall", true );
+
+		UpdateDrawnLabel();
 	}
 
-	virtual void PerformLayout()
+	virtual void OnSizeChanged( int nNewWide, int nNewTall )
 	{
-		BaseClass::PerformLayout();
+		BaseClass::OnSizeChanged( nNewWide, nNewTall );
 
-		int w, h;
-		GetSize( w, h );
-
-		if ( m_pLabel )
-			m_pLabel->SetBounds( 0, h - 18, w, 18 );
+		// The grid decides how wide this cell is (CSMList::SetWantedCellWidth),
+		// so the label is (re)shortened whenever that changes - never per frame.
+		UpdateDrawnLabel();
 	}
 
 	virtual void Paint()
@@ -1579,6 +2582,39 @@ public:
 			surface()->DrawSetColor( 255, 255, 255, 255 );
 			surface()->DrawSetTexture( m_nTexture );
 			surface()->DrawTexturedRect( x, 2, x + nIcon, 2 + nIcon );
+		}
+
+		// HL2SB: the label is DRAWN HERE rather than handed to a vgui::Label,
+		// because a Label clips at its own bounds - that is what cut the user's
+		// names in half.  The text was already shortened to this cell's width
+		// (UpdateDrawnLabel), it is measured only to centre it, and a name that
+		// had to be shortened ends in an explicit "..." rather than mid-glyph.
+		if ( m_szName[0] && m_hFont != INVALID_FONT && g_pVGuiLocalize )
+		{
+			if ( !m_szDrawn[0] )
+				UpdateDrawnLabel();
+
+			if ( m_szDrawn[0] )
+			{
+				wchar_t wszLabel[192];
+				g_pVGuiLocalize->ConvertANSIToUnicode( m_szDrawn, wszLabel, sizeof( wszLabel ) );
+
+				int nTextW = 0, nTextH = 0;
+				surface()->GetTextSize( m_hFont, wszLabel, nTextW, nTextH );
+
+				int x = ( w - nTextW ) / 2;
+				if ( x < 2 )
+					x = 2;
+
+				int y = h - nTextH - 3;
+				if ( y < 2 )
+					y = 2;
+
+				surface()->DrawSetTextFont( m_hFont );
+				surface()->DrawSetTextColor( 255, 255, 255, 255 );
+				surface()->DrawSetTextPos( x, y );
+				surface()->DrawPrintText( wszLabel, V_wcslen( wszLabel ) );
+			}
 		}
 
 		BaseClass::Paint();
@@ -1617,8 +2653,18 @@ public:
 	}
 
 private:
-	vgui::Label	*m_pLabel;
+	// Shorten the display name to this cell's current width, once per size or
+	// font change.  The full name is never lost: the shortening is a deliberate
+	// "..." on a name that genuinely does not fit the cell the grid handed us.
+	void UpdateDrawnLabel( void )
+	{
+		SMenu_ShortenText( m_hFont, m_szName, GetWide() - 4, m_szDrawn, sizeof( m_szDrawn ) );
+	}
+
+	HFont		m_hFont;
 	char		m_szClass[64];
+	char		m_szName[128];
+	char		m_szDrawn[160];
 	char		m_szFixedCmd[SMENU_FIXEDCMD_LEN];
 	char		m_szMaterial[128];
 	int			m_nTexture;
@@ -1626,6 +2672,7 @@ private:
 	bool		m_bHover;
 	bool		m_bWeapon;
 };
+
 
 //-----------------------------------------------------------------------------
 // HL2SB: one page of icon cells - created empty, filled in slices.
@@ -1640,9 +2687,6 @@ private:
 // PanelListPanel already lays its children out as a wrapping grid and owns the
 // scrollbar, so this class only tells it how many columns fit.
 //-----------------------------------------------------------------------------
-#define SMENU_CELL_W	76
-#define SMENU_CELL_H	80
-
 class CSMList : public vgui::PanelListPanel
 {
 	typedef vgui::PanelListPanel BaseClass;
@@ -1656,6 +2700,7 @@ public:
 		m_bPageBuilt = false;
 		m_bHasItems = false;
 		m_flBuildStart = 0.0;
+		m_nCellWanted = SMENU_CELL_W;
 		m_szSource[0] = 0;
 		SetFirstColumnWidth( 0 );
 		SetNumColumns( 1 );
@@ -1688,8 +2733,43 @@ public:
 	{
 		CSMIconButton *pButton = new CSMIconButton( this, entry );
 		pButton->SetSize( SMENU_CELL_W, SMENU_CELL_H );
+
+		// The cell's own label decides the column width - so it is measured here
+		// as well, which is what gets the MODELS page (filled in one go from a
+		// file scan, without the class-page pre-pass) a readable width too.
+		if ( m_nCellWanted < SMENU_CELL_MAX_W )
+		{
+			const int nWidth = SMenu_TextWidth( SMenu_CellFont(), entry.szName ) + 8;
+			if ( nWidth > m_nCellWanted )
+				SetWantedCellWidth( nWidth );
+		}
+
 		AddItem( NULL, pButton );
 		m_bHasItems = true;
+	}
+
+	// HL2SB: SIZE THE CELLS TO THE LABELS.
+	//
+	// PanelListPanel gives every child the same width, computed from
+	// SetNumColumns (vgui2/vgui_controls/PanelListPanel.cpp:321,341), so a page
+	// can only be laid out as uniformly sized cells - which means the column
+	// count IS the lever for "does the longest name on this page fit".  The
+	// widest label on the page therefore decides the column count, and every
+	// name fits in full instead of being clipped (the old code used a fixed
+	// 76 px cell regardless of the text).
+	void SetWantedCellWidth( int nWidth )
+	{
+		if ( nWidth < SMENU_CELL_W )
+			nWidth = SMENU_CELL_W;
+		if ( nWidth > SMENU_CELL_MAX_W )
+			nWidth = SMENU_CELL_MAX_W;
+
+		if ( nWidth == m_nCellWanted )
+			return;
+
+		m_nCellWanted = nWidth;
+		m_nColumns = 0;			// force the column count to be recomputed
+		InvalidateLayout( true );
 	}
 
 	// Mark the page as needing (re)population.  Nothing is destroyed or created
@@ -1699,6 +2779,8 @@ public:
 		m_bPageDirty = true;
 		m_bPageBuilt = false;
 		m_nBuildCursor = 0;
+		m_nCellWanted = SMENU_CELL_W;	// re-measure for the new source
+		m_nColumns = 0;
 	}
 
 	bool IsPageBuilt( void ) const		{ return m_bPageBuilt; }
@@ -1730,6 +2812,23 @@ public:
 			m_nCellsAdded = 0;
 			m_bPageDirty = false;
 			m_flBuildStart = SMenu_Now();
+
+			// HL2SB: how wide does THIS page need to be?  One pass over the
+			// entries this page will show measures every name, and the widest
+			// one sets the column count (see SetWantedCellWidth).  It runs once
+			// per page build, never per cell.
+			HFont hFont = SMenu_CellFont();
+			if ( hFont != INVALID_FONT )
+			{
+				for ( int i = 0; i < g_SMenuEntries.Count(); ++i )
+				{
+					const SMenuEntry_t &entry = g_SMenuEntries[i];
+					if ( !SMenu_EntryMatchesCat( nCat, entry ) || !MatchesSource( entry ) )
+						continue;
+
+					SetWantedCellWidth( SMenu_TextWidth( hFont, entry.szName ) + 8 );
+				}
+			}
 		}
 
 		const int nTotal = g_SMenuEntries.Count();
@@ -1776,7 +2875,10 @@ public:
 		GetSize( w, h );
 		NOTE_UNUSED( h );
 
-		int nColumns = ( w - 30 ) / SMENU_CELL_W;
+		// HL2SB: the column count comes from the width this page's labels
+		// actually need (SetWantedCellWidth), not from a fixed cell size, so a
+		// long name buys itself a wider column instead of being cut off.
+		int nColumns = ( w - 30 ) / m_nCellWanted;
 		if ( nColumns < 1 )
 			nColumns = 1;
 
@@ -1801,6 +2903,7 @@ private:
 	}
 
 	int		m_nColumns;
+	int		m_nCellWanted;	// width this page's labels need (see FitColumnsToLabels)
 	int		m_nBuildCursor;
 	int		m_nCellsAdded;
 	bool	m_bPageDirty;
@@ -1885,19 +2988,21 @@ public:
 		m_bSelected = bSelected;
 		m_bHover = false;
 		m_bBound = false;
+		m_hFont = INVALID_FONT;
 		m_nTexture = surface()->CreateNewTextureID();
 
 		SMenu_CopyString( m_szMaterial, src.szMaterial, sizeof( m_szMaterial ) );
+		SMenu_CopyString( m_szLabel, src.szLabel, sizeof( m_szLabel ) );
+		m_hFont = INVALID_FONT;
+		m_szDrawn[0] = 0;
 
 		SetSize( 160, SMENU_SRCROW_H );
 		SetPaintBackgroundEnabled( false );
 		SetMouseInputEnabled( true );
-
-		m_pLabel = new vgui::Label( this, "SourceName", src.szLabel );
-		m_pLabel->SetContentAlignment( vgui::Label::a_west );
-		m_pLabel->SetMouseInputEnabled( false );
-		m_pLabel->SetBounds( 22, 2, 136, 16 );
 	}
+
+	// The source's display name, so the sidebar can be widened to hold it.
+	const char *GetLabel( void ) const			{ return m_szLabel; }
 
 	void SetSelected( bool bSelected )
 	{
@@ -1912,19 +3017,20 @@ public:
 	{
 		BaseClass::ApplySchemeSettings( pScheme );
 
-		if ( m_pLabel )
-			m_pLabel->SetFont( pScheme->GetFont( "DefaultVerySmall", true ) );
+		// The sidebar uses its own smaller font (SMenu_SourceFont); the scheme
+		// font is only the fallback if that one could not be built.
+		m_hFont = SMenu_SourceFont();
+		if ( m_hFont == INVALID_FONT )
+			m_hFont = pScheme->GetFont( "DefaultVerySmall", true );
+
+		UpdateDrawnLabel();
 	}
 
-	virtual void PerformLayout()
+	virtual void OnSizeChanged( int nNewWide, int nNewTall )
 	{
-		BaseClass::PerformLayout();
+		BaseClass::OnSizeChanged( nNewWide, nNewTall );
 
-		int w = 0, h = 0;
-		GetSize( w, h );
-
-		if ( m_pLabel )
-			m_pLabel->SetBounds( 22, 2, w - 26, h - 4 );
+		UpdateDrawnLabel();
 	}
 
 	virtual void Paint()
@@ -1960,6 +3066,35 @@ public:
 			surface()->DrawTexturedRect( 2, 2, 18, 18 );
 		}
 
+		// HL2SB: same rule as the grid cells - the label is measured and drawn
+		// here, so it is never clipped by a rectangle that was guessed at.  The
+		// sidebar is widened for the longest name (CSMenu::PerformLayout), so
+		// the "..." is only reached if a single source name is absurd.
+		if ( m_szLabel[0] && m_hFont != INVALID_FONT && g_pVGuiLocalize )
+		{
+			if ( !m_szDrawn[0] )
+				UpdateDrawnLabel();
+
+			if ( m_szDrawn[0] )
+			{
+				wchar_t wszLabel[192];
+				g_pVGuiLocalize->ConvertANSIToUnicode( m_szDrawn, wszLabel, sizeof( wszLabel ) );
+
+				int nTextW = 0, nTextH = 0;
+				surface()->GetTextSize( m_hFont, wszLabel, nTextW, nTextH );
+				NOTE_UNUSED( nTextW );
+
+				int y = ( h - nTextH ) / 2;
+				if ( y < 0 )
+					y = 0;
+
+				surface()->DrawSetTextFont( m_hFont );
+				surface()->DrawSetTextColor( 255, 255, 255, 255 );
+				surface()->DrawSetTextPos( 22, y );
+				surface()->DrawPrintText( wszLabel, V_wcslen( wszLabel ) );
+			}
+		}
+
 		BaseClass::Paint();
 	}
 
@@ -1978,9 +3113,17 @@ public:
 	virtual void OnMouseReleased( vgui::MouseCode code );
 
 private:
+	// Shorten the source name to this row's width, once per size or font change.
+	void UpdateDrawnLabel( void )
+	{
+		SMenu_ShortenText( m_hFont, m_szLabel, GetWide() - 28, m_szDrawn, sizeof( m_szDrawn ) );
+	}
+
 	CSMenu			*m_pOwner;
-	vgui::Label		*m_pLabel;
+	HFont			m_hFont;
 	char			m_szMaterial[128];
+	char			m_szLabel[128];
+	char			m_szDrawn[160];
 	int				m_nIndex;
 	int				m_nTexture;
 	bool			m_bBound;
@@ -2107,6 +3250,31 @@ public:
 			m_pRows[i]->SetSelected( i == nIndex );
 	}
 
+	// HL2SB: how wide the sidebar has to be to print every source of the current
+	// category in full.  Measured from the real rows, so the frame can size the
+	// sidebar to its content instead of guessing (which is what clipped
+	// "addons/the ultimate..." mid-word). Returns 0 before any row exists.
+	int GetWantedWidth( void )
+	{
+		// Measured with the SAME font the rows draw with, or the sidebar would be
+		// sized for text nobody sees.
+		HFont hFont = SMenu_SourceFont();
+		if ( hFont == INVALID_FONT )
+			hFont = SMenu_LabelFont( this );
+		if ( hFont == INVALID_FONT )
+			return 0;
+
+		int nWidest = 0;
+		for ( int i = 0; i < m_pRows.Count(); ++i )
+		{
+			const int nWidth = SMenu_TextWidth( hFont, m_pRows[i]->GetLabel() ) + 30;
+			if ( nWidth > nWidest )
+				nWidest = nWidth;
+		}
+
+		return nWidest;
+	}
+
 	virtual void OnCommand( const char *command );
 
 private:
@@ -2124,7 +3292,34 @@ public:
 	CSMenu( vgui::VPANEL *parent, const char *panelName ) : BaseClass( NULL, "SMenu" )
 	{
 		SetTitle( "SMenu", true );
-		SetSize( 820, 620 );
+
+		int nScreenW = 0, nScreenH = 0;
+		surface()->GetScreenSize( nScreenW, nScreenH );
+
+		int nMarginX = (int)( ( nScreenW - 1024 ) * SMENU_BORDER_FRACTION );
+		int nMarginY = (int)( ( nScreenH - 768 ) * SMENU_BORDER_FRACTION );
+
+		if ( nMarginX < 25 ) nMarginX = 25;
+		if ( nMarginX > 256 ) nMarginX = 256;
+		if ( nMarginY < 25 ) nMarginY = 25;
+		if ( nMarginY > 256 ) nMarginY = 256;
+
+		// "At this size we can't spare any space for emptiness" (spawnmenu.lua:141).
+		if ( nScreenW < 1024 || nScreenH < 768 )
+		{
+			nMarginX = 0;
+			nMarginY = 0;
+		}
+
+		s_nSMenuFrameW = nScreenW - 2 * nMarginX;
+		s_nSMenuFrameH = nScreenH - 2 * nMarginY;
+
+		if ( s_nSMenuFrameW < 640 ) s_nSMenuFrameW = 640;
+		if ( s_nSMenuFrameH < 480 ) s_nSMenuFrameH = 480;
+
+		SetSize( s_nSMenuFrameW, s_nSMenuFrameH );
+		SetPos( ( nScreenW - s_nSMenuFrameW ) / 2, ( nScreenH - s_nSMenuFrameH ) / 2 );
+
 		SetMinimizeButtonVisible( false );
 		SetMaximizeButtonVisible( false );
 
@@ -2197,7 +3392,9 @@ public:
 			return;
 
 		// The top strip takes what its buttons need (one row unless the frame is
-		// dragged narrow); the sidebar keeps the width it always had.
+		// dragged narrow); the sidebar keeps the width it always had - unless
+		// its current source names need more, in which case it grows so they are
+		// printed in full instead of being cut mid-word.
 		const int nTabH = m_pTabs->GetPreferredHeight( w - 8 ) + 4;
 
 		int nSideW = w / 4;
@@ -2205,6 +3402,13 @@ public:
 			nSideW = 170;
 		if ( nSideW > 260 )
 			nSideW = 260;
+
+		if ( m_pSourceList )
+		{
+			const int nWanted = m_pSourceList->GetWantedWidth();
+			if ( nWanted > nSideW )
+				nSideW = MIN( nWanted, SMENU_SIDE_MAX_W );
+		}
 
 		int nBodyH = h - nTabH - 12;
 		if ( nBodyH < 10 )
@@ -2482,6 +3686,10 @@ private:
 				entry.uFlags = SMCAT_PROP;
 				SMenu_CopyString( entry.szSource, SMENU_SRC_HL2, sizeof( entry.szSource ) );
 				Q_strncpy( entry.szClass, szModel, sizeof( entry.szClass ) );
+				// HL2SB: a model cell is labelled with the model's own file
+				// stem, the way GMod's spawnicon.lua:257 does it (the tooltip
+				// there is the model's file name without ".mdl").
+				SMenu_CopyString( entry.szName, szBase, sizeof( entry.szName ) );
 				Q_snprintf( entry.szFixedCmd, sizeof( entry.szFixedCmd ), "prop_physics_create %s", szModel );
 				Q_snprintf( entry.szMaterial, sizeof( entry.szMaterial ), "vgui/smenu/models/%s", szModel );
 
@@ -2552,6 +3760,10 @@ private:
 
 		m_nSidebarCat = nCat;
 		m_bSidebarDirty = false;
+
+		// HL2SB: the rows now exist, so the sidebar's required width is known -
+		// relayout so PerformLayout can widen it before the first paint.
+		InvalidateLayout( true );
 	}
 
 	// The index of a remembered source id inside a category's list, or -1.
