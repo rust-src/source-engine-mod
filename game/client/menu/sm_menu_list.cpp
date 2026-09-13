@@ -984,6 +984,114 @@ static void SMenu_BuildEntries( void )
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB: how many entries each category holds, and the debug/timing switch.
+//
+// This count is what lets the category tabs be built WITHOUT a single icon panel
+// existing - the pages themselves are created and filled lazily, the way GMod's
+// spawnmenu does it (gamemodes/sandbox/gamemode/spawnmenu/creationmenu/content/
+// content.lua:122-174: a node is populated on first click, once; and
+// creationmenu.lua:46-53: the content panel is created in a later frame with
+// timer.Simple(0, ...)).  Building every page eagerly in the frame the menu
+// opens is what made SMenu hitch.
+//-----------------------------------------------------------------------------
+static int s_nSMenuCatCounts[SMENU_CAT_COUNT];
+
+// Time we are willing to spend creating cell panels before yielding to the next
+// frame.  Cells are cheap individually (the icon probes are cached), so a few
+// milliseconds is a whole slice of a page.
+#define SMENU_BUILD_BUDGET_MS	4.0f
+
+static bool		g_bSMenuDebug = false;
+
+static double SMenu_Now( void )
+{
+	return Plat_FloatTime() * 1000.0;
+}
+
+static void SMenu_Debug( const char *pszFormat, ... )
+{
+	if ( !g_bSMenuDebug )
+		return;
+
+	char szBuffer[512];
+	va_list args;
+	va_start( args, pszFormat );
+	V_vsnprintf( szBuffer, sizeof( szBuffer ), pszFormat, args );
+	va_end( args );
+
+	Msg( "[HL2SB] SMenu: %s\n", szBuffer );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: is the fork's debug switch on?
+//
+// The switch is `hl2sb_hud_debug`, and it is created from LUA
+// (lua/game/client/hl2sb_cl_hudpickup.lua:165 CreateClientConVar).  A
+// Lua-created convar is never RegisterConCommand-ed in this fork, so
+// cvar->FindVar() cannot see it (AGENTS.md 5.4.3(4)) - which is also why
+// game/server/hl2sb_undo.cpp:126's debug check never fires.  Fast path first,
+// then ask the Lua state.  Evaluated once per menu open, never per frame.
+//-----------------------------------------------------------------------------
+static bool SMenu_QueryDebugCvar( void )
+{
+	ConVar *pVar = cvar ? cvar->FindVar( "hl2sb_hud_debug" ) : NULL;
+	if ( pVar )
+		return pVar->GetInt() != 0;
+
+	if ( !L )
+		return false;
+
+	lua_getglobal( L, "GetConVarNumber" );
+	if ( !lua_isfunction( L, -1 ) )
+	{
+		lua_pop( L, 1 );
+		return false;
+	}
+
+	lua_pushstring( L, "hl2sb_hud_debug" );
+
+	if ( luasrc_pcall( L, 1, 1, 0 ) != 0 )
+		return false;			// the error object is already popped
+
+	const int nValue = (int)lua_tonumber( L, -1 );
+	lua_pop( L, 1 );			// the result
+
+	return nValue != 0;
+}
+
+static bool SMenu_EntryMatchesCat( int iCat, const SMenuEntry_t &entry )
+{
+	if ( ( entry.uFlags & s_SMenuCats[iCat].uMask ) == 0 )
+		return false;
+
+	if ( s_SMenuCats[iCat].uNotMask && ( entry.uFlags & s_SMenuCats[iCat].uNotMask ) )
+		return false;
+
+	return true;
+}
+
+static void SMenu_CountCategories( void )
+{
+	for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
+	{
+		if ( s_SMenuCats[i].bModelPage )
+		{
+			s_nSMenuCatCounts[i] = -1;	// unknown: the page is a files scan
+			continue;
+		}
+
+		int n = 0;
+		for ( int j = 0; j < g_SMenuEntries.Count(); ++j )
+		{
+			if ( SMenu_EntryMatchesCat( i, g_SMenuEntries[j] ) )
+				++n;
+		}
+
+		s_nSMenuCatCounts[i] = n;
+	}
+}
+
+//-----------------------------------------------------------------------------
 // HL2SB: one icon-grid cell - thumbnail + class name, click = spawn.
 //
 // Not vgui::ImageButton/ImagePanel: scheme()->GetImage() prepends "vgui/" to
@@ -1111,9 +1219,17 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// HL2SB: one page of icon cells.  PanelListPanel already lays its children out
-// as a wrapping grid and owns the scrollbar, so the only thing this class does
-// is tell it how many columns fit in the current width.
+// HL2SB: one page of icon cells - created empty, filled in slices.
+//
+// This mirrors GMod: a category node is populated the first time it is clicked
+// and never again unless its content changed (content.lua:122-174), and the
+// expensive part is deferred out of the frame that builds the menu
+// (creationmenu.lua:46-53).  Here the work is additionally cut into
+// SMENU_BUILD_BUDGET_MS slices, so even a page with hundreds of cells cannot
+// stall a frame.
+//
+// PanelListPanel already lays its children out as a wrapping grid and owns the
+// scrollbar, so this class only tells it how many columns fit.
 //-----------------------------------------------------------------------------
 #define SMENU_CELL_W	76
 #define SMENU_CELL_H	80
@@ -1125,6 +1241,12 @@ public:
 	CSMList( vgui::Panel *pParent, const char *pName ) : BaseClass( pParent, pName )
 	{
 		m_nColumns = 0;
+		m_nBuildCursor = 0;
+		m_nCellsAdded = 0;
+		m_bPageDirty = true;
+		m_bPageBuilt = false;
+		m_bHasItems = false;
+		m_flBuildStart = 0.0;
 		SetFirstColumnWidth( 0 );
 		SetNumColumns( 1 );
 		SetVerticalBufferPixels( 2 );
@@ -1135,6 +1257,85 @@ public:
 		CSMIconButton *pButton = new CSMIconButton( this, entry );
 		pButton->SetSize( SMENU_CELL_W, SMENU_CELL_H );
 		AddItem( NULL, pButton );
+		m_bHasItems = true;
+	}
+
+	// Mark the page as needing (re)population.  Nothing is destroyed or created
+	// here on purpose - that is what keeps the menu-open frame cheap.
+	void InvalidatePage( void )
+	{
+		m_bPageDirty = true;
+		m_bPageBuilt = false;
+		m_nBuildCursor = 0;
+	}
+
+	bool IsPageBuilt( void ) const		{ return m_bPageBuilt; }
+
+	// Mark the page as finished without touching its items (used by the models
+	// page, whose content comes from a files scan rather than from
+	// g_SMenuEntries).
+	void FinishPage( void )
+	{
+		m_bPageBuilt = true;
+		m_bPageDirty = false;
+		m_nBuildCursor = g_SMenuEntries.Count();
+	}
+
+	// Fill at most flBudgetMs worth of cells for category nCat.  Returns true
+	// when the page is complete.  The caller drives this once per frame.
+	bool BuildSomeCells( float flBudgetMs, int nCat )
+	{
+		if ( m_bPageBuilt )
+			return true;
+
+		if ( m_bPageDirty )
+		{
+			if ( m_bHasItems )
+				DeleteAllItems();
+
+			m_bHasItems = false;
+			m_nBuildCursor = 0;
+			m_nCellsAdded = 0;
+			m_bPageDirty = false;
+			m_flBuildStart = SMenu_Now();
+		}
+
+		const int nTotal = g_SMenuEntries.Count();
+		const double flSliceStart = SMenu_Now();
+		int nThisSlice = 0;
+
+		while ( m_nBuildCursor < nTotal )
+		{
+			const SMenuEntry_t &entry = g_SMenuEntries[m_nBuildCursor];
+
+			if ( SMenu_EntryMatchesCat( nCat, entry ) )
+			{
+				AddEntry( entry );
+				++m_nCellsAdded;
+				++nThisSlice;
+
+				// Always add at least one cell, then stop once the budget is gone.
+				if ( flBudgetMs > 0.0f && ( SMenu_Now() - flSliceStart ) >= flBudgetMs )
+				{
+					++m_nBuildCursor;
+					break;
+				}
+			}
+
+			++m_nBuildCursor;
+		}
+
+		if ( m_nBuildCursor >= nTotal )
+		{
+			m_bPageBuilt = true;
+			SMenu_Debug( "page \"%s\" built: %d cells from %d entries, %.2f ms",
+						 s_SMenuCats[nCat].pszTitle, m_nCellsAdded, nTotal, SMenu_Now() - m_flBuildStart );
+			return true;
+		}
+
+		SMenu_Debug( "page \"%s\": +%d cells (%d/%d entries scanned, %.2f ms)",
+					 s_SMenuCats[nCat].pszTitle, nThisSlice, m_nBuildCursor, nTotal, SMenu_Now() - flSliceStart );
+		return false;
 	}
 
 	virtual void PerformLayout()
@@ -1157,7 +1358,13 @@ public:
 	}
 
 private:
-	int m_nColumns;
+	int		m_nColumns;
+	int		m_nBuildCursor;
+	int		m_nCellsAdded;
+	bool	m_bPageDirty;
+	bool	m_bPageBuilt;
+	bool	m_bHasItems;
+	double	m_flBuildStart;
 };
 
 //-----------------------------------------------------------------------------
@@ -1205,6 +1412,8 @@ public:
 		m_uBuiltHash = 0;
 		m_bBuiltOnce = false;
 		m_nCurrentCat = 0;
+		m_bModelPagePossible = false;
+		m_bModelPageBuilt = false;
 
 		m_pTree = new CSMCatList( this, "CategoryList" );
 		m_pTree->SetOwner( this );
@@ -1224,7 +1433,11 @@ public:
 			m_pPages[i]->SetVisible( false );
 		}
 
-		vgui::ivgui()->AddTickSignal( GetVPanel(), 100 );
+		// HL2SB: tick EVERY frame while a page is being filled in slices.  The
+		// per-frame cost when the menu is closed is a couple of comparisons, and
+		// it means a page completes over a handful of frames instead of one
+		// slice per 100 ms.
+		vgui::ivgui()->AddTickSignal( GetVPanel(), 0 );
 
 		SetMoveable( true );
 		SetVisible( false );
@@ -1312,6 +1525,13 @@ public:
 				RebuildIfNeeded();
 				ShowCategory( m_nCurrentCat );
 			}
+
+			// HL2SB: pay for the visible page in slices so that no single frame
+			// builds a whole grid.  GMod gets the same effect by populating a
+			// category only when its node is first clicked (content.lua:122-174)
+			// and by deferring the tab population out of the construction frame
+			// with timer.Simple(0, ...) (creationmenu.lua:46-53).
+			StepCurrentPage();
 		}
 
 		SetVisible( bVisible );
@@ -1322,7 +1542,13 @@ private:
 	// rebuilds the pages and the category tree.  Returns true when it rebuilt.
 	bool RebuildIfNeeded( void )
 	{
+		g_bSMenuDebug = SMenu_QueryDebugCvar();
+
+		const double flStart = SMenu_Now();
+
 		SMenu_BuildEntries();
+
+		const double flBuilt = SMenu_Now();
 
 		const char *pszLevel = engine->GetLevelName();
 		if ( !pszLevel )
@@ -1331,45 +1557,50 @@ private:
 		const unsigned int uHash = SMenu_HashEntries();
 		const bool bLevelChanged = Q_stricmp( m_szBuiltLevel, pszLevel ) != 0;
 
+		SMenu_Debug( "open: %d entries, hash %s (%s)",
+					 g_SMenuEntries.Count(),
+					 ( uHash == m_uBuiltHash ) ? "unchanged" : "CHANGED",
+					 bLevelChanged ? "level changed" : "same level" );
+
 		if ( m_bBuiltOnce && uHash == m_uBuiltHash && !bLevelChanged )
 			return false;		// nothing changed: leave the live panels alone
 
 		Q_strncpy( m_szBuiltLevel, pszLevel, sizeof( m_szBuiltLevel ) );
 		m_uBuiltHash = uHash;
 
+		// HL2SB: NO panel work here.  Every page is merely invalidated and will
+		// repopulate itself in slices the next time it is shown - that is what
+		// removes the hitch from opening the menu.  (The old code created every
+		// cell of every category, and scanned models/props_* on top of that, in
+		// this very frame.)
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
-		{
-			m_pPages[i]->DeleteAllItems();
+			m_pPages[i]->InvalidatePage();
 
-			if ( s_SMenuCats[i].bModelPage )
-				continue;
+		m_bModelPageBuilt = false;
 
-			for ( int j = 0; j < g_SMenuEntries.Count(); ++j )
-			{
-				const SMenuEntry_t &entry = g_SMenuEntries[j];
+		SMenu_CountCategories();
 
-				if ( ( entry.uFlags & s_SMenuCats[i].uMask ) == 0 )
-					continue;
+		// Is the models page even possible?  It lists models/props_* that have a
+		// per-model icon under materials/vgui/smenu/models/.  When that directory
+		// is absent the page can never hold anything, and skipping it removes the
+		// whole models/ directory walk from the open path.  One file system call
+		// decides it.
+		FileFindHandle_t hProbe = FILESYSTEM_INVALID_FIND_HANDLE;
+		const char *pszProbe = filesystem->FindFirstEx( "materials/vgui/smenu/models/*", "GAME", &hProbe );
+		m_bModelPagePossible = ( pszProbe != NULL );
+		if ( hProbe != FILESYSTEM_INVALID_FIND_HANDLE )
+			filesystem->FindClose( hProbe );
 
-				if ( s_SMenuCats[i].uNotMask && ( entry.uFlags & s_SMenuCats[i].uNotMask ) )
-					continue;
-
-				m_pPages[i]->AddEntry( entry );
-			}
-		}
-
-		// models/props_* - the only page whose content is files, not classes, so
-		// it is rescanned on a level change (and the first time) only: walking
-		// every props_*.mdl is far too expensive for a per-open refresh.
-		if ( !m_bBuiltOnce || bLevelChanged )
-		{
-			m_pPages[SMENU_CAT_COUNT - 1]->DeleteAllItems();
-			SMenu_BuildModelPage( m_pPages[SMENU_CAT_COUNT - 1] );
-		}
+		const double flCounted = SMenu_Now();
 
 		m_bBuiltOnce = true;
 
 		RebuildTree();
+
+		const double flEnd = SMenu_Now();
+
+		SMenu_Debug( "open: %d entries - read %.2f ms, count %.2f ms, tabs %.2f ms, TOTAL %.2f ms (pages are lazy)",
+					 g_SMenuEntries.Count(), flBuilt - flStart, flCounted - flBuilt, flEnd - flCounted, flEnd - flStart );
 
 		return true;
 	}
@@ -1377,7 +1608,8 @@ private:
 	//-----------------------------------------------------------------------------
 	// HL2SB: one button per non-empty category.  A category with nothing in it
 	// (Vehicles on a server that does not publish its entity list, for instance)
-	// is left out of the tree instead of showing a dead tab.
+	// is left out instead of showing a dead tab.  Built from the per-category
+	// COUNTS, so it does not need any page to exist yet.
 	//-----------------------------------------------------------------------------
 	void RebuildTree( void )
 	{
@@ -1388,8 +1620,15 @@ private:
 
 		for ( int i = 0; i < SMENU_CAT_COUNT; ++i )
 		{
-			if ( m_pPages[i]->GetItemCount() <= 0 )
+			if ( s_SMenuCats[i].bModelPage )
+			{
+				if ( !m_bModelPagePossible )
+					continue;
+			}
+			else if ( s_nSMenuCatCounts[i] <= 0 )
+			{
 				continue;
+			}
 
 			m_bCatVisible[i] = true;
 
@@ -1467,6 +1706,45 @@ private:
 		g_pFullFileSystem->FindClose( fh );
 	}
 
+	//-----------------------------------------------------------------------------
+	// HL2SB: advance the visible page by one slice.  Driven once per frame from
+	// OnTick(), and once right after a category is selected so a click feels
+	// immediate; the rest of the grid fills in over the next frames.
+	//-----------------------------------------------------------------------------
+	void StepCurrentPage( void )
+	{
+		if ( m_nCurrentCat < 0 || m_nCurrentCat >= (int)SMENU_CAT_COUNT )
+			return;
+
+		if ( !m_bCatVisible[m_nCurrentCat] )
+			return;
+
+		CSMList *pPage = m_pPages[m_nCurrentCat];
+		if ( !pPage || pPage->IsPageBuilt() )
+			return;
+
+		if ( s_SMenuCats[m_nCurrentCat].bModelPage )
+		{
+			if ( m_bModelPageBuilt )
+				return;
+
+			// The models page is a FILES scan, not a filter over g_SMenuEntries,
+			// so it cannot use the cell cursor.  It runs in one go the first time
+			// the page is shown - gated behind the probe in RebuildIfNeeded(), so
+			// an install without per-model icons never walks the directory at all.
+			// GMod also scans a game's models synchronously when its node is
+			// selected (gameprops.lua:100-111).
+			const double flStart = SMenu_Now();
+			SMenu_BuildModelPage( pPage );
+			pPage->FinishPage();
+			m_bModelPageBuilt = true;
+			SMenu_Debug( "models page built: %d cells in %.2f ms", pPage->GetItemCount(), SMenu_Now() - flStart );
+			return;
+		}
+
+		pPage->BuildSomeCells( SMENU_BUILD_BUDGET_MS, m_nCurrentCat );
+	}
+
 	void ShowCategory( int nCat )
 	{
 		if ( nCat < 0 || nCat >= (int)SMENU_CAT_COUNT || !m_bCatVisible[nCat] )
@@ -1497,6 +1775,10 @@ private:
 			m_pPages[nCat]->SetBounds( 0, 0, m_pGridHost->GetWide(), m_pGridHost->GetTall() );
 			m_pPages[nCat]->InvalidateLayout( true );
 		}
+
+		// HL2SB: build the first slice right now, so the click shows content
+		// immediately; OnTick() finishes the page over the next frames.
+		StepCurrentPage();
 	}
 
 	CSMCatList	*m_pTree;
@@ -1507,6 +1789,8 @@ private:
 	char		m_szBuiltLevel[256];
 	unsigned int m_uBuiltHash;
 	bool		m_bBuiltOnce;
+	bool		m_bModelPagePossible;	// materials/vgui/smenu/models/ exists
+	bool		m_bModelPageBuilt;
 };
 
 void CSMCatList::OnCommand( const char *command )
