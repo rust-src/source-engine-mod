@@ -2774,6 +2774,107 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
   return 1;
 }
 
+#if defined( GAME_DLL )
+//-----------------------------------------------------------------------------
+// Write one data-description field from the Lua value at nValueArg.
+//
+// Deliberately NOT ParseKeyvalue(): that helper is the map/FGD keyvalue path, so
+// it only accepts the EXTERNAL name of a DEFINE_KEYFIELD and refuses a plain
+// DEFINE_FIELD - which is exactly what GMod's SetSaveValue happily writes (and
+// why m_iHealth came back false from it).  This mirrors HL2SB_PushDataDescField
+// in reverse, so the two agree on what every type means, and it writes the
+// member directly - the same "you know what you are doing" contract GMod has
+// (no SetHealth() clamping or OnHealthChanged side effects; that is the point of
+// a save-value write).
+//-----------------------------------------------------------------------------
+static bool HL2SB_SetDataDescField (lua_State *L, CBaseEntity *pEntity, typedescription_t *pField, int nValueArg) {
+  if ( pField->fieldName == NULL || pField->fieldSize != 1 )
+    return false;
+
+  if ( pField->flags & FTYPEDESC_PTR )
+    return false;
+
+  char *pMember = (char *)pEntity + pField->fieldOffset[ TD_OFFSET_NORMAL ];
+
+  switch ( pField->fieldType ) {
+  case FIELD_FLOAT:
+  case FIELD_TIME:
+    if ( !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(float *)pMember = (float)lua_tonumber( L, nValueArg );
+    return true;
+
+  case FIELD_INTEGER:
+  case FIELD_TICK:
+  case FIELD_MODELINDEX:
+  case FIELD_MATERIALINDEX:
+    if ( !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(int *)pMember = (int)lua_tointeger( L, nValueArg );
+    return true;
+
+  case FIELD_BOOLEAN:
+    if ( !lua_isboolean( L, nValueArg ) && !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(int *)pMember = lua_toboolean( L, nValueArg ) ? 1 : 0;
+    return true;
+
+  case FIELD_SHORT:
+    if ( !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(short *)pMember = (short)lua_tointeger( L, nValueArg );
+    return true;
+
+  case FIELD_CHARACTER:
+    if ( !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(char *)pMember = (char)lua_tointeger( L, nValueArg );
+    return true;
+
+  case FIELD_INTEGER64:
+    if ( !lua_isnumber( L, nValueArg ) )
+      return false;
+    *(int64 *)pMember = (int64)lua_tointeger( L, nValueArg );
+    return true;
+
+  case FIELD_VECTOR:
+  case FIELD_POSITION_VECTOR: {
+    // GMod takes a Vector (or an x/y/z table) for these.
+    if ( luaL_testudata( L, nValueArg, "Vector" ) != NULL ) {
+      *(Vector *)pMember = luaL_checkvector( L, nValueArg );
+      return true;
+    }
+    if ( lua_istable( L, nValueArg ) ) {
+      Vector vNew;
+      float *pFl = (float *)&vNew;
+      for ( int i = 0; i < 3; ++i ) {
+        lua_rawgeti( L, nValueArg, i + 1 );
+        if ( !lua_isnumber( L, -1 ) ) {
+          lua_pop( L, 1 );
+          lua_getfield( L, nValueArg, (i == 0) ? "x" : (i == 1) ? "y" : "z" );
+          if ( !lua_isnumber( L, -1 ) ) {
+            lua_pop( L, 1 );
+            return false;
+          }
+        }
+        pFl[ i ] = (float)lua_tonumber( L, -1 );
+        lua_pop( L, 1 );
+      }
+      *(Vector *)pMember = vNew;
+      return true;
+    }
+    return false;
+  }
+
+  default:
+    // FIELD_STRING / FIELD_EHANDLE / FIELD_CUSTOM and friends: writing those
+    // needs the pooled-string and entity-handle plumbing, so refuse rather than
+    // half-do it.  GetSaveTable refuses to read them the same way.
+    return false;
+  }
+}
+#endif // GAME_DLL
+
 static int CBaseEntity_SetSaveValue (lua_State *L) {
   CBaseEntity *pEntity = luaL_checkentity( L, 1 );
   const char *pszName = luaL_checkstring( L, 2 );
@@ -2781,19 +2882,14 @@ static int CBaseEntity_SetSaveValue (lua_State *L) {
   bool bDone = false;
 
 #if defined( GAME_DLL )
-  extern bool ParseKeyvalue( void *pObject, typedescription_t *pFields, int iNumFields, const char *szKeyName, const char *szValue );
-
   if ( pEntity != NULL ) {
-    char szValue[ 512 ];
+    // Resolve the name the same way the readers do (most derived declaration
+    // wins), then write it by its declared type.
+    typedescription_t *pField =
+      const_cast< typedescription_t * >( HL2SB_FindDataDescField( pEntity, pszName ) );
 
-    // Validate the name against the entity's own data descriptions first, so a
-    // typo can never be answered by some unrelated field whose external name
-    // happens to parse.
-    if ( HL2SB_FindDataDescField( pEntity, pszName ) != NULL &&
-         HL2SB_ValueToSaveString( L, 3, szValue, sizeof( szValue ) ) ) {
-      for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL && !bDone; pMap = pMap->baseMap )
-        bDone = ParseKeyvalue( pEntity, pMap->dataDesc, pMap->dataNumFields, pszName, szValue ) ? true : false;
-    }
+    if ( pField != NULL )
+      bDone = HL2SB_SetDataDescField( L, pEntity, pField, 3 );
   }
 #else
   ( void )pszName;
