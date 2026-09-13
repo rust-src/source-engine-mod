@@ -3,7 +3,7 @@
 #include "luasrclib.h"
 #include "lbaseentity_shared.h"
 #include "basescripted.h"
-#include "mathlib/lVector.h"
+#include "mathlib/lvector.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"

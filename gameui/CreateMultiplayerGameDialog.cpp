@@ -540,21 +540,23 @@ void CCreateMultiplayerGameDialog::ApplyCategoryFilter()
 		}
 
 		// dedup
-		bool bDup = false;
-		for ( int i = 0; i < m_MapNames.Count(); ++i )
 		{
-			if ( !Q_stricmp( m_MapNames[i], mapname ) )
-				{ bDup = true; break; }
+			bool bDup = false;
+			for ( int i = 0; i < m_MapNames.Count(); ++i )
+			{
+				if ( !Q_stricmp( m_MapNames[i], mapname ) )
+					{ bDup = true; break; }
+			}
+			if ( !bDup )
+			{
+				CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
+				m_pMapList->AddItem( NULL, pCard );
+
+				char *pszCopy = new char[ strlen(mapname) + 1 ];
+				Q_strcpy( pszCopy, mapname );
+				m_MapNames.AddToTail( pszCopy );
+			}
 		}
-		if ( bDup )
-			goto nextFile;
-
-		CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
-		m_pMapList->AddItem( NULL, pCard );
-
-		char *pszCopy = new char[ strlen(mapname) + 1 ];
-		Q_strcpy( pszCopy, mapname );
-		m_MapNames.AddToTail( pszCopy );
 
 	nextFile:
 		pszFilename = g_pFullFileSystem->FindNext( findHandle );
@@ -614,28 +616,28 @@ void CCreateMultiplayerGameDialog::LoadMaps( const char *pszPathID )
 		}
 
 		// skip duplicates
-		bool bDup = false;
-		for ( int i = 0; i < m_MapNames.Count(); ++i )
 		{
-			if ( !Q_stricmp( m_MapNames[i], mapname ) )
+			bool bDup = false;
+			for ( int i = 0; i < m_MapNames.Count(); ++i )
 			{
-				bDup = true;
-				break;
+				if ( !Q_stricmp( m_MapNames[i], mapname ) )
+				{
+					bDup = true;
+					break;
+				}
+			}
+			if ( !bDup )
+			{
+				// add a card to the grid
+				CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
+				m_pMapList->AddItem( NULL, pCard );
+
+				// store map name for retrieval
+				char *pszCopy = new char[ strlen(mapname) + 1 ];
+				Q_strcpy( pszCopy, mapname );
+				m_MapNames.AddToTail( pszCopy );
 			}
 		}
-		if ( bDup )
-		{
-			goto nextFile;
-		}
-
-		// add a card to the grid
-		CMapCardPanel *pCard = new CMapCardPanel( m_pMapList, "MapCard", this, mapname );
-		m_pMapList->AddItem( NULL, pCard );
-
-		// store map name for retrieval
-		char *pszCopy = new char[ strlen(mapname) + 1 ];
-		Q_strcpy( pszCopy, mapname );
-		m_MapNames.AddToTail( pszCopy );
 
 	nextFile:
 		pszFilename = g_pFullFileSystem->FindNext( findHandle );
