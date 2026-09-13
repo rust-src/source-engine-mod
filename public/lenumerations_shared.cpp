@@ -256,6 +256,34 @@ LUALIB_API int luaopen_SharedEnumerations( lua_State *L )
     LUA_SET_ENUM_LIB_END( L );
 
     //---------------------------------------------------------------------
+    // GMod's FSASYNC -- the status codes file.AsyncRead hands to its callback.
+    //
+    // The values are public/filesystem.h's own FSASYNC_* enum, so there is no
+    // second copy to drift.
+    //
+    // BARE GLOBALS ON PURPOSE (lua_pushenum, not the _nobare form above): GMod's
+    // file.AsyncRead example compares `status == FSASYNC_OK`, i.e. against the
+    // bare spelling.  Unlike DOCK_TYPE's NONE/LEFT/TOP, none of these names is
+    // handed out by any other enum, so there is nothing to collide with.
+    // `lib` is "FSASYNC", which is exactly how the macro builds the full name.
+    //---------------------------------------------------------------------
+    LUA_SET_ENUM_LIB_BEGIN( L, "FSASYNC" );
+    lua_pushenum( L, FSASYNC_ERR_NOT_MINE,      "ERR_NOT_MINE" );
+    lua_pushenum( L, FSASYNC_ERR_RETRY_LATER,   "ERR_RETRY_LATER" );
+    lua_pushenum( L, FSASYNC_ERR_ALIGNMENT,     "ERR_ALIGNMENT" );
+    lua_pushenum( L, FSASYNC_ERR_FAILURE,       "ERR_FAILURE" );
+    lua_pushenum( L, FSASYNC_ERR_READING,       "ERR_READING" );
+    lua_pushenum( L, FSASYNC_ERR_NOMEMORY,      "ERR_NOMEMORY" );
+    lua_pushenum( L, FSASYNC_ERR_UNKNOWNID,     "ERR_UNKNOWNID" );
+    lua_pushenum( L, FSASYNC_ERR_FILEOPEN,      "ERR_FILEOPEN" );
+    lua_pushenum( L, FSASYNC_OK,                "OK" );
+    lua_pushenum( L, FSASYNC_STATUS_PENDING,    "STATUS_PENDING" );
+    lua_pushenum( L, FSASYNC_STATUS_INPROGRESS, "STATUS_INPROGRESS" );
+    lua_pushenum( L, FSASYNC_STATUS_ABORTED,    "STATUS_ABORTED" );
+    lua_pushenum( L, FSASYNC_STATUS_UNSERVICED, "STATUS_UNSERVICED" );
+    LUA_SET_ENUM_LIB_END( L );
+
+    //---------------------------------------------------------------------
     // HL2SB: the GMod enumeration TABLES that lua/includes/init.lua asked for
     // ("TODO(engine): publish _E.INPUT / _E.SURFACE / ... / _E.DOCK_TYPE for
     // real", init.lua:398) and that
