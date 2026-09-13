@@ -418,6 +418,42 @@ CPropVehicleDriveable::~CPropVehicleDriveable( void )
 }
 
 //-----------------------------------------------------------------------------
+// HL2SB: never let a vehicle's removal strand a passenger.
+//
+// Nothing used to eject the occupant when the vehicle went away (undo removing
+// it, a kill, level cleanup).  CBasePlayer::LeaveVehicle() then refused to run -
+// it bailed out when m_hVehicle.Get() was NULL - so the player stayed parented
+// to the dead entity, MOVETYPE_NOCLIP, COLLISION_GROUP_IN_VEHICLE and looking
+// through the vehicle: black screen, no way out.
+//
+// GMod has no vehicle special-case in its undo either
+// (D:\games\garrysmod\...\lua\includes\modules\undo.lua:438-481 just calls
+// entity:Remove() on anything IsValid); it relies on the ENGINE driving the
+// vehicle-exit transition, which it surfaces to Lua as GM:CanExitVehicle /
+// GM:PlayerLeaveVehicle (gamemodes/base/gamemode/player.lua:567-578).  This is
+// that transition for the removal case.
+//
+// UpdateOnRemove() runs while this object is still fully alive - the entity
+// delete list calls it before deleting - so the server vehicle is still valid.
+//-----------------------------------------------------------------------------
+void CPropVehicleDriveable::UpdateOnRemove( void )
+{
+	for ( int i = 1; i <= gpGlobals->maxClients; ++i )
+	{
+		CBasePlayer *pPlayer = UTIL_PlayerByIndex( i );
+
+		if ( pPlayer && pPlayer->GetVehicleEntity() == this )
+		{
+			// Eject where the player already is; LeaveVehicle() steps up by
+			// itself when the vehicle can no longer supply an exit point.
+			pPlayer->LeaveVehicle( pPlayer->GetAbsOrigin(), pPlayer->GetAbsAngles() );
+		}
+	}
+
+	BaseClass::UpdateOnRemove();
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 void CPropVehicleDriveable::CreateServerVehicle( void )
