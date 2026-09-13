@@ -1150,6 +1150,99 @@ static bool luasrc_IsFlatLuaFile (const char *pszName, char *pszClassName, size_
 }
 
 /*
+** HL2SB: remember WHICH Lua file a scripted class was loaded from.
+**
+** This is for the spawn menu's source sidebar (game/client/menu/sm_menu_list.cpp):
+** it has to name the addon an entry comes from, and this loader is the only
+** place that knows it.  The MOD-relative filename alone is NOT enough -- every
+** mounted addon's script resolves to the same relative name ("lua/weapons/
+** weapon_nyangun.lua") because mountaddons.cpp mounts each addon folder as its
+** own MOD search path -- so the addon folder is folded back in from the file's
+** absolute path: "addons/nyangun/lua/weapons/weapon_nyangun.lua".  A file that
+** is not inside an addon keeps its plain relative name.
+**
+** The pair {className -> file} is exactly what the loaders already print with
+** their "[Lua] weapon/entity '<x>' <- <path>" line, so this adds no new
+** information, only a readable copy of it for the client menu.
+*/
+static CUtlDict< CUtlString, unsigned short > s_LuaClassScripts;
+
+static void luasrc_NoteClassScript (const char *pszClassName, const char *pszFilename, const char *pszFullPath)
+{
+	if ( !pszClassName || !pszClassName[0] || !pszFilename || !pszFilename[0] )
+		return;
+
+	// Recorded once per process: the loader runs again on every map load and the
+	// same class always comes from the same file, so a second insert would only
+	// leak the strdup'd key.
+	if ( s_LuaClassScripts.Find( pszClassName ) != s_LuaClassScripts.InvalidIndex() )
+		return;
+
+	char szKey[ MAX_PATH ];
+	Q_strncpy( szKey, pszFilename, sizeof( szKey ) );
+	szKey[ sizeof( szKey ) - 1 ] = '\0';
+
+	// An already-qualified name needs no work.
+	if ( Q_strnicmp( szKey, "addons/", 7 ) != 0 && pszFullPath && pszFullPath[0] )
+	{
+		char szFull[ MAX_PATH ];
+		Q_strncpy( szFull, pszFullPath, sizeof( szFull ) );
+		szFull[ sizeof( szFull ) - 1 ] = '\0';
+
+		for ( char *p = szFull; *p; ++p )
+		{
+			if ( *p == '\\' )
+				*p = '/';
+		}
+
+		char szLower[ MAX_PATH ];
+		Q_strncpy( szLower, szFull, sizeof( szLower ) );
+		szLower[ sizeof( szLower ) - 1 ] = '\0';
+		Q_strlower( szLower );
+
+		// The LAST "/addons/" is the mod's own addons folder -- an engine path
+		// could contain such a component higher up.
+		const char *pFound = NULL;
+		for ( const char *p = szLower; ( p = Q_stristr( p, "/addons/" ) ) != NULL; ++p )
+			pFound = p;
+
+		if ( pFound )
+		{
+			// Take the folder name from the ORIGINAL path so its case survives
+			// (the lowercased copy was only used to find the marker).
+			const char *pFolder = szFull + ( pFound - szLower ) + 1 + 7;
+			const char *pSlash = strchr( pFolder, '/' );
+			int nFolderLen = pSlash ? (int)( pSlash - pFolder ) : Q_strlen( pFolder );
+
+			if ( nFolderLen > (int)sizeof( szKey ) - 10 )
+				nFolderLen = (int)sizeof( szKey ) - 10;
+
+			if ( nFolderLen > 0 )
+			{
+				char szFolder[ MAX_PATH ];
+				Q_memcpy( szFolder, pFolder, nFolderLen );
+				szFolder[ nFolderLen ] = '\0';
+				Q_snprintf( szKey, sizeof( szKey ), "addons/%s/%s", szFolder, pszFilename );
+			}
+		}
+	}
+
+	s_LuaClassScripts.Insert( pszClassName, CUtlString( szKey ) );
+}
+
+const char *luasrc_GetClassScriptFile (const char *pszClassName)
+{
+	if ( !pszClassName || !pszClassName[0] )
+		return "";
+
+	unsigned short i = s_LuaClassScripts.Find( pszClassName );
+	if ( i == s_LuaClassScripts.InvalidIndex() )
+		return "";
+
+	return (const char *)s_LuaClassScripts[i];
+}
+
+/*
 ** HL2SB: one scripted entity, from whichever layout found it.
 ** GMod treats "lua/entities/<name>.lua" and "lua/entities/<name>/shared.lua" as
 ** the same entity class, so both paths funnel through here.
@@ -1163,6 +1256,10 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 
 	filesystem->RelativePathToFullPath( filename, "MOD", fullpath, sizeof( fullpath ) );
 	Msg( "[Lua] entity '%s' <- %s\n", className, fullpath );
+
+	// HL2SB: this is the one place that knows which addon (or the tree's own
+	// lua/) a scripted class came from -- see luasrc_NoteClassScript.
+	luasrc_NoteClassScript( className, filename, fullpath );
 
 	lua_newtable( L );
 	char entDir[ MAX_PATH ];
@@ -1218,6 +1315,32 @@ static void luasrc_LoadOneEntity (const char *filename, const char *className)
 		{
 			lua_remove( L, -2 );
 			lua_getglobal( L, "ENT" );
+
+			// HL2SB: scripted_ents.Register() warns "has an invalid base entity!"
+			// for anything that has neither Base nor one of GMod's Type keys
+			// (anim/point/brush/filter) -- which is every Team Sandbox style script
+			// here, because those carry __base/__factory instead (set above).
+			//
+			// The warning itself is noise, but what it implies is not: with no base
+			// the entity table inherits nothing, so baseclass.Set() hands out a
+			// table without this fork's scripted-entity methods.  Point Base at
+			// __base so the registry sees a real base; a script that declared its
+			// own Base (or Type) is left exactly as it was.
+			lua_getfield( L, -1, "Base" );
+			lua_getfield( L, -2, "Type" );
+			const bool bHasBase = !lua_isnil( L, -2 );
+			const bool bHasType = !lua_isnil( L, -1 );
+			lua_pop( L, 2 );
+
+			if ( !bHasBase && !bHasType )
+			{
+				lua_getfield( L, -1, "__base" );
+				if ( lua_isstring( L, -1 ) )
+					lua_setfield( L, -2, "Base" );   // pops __base
+				else
+					lua_pop( L, 1 );
+			}
+
 			lua_pushstring( L, className );
 			luasrc_pcall( L, 2, 0, 0 );
 		}
@@ -1334,6 +1457,10 @@ static void luasrc_LoadOneWeapon (const char *filename, const char *className)
 	// and GMod compatibility regressions are exactly the kind of thing that has
 	// to be checkable from the log.
 	Msg( "[Lua] weapon '%s' <- %s\n", className, fullpath );
+
+	// HL2SB: this is the one place that knows which addon (or the tree's own
+	// lua/) a scripted class came from -- see luasrc_NoteClassScript.
+	luasrc_NoteClassScript( className, filename, fullpath );
 
 	// GMod semantics: the engine seeds every SWEP with a deep copy of the base
 	// weapon table before running the script, so stock scripts can assign fields

@@ -676,6 +676,14 @@ void       luasrc_LoadEffects (const char *path = 0);
 void       luasrc_LoadEntities (const char *path = 0);
 void       luasrc_LoadWeapons (const char *path = 0);
 
+// HL2SB: WHICH Lua file a scripted class was loaded from -- the spawn menu's
+// source sidebar (game/client/menu/sm_menu_list.cpp) asks this so it can say
+// which addon (or the tree's own lua/) an entry comes from, instead of guessing
+// from the class name.  Returns a MOD-relative, source-qualified name like
+// "addons/nyangun/lua/weapons/weapon_nyangun.lua" or "lua/entities/sent_ball.lua";
+// "" when the class was not loaded by the weapon/entity loader.  Never NULL.
+const char *luasrc_GetClassScriptFile (const char *pszClassName);
+
 bool       luasrc_LoadGamemode (const char *gamemode);
 bool       luasrc_SetGamemode (const char *gamemode);
 
