@@ -865,7 +865,24 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 					// hold type.  HL2MP used the run cycle for everything, so a
 					// GMod playermodel never showed a walking animation at all.
 					// 150 == the 22500 squared length GMod compares against.
-					idealActivity = ( speed > 150.0f ) ? ACT_HL2MP_RUN : ACT_HL2MP_WALK;
+					// Hysteresis: SetAnimation() runs every frame, and flipping
+					// WALK<->RUN re-picks the sequence and resets the cycle, so a
+					// speed that hovers around the boundary would freeze the legs.
+					// Stay in whichever cycle we are already in until the speed
+					// clearly left the band.
+					Activity current = GetActivity();
+					if ( current == ACT_HL2MP_WALK && speed < 170.0f )
+					{
+						idealActivity = ACT_HL2MP_WALK;
+					}
+					else if ( current == ACT_HL2MP_RUN && speed > 130.0f )
+					{
+						idealActivity = ACT_HL2MP_RUN;
+					}
+					else
+					{
+						idealActivity = ( speed > 150.0f ) ? ACT_HL2MP_RUN : ACT_HL2MP_WALK;
+					}
 				}
 				else
 				{
@@ -916,8 +933,25 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			}
 		}
 	
-		// Already using the desired animation?
-		if ( GetSequence() == animDesired )
+		// HL2SB: compare ACTIVITIES, not sequence indices.
+		//
+		// SelectWeightedSequence() re-rolls its weighted random pick on EVERY call
+		// (studiomdl writes actweight = 0, and the "keep the sequence we are already
+		// on" shortcut inside it only fires when actweight < 0), so an activity that
+		// more than one sequence satisfies comes back as a *different* sequence each
+		// time.  Every walking / running cycle in GMod's anim models is like that.
+		// SetAnimation() runs every frame while moving, so the old
+		// `GetSequence() == animDesired` test failed every frame, ResetSequence() +
+		// SetCycle( 0 ) pinned the cycle to frame 0 and the legs looked frozen while
+		// the player kept moving.  This is the guard CBasePlayerAnimState and
+		// CMultiPlayerAnimState use in ComputeMainSequence(), plus the index range
+		// check GetSequenceActivity() itself does not do.
+		CStudioHdr *pStudioHdr = GetModelPtr();
+		const int nCurrentSequence = GetSequence();
+		if ( pStudioHdr != NULL &&
+			 nCurrentSequence >= 0 && nCurrentSequence < pStudioHdr->GetNumSeq() &&
+			 animDesired >= 0 && animDesired < pStudioHdr->GetNumSeq() &&
+			 GetSequenceActivity( nCurrentSequence ) == GetSequenceActivity( animDesired ) )
 			return;
 
 		m_flPlaybackRate = 1.0;
