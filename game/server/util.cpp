@@ -145,6 +145,40 @@ static ConCommand dumpentityfactories( "dumpentityfactories", DumpEntityFactorie
 static ConCommand dumpentitytofile( "dumpentitytofile", DumpEntityToFile, "Lists all entity factory names.", FCVAR_GAMEDLL );
 
 //-----------------------------------------------------------------------------
+// HL2SB: SMenu enumeration of the factory dictionary (declared in util.h).
+//
+// CUtlDict orders by CaselessStringLessThan, so the published list comes out
+// alphabetically for free.  The ordinal accessor walks the dictionary; the
+// server publishes the list once per level, so this is not a hot path.
+//-----------------------------------------------------------------------------
+int EntityFactoryDictionary_GetCount( void )
+{
+	CEntityFactoryDictionary *dict = ( CEntityFactoryDictionary * )EntityFactoryDictionary();
+	if ( !dict )
+		return 0;
+
+	return dict->m_Factories.Count();
+}
+
+const char *EntityFactoryDictionary_GetName( int iEntry )
+{
+	CEntityFactoryDictionary *dict = ( CEntityFactoryDictionary * )EntityFactoryDictionary();
+	if ( !dict )
+		return NULL;
+
+	int i = dict->m_Factories.First();
+	for ( int n = 0; i != dict->m_Factories.InvalidIndex() && n < iEntry; ++n )
+	{
+		i = dict->m_Factories.Next( i );
+	}
+
+	if ( i == dict->m_Factories.InvalidIndex() )
+		return NULL;
+
+	return dict->m_Factories.GetElementName( i );
+}
+
+//-----------------------------------------------------------------------------
 // 
 //-----------------------------------------------------------------------------
 CON_COMMAND( dump_entity_sizes, "Print sizeof(entclass)" )

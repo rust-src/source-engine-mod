@@ -77,6 +77,13 @@ public:
 	virtual C_BaseEntity	*CreateEntity( const char *mapname );
 	virtual int				GetClassSize( const char *classname );
 
+	// HL2SB: enumeration for SMenu (see iclassmap.h).  Ordinal-based so the
+	// dictionary itself stays private.
+	int						GetEntryCount( void );
+	const char				*GetEntryNameByOrdinal( int iEntry );
+	const char				*GetEntryCPPNameByOrdinal( int iEntry );
+	bool					IsEntryScriptedByOrdinal( int iEntry );
+
 private:
 	CUtlDict< classentry_t, unsigned short > m_ClassDict;
 };
@@ -249,4 +256,79 @@ int CClassMap::GetClassSize( const char *classname )
 	}
 
 	return -1;
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: SMenu enumeration (declared in iclassmap.h).
+//
+// Iteration is ordinal-based and walks the dictionary in key order - CUtlDict
+// orders by CaselessStringLessThan, so the menu gets its entries alphabetically
+// for free.  Only SMenu iterates (once per level / first open), so the O(n^2)
+// walk of the ordinal accessors is not a hot path.
+//-----------------------------------------------------------------------------
+int CClassMap::GetEntryCount( void )
+{
+	return m_ClassDict.Count();
+}
+
+const char *CClassMap::GetEntryNameByOrdinal( int iEntry )
+{
+	int i = m_ClassDict.First();
+	for ( int n = 0; i != m_ClassDict.InvalidIndex() && n < iEntry; ++n )
+	{
+		i = m_ClassDict.Next( i );
+	}
+
+	if ( i == m_ClassDict.InvalidIndex() )
+		return NULL;
+
+	return m_ClassDict.GetElementName( i );
+}
+
+const char *CClassMap::GetEntryCPPNameByOrdinal( int iEntry )
+{
+	int i = m_ClassDict.First();
+	for ( int n = 0; i != m_ClassDict.InvalidIndex() && n < iEntry; ++n )
+	{
+		i = m_ClassDict.Next( i );
+	}
+
+	if ( i == m_ClassDict.InvalidIndex() )
+		return NULL;
+
+	return m_ClassDict[ i ].GetClassName();
+}
+
+bool CClassMap::IsEntryScriptedByOrdinal( int iEntry )
+{
+	int i = m_ClassDict.First();
+	for ( int n = 0; i != m_ClassDict.InvalidIndex() && n < iEntry; ++n )
+	{
+		i = m_ClassDict.Next( i );
+	}
+
+	if ( i == m_ClassDict.InvalidIndex() )
+		return false;
+
+	return m_ClassDict[ i ].scripted;
+}
+
+int ClassMap_GetEntryCount( void )
+{
+	return static_cast< CClassMap * >( &GetClassMap() )->GetEntryCount();
+}
+
+const char *ClassMap_GetEntryName( int iEntry )
+{
+	return static_cast< CClassMap * >( &GetClassMap() )->GetEntryNameByOrdinal( iEntry );
+}
+
+const char *ClassMap_GetEntryCPPName( int iEntry )
+{
+	return static_cast< CClassMap * >( &GetClassMap() )->GetEntryCPPNameByOrdinal( iEntry );
+}
+
+bool ClassMap_IsEntryScripted( int iEntry )
+{
+	return static_cast< CClassMap * >( &GetClassMap() )->IsEntryScriptedByOrdinal( iEntry );
 }

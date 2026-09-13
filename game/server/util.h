@@ -107,6 +107,28 @@ public:
 
 IEntityFactoryDictionary *EntityFactoryDictionary();
 
+//-----------------------------------------------------------------------------
+// HL2SB: enumeration of the entity factory dictionary for the SMenu spawn list.
+//
+// IEntityFactoryDictionary has no iteration API and its CUtlDict lives on the
+// concrete CEntityFactoryDictionary (util.cpp), so these are plain free
+// functions - no vtable entry and no layout change (waf does not track header
+// dependencies; a changed vtable would silently mix ABIs).
+//
+// The CLIENT cannot enumerate this list: a client-side spawn menu can only see
+// the classes that are LINK_ENTITY_TO_CLASS'd on the client, and in this HL2MP
+// build that is ~74 classes (weapons, props, the player, plus everything Lua
+// registered).  NPCs and vehicles are networked through IMPLEMENT_CLIENTCLASS
+// only, so their entity class names (npc_zombie, prop_vehicle_jeep, ...) exist
+// nowhere on the client.  The server therefore publishes this dictionary to the
+// client through the "SMenuEntityList" network string table
+// (CServerGameDLL::CreateNetworkStringTables / SMenu_PublishEntityList in
+// gameinterface.cpp), and the client reads it in
+// game/client/menu/sm_menu_list.cpp.
+//-----------------------------------------------------------------------------
+int			EntityFactoryDictionary_GetCount( void );
+const char *EntityFactoryDictionary_GetName( int iEntry );
+
 inline bool CanCreateEntityClass( const char *pszClassname )
 {
 	return ( EntityFactoryDictionary() != NULL && EntityFactoryDictionary()->FindFactory( pszClassname ) != NULL );

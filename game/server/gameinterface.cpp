@@ -83,6 +83,13 @@
 #include "engine/imatchmaking.h"
 #include "hl2orange.spa.h"
 #include "particle_parse.h"
+
+//-----------------------------------------------------------------------------
+// HL2SB: forward declaration - the SMenu entity list is published from
+// LevelInit() (below) but the helper lives next to
+// CServerGameDLL::CreateNetworkStringTables(), which it needs the table from.
+//-----------------------------------------------------------------------------
+static void SMenu_PublishEntityList( void );
 #ifndef NO_STEAM
 #include "steam/steam_gameserver.h"
 #endif
@@ -1040,6 +1047,12 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	}
 #endif
 
+	// HL2SB: publish the (now Lua-complete) entity factory list for SMenu.  The
+	// table was created in CreateNetworkStringTables(), which runs before the
+	// Lua loaders, so the strings are added here - AddString() is allowed
+	// outside the table-creation window and is replicated to every client.
+	SMenu_PublishEntityList();
+
 	ResetWindspeed();
 	UpdateChapterRestrictions( pMapName );
 
@@ -1533,6 +1546,50 @@ const char *CServerGameDLL::GetGameDescription( void )
 	return ::GetGameDescription();
 }
 
+//-----------------------------------------------------------------------------
+// HL2SB: the SMenu spawn list.
+//
+// SMenu (game/client/menu/sm_menu_list.cpp) used to read a pre-dumped text list
+// (addons/menu/entitylist.txt, produced by `dumpentitytofile`).  It is built
+// dynamically now, and the authoritative "what can ent_create build" list is
+// this side's entity factory dictionary - the client cannot enumerate it:
+// in this HL2MP build only ~74 classes are LINK_ENTITY_TO_CLASS'd on the client
+// (weapons, props, the player, plus Lua content), because NPCs, vehicles and
+// most props are networked through IMPLEMENT_CLIENTCLASS only and their entity
+// class names never exist client-side.
+//
+// The dictionary is published through a network string table: created in the
+// one window where the engine allows table creation
+// (CServerGameDLL::CreateNetworkStringTables), filled once after the Lua
+// loaders have registered scripted weapons/entities, and read by the client in
+// SMenu_BuildEntries().  A string table is replicated in full to every client
+// that connects, so no new console command or usermessage is needed.
+//-----------------------------------------------------------------------------
+#define SMENU_ENTITYLIST_TABLE	"SMenuEntityList"
+#define SMENU_ENTITYLIST_MAX	2048
+
+static INetworkStringTable *g_pStringTableSMenuEntityList = NULL;
+static bool g_bSMenuEntityListPublished = false;
+
+static void SMenu_PublishEntityList( void )
+{
+	if ( !g_pStringTableSMenuEntityList || g_bSMenuEntityListPublished )
+		return;
+
+	g_bSMenuEntityListPublished = true;
+
+	const int nCount = EntityFactoryDictionary_GetCount();
+	for ( int i = 0; i < nCount; ++i )
+	{
+		const char *pszClass = EntityFactoryDictionary_GetName( i );
+		if ( pszClass && pszClass[0] )
+			g_pStringTableSMenuEntityList->AddString( true, pszClass );
+	}
+
+	Msg( "[HL2SB] SMenu: published %d spawnable class names to the client\n",
+		 g_pStringTableSMenuEntityList->GetNumStrings() );
+}
+
 void CServerGameDLL::CreateNetworkStringTables( void )
 {
 	// Create any shared string tables here (and only here!)
@@ -1544,6 +1601,12 @@ void CServerGameDLL::CreateNetworkStringTables( void )
 	g_pStringTableInfoPanel = networkstringtable->CreateStringTable( "InfoPanel", MAX_INFOPANEL_STRINGS );
 	g_pStringTableClientSideChoreoScenes = networkstringtable->CreateStringTable( "Scenes", MAX_CHOREO_SCENES_STRINGS );
 	g_pStringTableServerMapCycle = networkstringtable->CreateStringTable( "ServerMapCycle", 128 );
+
+	// HL2SB: the SMenu spawn list (see SMenu_PublishEntityList above).  The
+	// table is recreated with every other table on each level, so clear the
+	// "already published" flag with it.
+	g_pStringTableSMenuEntityList = networkstringtable->CreateStringTable( SMENU_ENTITYLIST_TABLE, SMENU_ENTITYLIST_MAX );
+	g_bSMenuEntityListPublished = false;
 
 #ifdef TF_DLL
 	g_pStringTableServerPopFiles = networkstringtable->CreateStringTable( "ServerPopFiles", 128 );
