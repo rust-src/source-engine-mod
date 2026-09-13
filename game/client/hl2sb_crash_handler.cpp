@@ -1,20 +1,277 @@
 // hl2sb_crash_handler.cpp
 // Crash handler for HL2SB - captures exceptions and writes to log
+//
+// HL2SB: every platform we build the client for now appends an identifiable
+// "[HL2SB] crash:" block to *engine.log* - the file the launcher opens in
+// CSourceAppSystemGroup::PreInit (launcher/launcher.cpp:
+// DebugLogger()->Init("engine.log"), i.e. next to the executable) - in addition
+// to whatever crash behaviour that platform already had:
+//
+//   Windows : hl2sb_crash.log + a minidump under dumps/ (SEH and CRT abort paths)
+//   Linux   : the same engine.log block, written from POSIX signal handlers
+//   Android : unchanged - its launcher already funnels crashes into engine.log
+//             (launcher/android/crashhandler.cpp -> DebugLogger()->Write)
+//
+// Which handle the block is appended through, and why that is safe:
+//
+//   NOT tier0's IDbgLogger FILE*.  That handle belongs to the engine, it does
+//   not exist when the engine was started with -nolog, and its stdio lock may be
+//   held by the very thread that just crashed (deadlock).  Instead the block goes
+//   through a raw append-only handle that is opened on demand and closed again
+//   immediately: FILE_APPEND_DATA on Windows, O_WRONLY|O_CREAT|O_APPEND on
+//   Linux.  Both make the *kernel* resolve every write against the current end of
+//   file, so the block can never overwrite what the engine has already flushed,
+//   and the engine's own fopen( "w+" ) handle (MSVC opens it with _SH_DENYNO,
+//   i.e. FILE_SHARE_READ|FILE_SHARE_WRITE) keeps the second open legal.  The
+//   write happens on the way towards process death, and we hold no handle
+//   afterwards, so there is no window in which the two writers interleave.
+//   Nothing on this path allocates.
 
 #include "cbase.h"
 #include "hl2sb_crash_handler.h"
 
-#ifdef _WIN32
+#include "tier0/minidump.h"
+
+#if defined( _WIN32 )
 #include <windows.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
+#include <exception>
+#elif defined( LINUX ) && !defined( ANDROID )
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <sys/syscall.h>
 #include <exception>
 #endif
 
-#include "tier0/minidump.h"
-
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+#if defined( _WIN32 ) || ( defined( LINUX ) && !defined( ANDROID ) )
+
+//-----------------------------------------------------------------------------
+// engine.log writer.  Shared by every platform so the format is identical.
+//-----------------------------------------------------------------------------
+
+// Stable prefix: this is what makes a crash findable in a busy engine.log.
+#define HL2SB_CRASH_PREFIX		"[HL2SB] crash: "
+#define HL2SB_ENGINE_LOG_NAME	"engine.log"
+#define HL2SB_CRASH_STACK_FRAMES 64
+
+#if defined( _WIN32 )
+typedef HANDLE	hl2sb_loghandle_t;
+#define HL2SB_LOG_HANDLE_INVALID	INVALID_HANDLE_VALUE
+#else
+typedef int		hl2sb_loghandle_t;
+#define HL2SB_LOG_HANDLE_INVALID	( -1 )
+#endif
+
+static const char *HL2SB_BaseName( const char *pszPath )
+{
+	const char *pszName = pszPath;
+	for ( const char *p = pszPath; p && *p; ++p )
+	{
+		if ( *p == '\\' || *p == '/' )
+			pszName = p + 1;
+	}
+	return pszName;
+}
+
+// Raw, append-only, allocation-free.  See the file header for why this is not
+// the engine's own FILE*.
+static hl2sb_loghandle_t HL2SB_EngineLogOpen( void )
+{
+#ifdef _WIN32
+	return CreateFileA( HL2SB_ENGINE_LOG_NAME, FILE_APPEND_DATA,
+		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL, NULL );
+#else
+	// open()/write()/close() are all async-signal-safe.
+	return open( HL2SB_ENGINE_LOG_NAME, O_WRONLY | O_CREAT | O_APPEND, 0644 );
+#endif
+}
+
+static void HL2SB_EngineLogWrite( hl2sb_loghandle_t hFile, const char *pText, int nLength )
+{
+	if ( hFile == HL2SB_LOG_HANDLE_INVALID || nLength <= 0 || !pText )
+		return;
+
+#ifdef _WIN32
+	DWORD nWritten = 0;
+	WriteFile( hFile, pText, (DWORD)nLength, &nWritten, NULL );
+#else
+	ssize_t nIgnored = write( hFile, pText, (size_t)nLength );
+	( void )nIgnored;
+#endif
+}
+
+static void HL2SB_EngineLogClose( hl2sb_loghandle_t hFile )
+{
+	if ( hFile == HL2SB_LOG_HANDLE_INVALID )
+		return;
+
+#ifdef _WIN32
+	CloseHandle( hFile );
+#else
+	close( hFile );
+#endif
+}
+
+// One "[HL2SB] crash: <text>\n" line.
+static void HL2SB_EngineLogLine( hl2sb_loghandle_t hFile, const char *pszFormat, ... )
+{
+	char szLine[512];
+	va_list marker;
+
+	va_start( marker, pszFormat );
+	Q_vsnprintf( szLine, (int)sizeof( szLine ), pszFormat, marker );
+	va_end( marker );
+	szLine[ sizeof( szLine ) - 1 ] = 0;
+
+	HL2SB_EngineLogWrite( hFile, HL2SB_CRASH_PREFIX, (int)( sizeof( HL2SB_CRASH_PREFIX ) - 1 ) );
+	HL2SB_EngineLogWrite( hFile, szLine, (int)strlen( szLine ) );
+	HL2SB_EngineLogWrite( hFile, "\n", 1 );
+}
+
+// "module+0xoffset" for an address, or "?" when it is not backed by a module.
+static void HL2SB_ModuleForAddress( const void *pAddress, char *pOut, int nOutLen )
+{
+	pOut[ 0 ] = 0;
+
+	if ( !pAddress )
+		return;
+
+#ifdef _WIN32
+	HMODULE hModule = NULL;
+	if ( GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+			GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			(LPCSTR)pAddress, &hModule ) && hModule )
+	{
+		char szPath[ MAX_PATH ];
+		if ( GetModuleFileNameA( hModule, szPath, sizeof( szPath ) ) )
+		{
+			Q_snprintf( pOut, nOutLen, "%s+0x%X", HL2SB_BaseName( szPath ),
+				(unsigned int)( (uintptr_t)pAddress - (uintptr_t)hModule ) );
+			return;
+		}
+	}
+#else
+	Dl_info info;
+	memset( &info, 0, sizeof( info ) );
+	if ( dladdr( (void *)pAddress, &info ) && info.dli_fname )
+	{
+		Q_snprintf( pOut, nOutLen, "%s+0x%X", HL2SB_BaseName( info.dli_fname ),
+			(unsigned int)( (uintptr_t)pAddress - (uintptr_t)info.dli_fbase ) );
+		return;
+	}
+#endif
+
+	Q_snprintf( pOut, nOutLen, "?" );
+}
+
+static unsigned long HL2SB_CurrentThreadId( void )
+{
+#ifdef _WIN32
+	return (unsigned long)GetCurrentThreadId();
+#else
+	// Linux OS thread id: what gdb / /proc/<pid>/task shows.
+	return (unsigned long)syscall( SYS_gettid );
+#endif
+}
+
+#ifdef _WIN32
+
+static void HL2SB_EngineLogStack( hl2sb_loghandle_t hFile, unsigned int nFramesToSkip )
+{
+	void *pStack[ HL2SB_CRASH_STACK_FRAMES ];
+	unsigned short nFrames = RtlCaptureStackBackTrace( nFramesToSkip,
+		HL2SB_CRASH_STACK_FRAMES, pStack, NULL );
+
+	HL2SB_EngineLogLine( hFile, "stack (%u frames):", (unsigned int)nFrames );
+
+	for ( unsigned int i = 0; i < nFrames; ++i )
+	{
+		char szModule[ 192 ];
+		HL2SB_ModuleForAddress( pStack[ i ], szModule, sizeof( szModule ) );
+		HL2SB_EngineLogLine( hFile, "  #%02u %p  %s", i, pStack[ i ], szModule );
+	}
+}
+
+#else
+
+static void HL2SB_EngineLogStack( hl2sb_loghandle_t hFile, unsigned int nFramesToSkip )
+{
+	void *pStack[ HL2SB_CRASH_STACK_FRAMES ];
+	int nFrames = backtrace( pStack, HL2SB_CRASH_STACK_FRAMES );
+	if ( nFrames < 0 )
+		nFrames = 0;
+
+	// Drop the signal-handler frames so the trace starts at the fault itself.
+	int nFirst = ( (int)nFramesToSkip < nFrames ) ? (int)nFramesToSkip : 0;
+
+	HL2SB_EngineLogLine( hFile, "stack (%d frames):", nFrames - nFirst );
+
+	for ( int i = nFirst; i < nFrames; ++i )
+	{
+		Dl_info info;
+		memset( &info, 0, sizeof( info ) );
+
+		const char *pszModule = "?";
+		const char *pszSymbol = "?";
+		unsigned int nOffset = 0;
+
+		if ( dladdr( pStack[ i ], &info ) )
+		{
+			if ( info.dli_fname )
+			{
+				pszModule = HL2SB_BaseName( info.dli_fname );
+				nOffset = (unsigned int)( (uintptr_t)pStack[ i ] - (uintptr_t)info.dli_fbase );
+			}
+			if ( info.dli_sname )
+				pszSymbol = info.dli_sname;
+		}
+
+		HL2SB_EngineLogLine( hFile, "  #%02d %p  %s+0x%X (%s)",
+			i - nFirst, pStack[ i ], pszModule, nOffset, pszSymbol );
+	}
+}
+
+#endif // _WIN32
+
+//-----------------------------------------------------------------------------
+// The single entry point every crash path funnels through.
+//-----------------------------------------------------------------------------
+static void HL2SB_EngineLogCrashBlock( const char *pszKind, unsigned int uExceptionCode,
+	const void *pAddress, const char *pszDetail, unsigned int nFramesToSkip )
+{
+	hl2sb_loghandle_t hFile = HL2SB_EngineLogOpen();
+	if ( hFile == HL2SB_LOG_HANDLE_INVALID )
+		return;		// nothing more we can do from inside a crash
+
+	char szModule[ 192 ];
+	HL2SB_ModuleForAddress( pAddress, szModule, sizeof( szModule ) );
+
+	HL2SB_EngineLogLine( hFile, "begin" );
+	HL2SB_EngineLogLine( hFile, "kind=%s code=0x%08X address=%p module=%s thread=%lu%s%s",
+		pszKind ? pszKind : "?", uExceptionCode, pAddress, szModule,
+		HL2SB_CurrentThreadId(),
+		( pszDetail && pszDetail[ 0 ] ) ? " detail=" : "",
+		( pszDetail && pszDetail[ 0 ] ) ? pszDetail : "" );
+
+	HL2SB_EngineLogStack( hFile, nFramesToSkip );
+
+	HL2SB_EngineLogLine( hFile, "end" );
+
+	HL2SB_EngineLogClose( hFile );
+}
+
+#endif // engine.log platforms
 
 #ifdef _WIN32
 
@@ -34,14 +291,16 @@
 // Same shape as the engine's own dumps (~29 MB, enough for a usable stack).
 #define HL2SB_MINIDUMP_TYPE ( 0x00000001 | 0x00000040 | 0x00000100 )
 
-static void HL2SB_LogLine( FILE *fp, const char *pszLine )
-{
-	if ( fp )
-	{
-		fprintf( fp, "%s\n", pszLine );
-		fflush( fp );
-	}
-}
+// CONTEXT names its instruction pointer per architecture.  32-bit x86 has no
+// Rip at all - that is what the win32 CI job failed on (C2039: 'Rip' is not a
+// member of '_CONTEXT').
+#if defined( _M_IX86 )
+	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Eip ) )
+#elif defined( _M_ARM ) || defined( _M_ARM64 )
+	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Pc ) )
+#else
+	#define HL2SB_CONTEXT_IP( pContext )	( (void *)(uintptr_t)( ( pContext )->Rip ) )
+#endif
 
 //-----------------------------------------------------------------------------
 // Purpose: Write a crash log entry plus a minidump for a CRT abort path.
@@ -49,6 +308,15 @@ static void HL2SB_LogLine( FILE *fp, const char *pszLine )
 //-----------------------------------------------------------------------------
 static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
 {
+	// The faulting context, captured while the stack is still intact.
+	CONTEXT ctx;
+	RtlCaptureContext( &ctx );
+
+	// engine.log first, and with the raw writer: it must not depend on the CRT
+	// heap or on stdio still being usable.
+	HL2SB_EngineLogCrashBlock( pszReason, 0xC0000409, HL2SB_CONTEXT_IP( &ctx ),
+		pszDetail, 3 );
+
 	FILE *fp = fopen( "hl2sb_crash.log", "a" );
 	if ( fp )
 	{
@@ -70,13 +338,10 @@ static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
 
 	// Minidump: build a synthetic exception record around the current context so
 	// the dump has a walkable stack (the fastfail path gives us none).
-	CONTEXT ctx;
-	RtlCaptureContext( &ctx );
-
 	EXCEPTION_RECORD rec;
 	ZeroMemory( &rec, sizeof( rec ) );
 	rec.ExceptionCode = 0xC0000409;				// STATUS_STACK_BUFFER_OVERRUN
-	rec.ExceptionAddress = (PVOID)ctx.Rip;
+	rec.ExceptionAddress = HL2SB_CONTEXT_IP( &ctx );
 	rec.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
 
 	EXCEPTION_POINTERS info;
@@ -87,11 +352,11 @@ static void HL2SB_WriteAbortDump( const char *pszReason, const char *pszDetail )
 
 	Msg( "\n[HL2SB] CRASH (abort): %s%s%s\n", pszReason,
 		pszDetail ? " - " : "", pszDetail ? pszDetail : "" );
-	Msg( "[HL2SB] Crash log: hl2sb_crash.log, minidump: dumps/\n" );
+	Msg( "[HL2SB] Crash log: engine.log + hl2sb_crash.log, minidump: dumps/\n" );
 
 	char szBox[ 512 ];
 	Q_snprintf( szBox, sizeof( szBox ),
-		"HL2SB crashed!\n\nReason: %s\n%s\n\nSee hl2sb_crash.log and the dumps/ folder.",
+		"HL2SB crashed!\n\nReason: %s\n%s\n\nSee engine.log, hl2sb_crash.log and the dumps/ folder.",
 		pszReason, pszDetail ? pszDetail : "" );
 	MessageBoxA( NULL, szBox, "HL2SB Crash", MB_OK | MB_ICONERROR );
 }
@@ -162,8 +427,44 @@ static void __cdecl HL2SB_PurecallHandler( void )
 	abort();
 }
 
+//-----------------------------------------------------------------------------
+// The engine writes most of its own minidumps: CEngineAPI::Run() wraps the whole
+// listen server in CatchAndWriteMiniDump() (tier0/minidump.cpp), and that
+// __except runs g_pfnWriteMiniDump *before* the process unhandled-exception
+// filter is consulted.  HL2SB_ExceptionFilter therefore never ran for those
+// crashes - which is exactly why hl2sb_crash.log was sometimes missing entirely.
+//
+// SetMiniDumpFunction() is that same pointer and is an existing tier0 export
+// (no new interface, nothing that can break loading against a deployed
+// tier0.dll).  Chaining it puts the engine.log block on disk for every dump the
+// engine writes, and does so *before* handing over, so the trace survives even
+// if the dump writing itself hangs or faults.
+//-----------------------------------------------------------------------------
+static FnMiniDump g_pHL2SBInnerMiniDumpFunction = NULL;
+
+static void __cdecl HL2SB_MiniDumpChain( unsigned int uStructuredExceptionCode,
+	_EXCEPTION_POINTERS *pExceptionInfo, const char *pszFilenameSuffix )
+{
+	const void *pAddress = NULL;
+	if ( pExceptionInfo && pExceptionInfo->ExceptionRecord )
+		pAddress = pExceptionInfo->ExceptionRecord->ExceptionAddress;
+
+	HL2SB_EngineLogCrashBlock( "minidump", uStructuredExceptionCode, pAddress,
+		pszFilenameSuffix, 3 );
+
+	if ( g_pHL2SBInnerMiniDumpFunction )
+		g_pHL2SBInnerMiniDumpFunction( uStructuredExceptionCode, pExceptionInfo, pszFilenameSuffix );
+}
+
 static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 {
+	// engine.log first (raw append, no CRT): this is the one place that always
+	// has a home, whatever happens to the CRT or to the dumps/ folder.
+	HL2SB_EngineLogCrashBlock( "SEH unhandled exception",
+		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
+		lpExceptionInfo->ExceptionRecord->ExceptionAddress,
+		NULL, 3 );
+
 	char szLogPath[MAX_PATH];
 	Q_snprintf( szLogPath, sizeof(szLogPath), "hl2sb_crash.log" );
 
@@ -200,12 +501,12 @@ static LONG WINAPI HL2SB_ExceptionFilter( LPEXCEPTION_POINTERS lpExceptionInfo )
 	Msg( "\n[HL2SB] CRASH DETECTED! Exception 0x%08X at 0x%p\n", 
 		(unsigned int)lpExceptionInfo->ExceptionRecord->ExceptionCode,
 		lpExceptionInfo->ExceptionRecord->ExceptionAddress );
-	Warning( "[HL2SB] Crash log written to hl2sb_crash.log\n" );
+	Warning( "[HL2SB] Crash written to engine.log (%s) and hl2sb_crash.log\n", HL2SB_ENGINE_LOG_NAME );
 	
 	// Show message box
 #ifdef _WIN32
 	MessageBoxA( NULL, 
-		"HL2SB crashed!\nCheck hl2sb_crash.log for details.", 
+		"HL2SB crashed!\nCheck engine.log / hl2sb_crash.log for details.", 
 		"HL2SB Crash", 
 		MB_OK | MB_ICONERROR );
 #endif
@@ -226,14 +527,106 @@ void HL2SB_InstallCrashHandler( void )
 	// Bare abort(): only SIGABRT fires before the int 29h fast-fail.
 	signal( SIGABRT, HL2SB_SigabrtHandler );
 
-	Msg( "[HL2SB] Crash handler installed (SEH + SIGABRT + terminate/invalid-parameter/purecall)\n" );
+	// Crashes the engine catches itself (CatchAndWriteMiniDump) never reach the
+	// unhandled-exception filter; chain its dump writer so engine.log gets them.
+	g_pHL2SBInnerMiniDumpFunction = SetMiniDumpFunction( HL2SB_MiniDumpChain );
+
+	Msg( "[HL2SB] Crash handler installed (SEH + SIGABRT + terminate/invalid-parameter/purecall + minidump chain; logs: engine.log + hl2sb_crash.log)\n" );
+}
+
+#elif defined( LINUX ) && !defined( ANDROID )
+
+//-----------------------------------------------------------------------------
+// Linux.  This tree has no minidump writer for !_WIN32 (tier0/minidump.cpp is a
+// no-op there and CEngineAPI::Run only installs a handler under _WIN32), so
+// before this a crash left nothing behind but a core dump.  Every signal funnels
+// into the same engine.log block the Windows side writes.
+//-----------------------------------------------------------------------------
+
+#define HL2SB_ALTSTACK_SIZE ( 64 * 1024 )
+
+static volatile sig_atomic_t g_bHL2SBInCrashHandler = 0;
+static char g_szHL2SBAltStack[ HL2SB_ALTSTACK_SIZE ];
+
+static const char *HL2SB_SignalName( int nSignal )
+{
+	switch ( nSignal )
+	{
+	case SIGSEGV:	return "SIGSEGV";
+	case SIGBUS:	return "SIGBUS";
+	case SIGFPE:	return "SIGFPE";
+	case SIGILL:	return "SIGILL";
+	case SIGABRT:	return "SIGABRT";
+	default:		return "signal";
+	}
+}
+
+static void HL2SB_PosixSignalHandler( int nSignal, siginfo_t *pInfo, void *pContext )
+{
+	( void )pContext;
+
+	// A fault inside the crash path itself (stack overflow, or the trace touching
+	// unmapped memory) would recurse until the kernel killed us: record only the
+	// first one and let the default action take over.
+	if ( g_bHL2SBInCrashHandler )
+	{
+		signal( nSignal, SIG_DFL );
+		raise( nSignal );
+		return;
+	}
+	g_bHL2SBInCrashHandler = 1;
+
+	HL2SB_EngineLogCrashBlock( HL2SB_SignalName( nSignal ), 0,
+		pInfo ? pInfo->si_addr : NULL, NULL, 2 );
+
+	g_bHL2SBInCrashHandler = 0;
+
+	// Die the way we would have: restore the default action and re-raise (the
+	// signal stays pending until we return from the handler).
+	signal( nSignal, SIG_DFL );
+	raise( nSignal );
+}
+
+static void HL2SB_PosixTerminateHandler( void )
+{
+	HL2SB_EngineLogCrashBlock( "std::terminate (unhandled C++ exception)", 0, NULL, NULL, 2 );
+	abort();
+}
+
+void HL2SB_InstallCrashHandler( void )
+{
+	// A stack overflow cannot run a handler on the stack it just exhausted.
+	stack_t altStack;
+	altStack.ss_sp = g_szHL2SBAltStack;
+	altStack.ss_size = sizeof( g_szHL2SBAltStack );
+	altStack.ss_flags = 0;
+	sigaltstack( &altStack, NULL );
+
+	struct sigaction act;
+	memset( &act, 0, sizeof( act ) );
+	act.sa_sigaction = HL2SB_PosixSignalHandler;
+	act.sa_flags = SA_SIGINFO | SA_ONSTACK;
+	sigemptyset( &act.sa_mask );
+
+	sigaction( SIGSEGV, &act, NULL );
+	sigaction( SIGBUS,  &act, NULL );
+	sigaction( SIGFPE,  &act, NULL );
+	sigaction( SIGILL,  &act, NULL );
+	sigaction( SIGABRT, &act, NULL );
+
+	std::set_terminate( HL2SB_PosixTerminateHandler );
+
+	Msg( "[HL2SB] Crash handler installed (SIGSEGV/SIGBUS/SIGFPE/SIGILL/SIGABRT -> %s)\n",
+		HL2SB_ENGINE_LOG_NAME );
 }
 
 #else
 
 void HL2SB_InstallCrashHandler( void )
 {
-	// Non-Windows: no op
+	// Not our platform to change here: Android's launcher already funnels crashes
+	// into engine.log (launcher/android/crashhandler.cpp -> DebugLogger()->Write),
+	// and the other POSIX targets (macOS/BSD) are out of scope for this pass.
 }
 
 #endif
