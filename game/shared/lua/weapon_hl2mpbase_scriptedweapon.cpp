@@ -132,6 +132,86 @@ void ResetWeaponFactoryDatabase( void )
 
 // IMPLEMENT_ACTTABLE( CHL2MPScriptedWeapon );
 
+//-----------------------------------------------------------------------------
+// HL2SB: GMod's SWEP.HoldType -> the player's weapon-specific HL2MP activities.
+//
+// Why this exists: the acttable below is filled from Lua (SWEP.m_acttable), and
+// NO GMod weapon ever sets that field - it is a Team Sandbox leftover.  Without a
+// table, Weapon_TranslateActivity() leaves ACT_HL2MP_IDLE / RUN / ... untouched,
+// so every Lua weapon animated the player with the generic pose and GMod's whole
+// hold-type vocabulary (pistol / revolver / smg / melee2 / fist / camera ...) was
+// silently ignored.  The variant names and rows come from this fork's own HL2MP
+// weapons (weapon_pistol.cpp, weapon_crowbar.cpp, ...); see AGENTS.md section 16.
+//-----------------------------------------------------------------------------
+struct HL2SBHoldTypeAct_t
+{
+	const char	*pszHoldType;
+	Activity	nIdle;
+	Activity	nRun;
+	Activity	nIdleCrouch;
+	Activity	nWalkCrouch;
+	Activity	nGestureAttack;
+	Activity	nGestureReload;
+	Activity	nJump;
+};
+
+static const HL2SBHoldTypeAct_t s_pHL2SBHoldTypeActs[] =
+{
+	// GMod hold type      idle                          run                          crouch idle                          crouch walk                          fire gesture                                      reload gesture                                      jump
+	{ "pistol",		ACT_HL2MP_IDLE_PISTOL,		ACT_HL2MP_RUN_PISTOL,		ACT_HL2MP_IDLE_CROUCH_PISTOL,	ACT_HL2MP_WALK_CROUCH_PISTOL,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL,	ACT_HL2MP_GESTURE_RELOAD_PISTOL,	ACT_HL2MP_JUMP_PISTOL },
+	{ "revolver",	ACT_HL2MP_IDLE_PISTOL,		ACT_HL2MP_RUN_PISTOL,		ACT_HL2MP_IDLE_CROUCH_PISTOL,	ACT_HL2MP_WALK_CROUCH_PISTOL,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL,	ACT_HL2MP_GESTURE_RELOAD_PISTOL,	ACT_HL2MP_JUMP_PISTOL },
+	{ "357",		ACT_HL2MP_IDLE_PISTOL,		ACT_HL2MP_RUN_PISTOL,		ACT_HL2MP_IDLE_CROUCH_PISTOL,	ACT_HL2MP_WALK_CROUCH_PISTOL,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL,	ACT_HL2MP_GESTURE_RELOAD_PISTOL,	ACT_HL2MP_JUMP_PISTOL },
+	{ "smg",		ACT_HL2MP_IDLE_SMG1,		ACT_HL2MP_RUN_SMG1,			ACT_HL2MP_IDLE_CROUCH_SMG1,		ACT_HL2MP_WALK_CROUCH_SMG1,		ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1,	ACT_HL2MP_GESTURE_RELOAD_SMG1,		ACT_HL2MP_JUMP_SMG1 },
+	{ "smg1",		ACT_HL2MP_IDLE_SMG1,		ACT_HL2MP_RUN_SMG1,			ACT_HL2MP_IDLE_CROUCH_SMG1,		ACT_HL2MP_WALK_CROUCH_SMG1,		ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1,	ACT_HL2MP_GESTURE_RELOAD_SMG1,		ACT_HL2MP_JUMP_SMG1 },
+	{ "ar2",		ACT_HL2MP_IDLE_AR2,			ACT_HL2MP_RUN_AR2,			ACT_HL2MP_IDLE_CROUCH_AR2,		ACT_HL2MP_WALK_CROUCH_AR2,		ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2,	ACT_HL2MP_GESTURE_RELOAD_AR2,		ACT_HL2MP_JUMP_AR2 },
+	{ "rifle",		ACT_HL2MP_IDLE_AR2,			ACT_HL2MP_RUN_AR2,			ACT_HL2MP_IDLE_CROUCH_AR2,		ACT_HL2MP_WALK_CROUCH_AR2,		ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2,	ACT_HL2MP_GESTURE_RELOAD_AR2,		ACT_HL2MP_JUMP_AR2 },
+	{ "shotgun",	ACT_HL2MP_IDLE_SHOTGUN,		ACT_HL2MP_RUN_SHOTGUN,		ACT_HL2MP_IDLE_CROUCH_SHOTGUN,	ACT_HL2MP_WALK_CROUCH_SHOTGUN,	ACT_HL2MP_GESTURE_RANGE_ATTACK_SHOTGUN,	ACT_HL2MP_GESTURE_RELOAD_SHOTGUN,	ACT_HL2MP_JUMP_SHOTGUN },
+	{ "rpg",		ACT_HL2MP_IDLE_RPG,			ACT_HL2MP_RUN_RPG,			ACT_HL2MP_IDLE_CROUCH_RPG,		ACT_HL2MP_WALK_CROUCH_RPG,		ACT_HL2MP_GESTURE_RANGE_ATTACK_RPG,	ACT_HL2MP_GESTURE_RELOAD_RPG,		ACT_HL2MP_JUMP_RPG },
+	{ "crossbow",	ACT_HL2MP_IDLE_CROSSBOW,	ACT_HL2MP_RUN_CROSSBOW,		ACT_HL2MP_IDLE_CROUCH_CROSSBOW,	ACT_HL2MP_WALK_CROUCH_CROSSBOW,	ACT_HL2MP_GESTURE_RANGE_ATTACK_CROSSBOW, ACT_HL2MP_GESTURE_RELOAD_CROSSBOW,	ACT_HL2MP_JUMP_CROSSBOW },
+	{ "grenade",	ACT_HL2MP_IDLE_GRENADE,		ACT_HL2MP_RUN_GRENADE,		ACT_HL2MP_IDLE_CROUCH_GRENADE,	ACT_HL2MP_WALK_CROUCH_GRENADE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE,	ACT_HL2MP_GESTURE_RELOAD_GRENADE,	ACT_HL2MP_JUMP_GRENADE },
+	{ "slam",		ACT_HL2MP_IDLE_SLAM,		ACT_HL2MP_RUN_SLAM,			ACT_HL2MP_IDLE_CROUCH_SLAM,		ACT_HL2MP_WALK_CROUCH_SLAM,		ACT_HL2MP_GESTURE_RANGE_ATTACK_SLAM,	ACT_HL2MP_GESTURE_RELOAD_SLAM,		ACT_HL2MP_JUMP_SLAM },
+	{ "melee",		ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "melee2",		ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "knife",		ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "fist",		ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "stunstick",	ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "crowbar",	ACT_HL2MP_IDLE_MELEE,		ACT_HL2MP_RUN_MELEE,		ACT_HL2MP_IDLE_CROUCH_MELEE,	ACT_HL2MP_WALK_CROUCH_MELEE,	ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,	ACT_HL2MP_GESTURE_RELOAD_MELEE,		ACT_HL2MP_JUMP_MELEE },
+	{ "physgun",	ACT_HL2MP_IDLE_PHYSGUN,		ACT_HL2MP_RUN_PHYSGUN,		ACT_HL2MP_IDLE_CROUCH_PHYSGUN,	ACT_HL2MP_WALK_CROUCH_PHYSGUN,	ACT_HL2MP_GESTURE_RANGE_ATTACK_PHYSGUN,	ACT_HL2MP_GESTURE_RELOAD_PHYSGUN,	ACT_HL2MP_JUMP_PHYSGUN },
+};
+
+// Fill pTable with the rows for pszHoldType.  Returns the number of rows written
+// (0 when the hold type has no translation, e.g. "normal" / "camera" / unknown -
+// in that case the generic HL2MP activities are the right answer).
+static int HL2SB_FillHoldTypeActTable( const char *pszHoldType, acttable_t *pTable, int nMaxRows )
+{
+	if ( pszHoldType == NULL || pTable == NULL )
+		return 0;
+
+	for ( int i = 0; i < ARRAYSIZE( s_pHL2SBHoldTypeActs ); ++i )
+	{
+		const HL2SBHoldTypeAct_t &hold = s_pHL2SBHoldTypeActs[ i ];
+
+		if ( Q_stricmp( hold.pszHoldType, pszHoldType ) != 0 )
+			continue;
+
+		const Activity pFrom[] = { ACT_HL2MP_IDLE, ACT_HL2MP_RUN, ACT_HL2MP_IDLE_CROUCH, ACT_HL2MP_WALK_CROUCH, ACT_HL2MP_GESTURE_RANGE_ATTACK, ACT_HL2MP_GESTURE_RELOAD, ACT_HL2MP_JUMP };
+		const Activity pTo[]   = { hold.nIdle, hold.nRun, hold.nIdleCrouch, hold.nWalkCrouch, hold.nGestureAttack, hold.nGestureReload, hold.nJump };
+
+		int nRows = MIN( ARRAYSIZE( pFrom ), nMaxRows );
+
+		for ( int r = 0; r < nRows; ++r )
+		{
+			pTable[ r ].baseAct = pFrom[ r ];
+			pTable[ r ].weaponAct = pTo[ r ];
+			pTable[ r ].required = false;
+		}
+
+		return nRows;
+	}
+
+	return 0;
+}
+
 // These functions serve as skeletons for the our weapons' actions to be
 // implemented in Lua.
 acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
@@ -139,6 +219,7 @@ acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 	lua_getref( L, m_nTableReference );
 	lua_getfield( L, -1, "m_acttable" );
 	lua_remove( L, -2 );
+	int nLuaRows = 0;
 	if ( lua_istable( L, -1 ) )
 	{
 		for( int i = 0 ; i < LUA_MAX_WEAPON_ACTIVITIES ; i++ )
@@ -153,6 +234,8 @@ acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 				if ( lua_isnumber( L, -1 ) )
 					m_acttable[i].baseAct = lua_tointeger( L, -1 );
 				lua_pop( L, 1 );
+				if ( m_acttable[i].baseAct > ACT_RESET )
+					++nLuaRows;
 
 				m_acttable[i].weaponAct = ACT_INVALID;
 				lua_pushinteger( L, 2 );
@@ -172,6 +255,21 @@ acttable_t *CHL2MPScriptedWeapon::ActivityList( void ) {
 		}
 	}
 	lua_pop( L, 1 );
+
+	// HL2SB: no weapon-written table (every GMod SWEP) -> derive it from
+	// SWEP.HoldType, which is the field they DO set.
+	if ( nLuaRows == 0 && m_nTableReference >= 0 )
+	{
+		lua_getref( L, m_nTableReference );
+		if ( lua_istable( L, -1 ) )
+		{
+			lua_getfield( L, -1, "HoldType" );
+			if ( lua_isstring( L, -1 ) )
+				HL2SB_FillHoldTypeActTable( lua_tostring( L, -1 ), m_acttable, LUA_MAX_WEAPON_ACTIVITIES );
+			lua_pop( L, 1 );
+		}
+		lua_pop( L, 1 );
+	}
 #endif
 	return m_acttable;
 }

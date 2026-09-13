@@ -2434,16 +2434,31 @@ Activity CBaseCombatWeapon::ActivityOverride( Activity baseAct, bool *pRequired 
 	acttable_t *pTable = ActivityList();
 	int actCount = ActivityListCount();
 
+	// HL2SB: a table row may name an activity the OWNER'S MODEL does not have -
+	// GMod playermodels ship a different activity set than this fork's HL2MP
+	// weapons expect, and the HL2MP rows (ACT_HL2MP_IDLE_PISTOL etc.) are not
+	// universal.  Returning such an activity makes SelectWeightedSequence()
+	// answer ACT_INVALID and the player freezes in whatever pose it was in, which
+	// is strictly worse than the generic pose.  So check the model and otherwise
+	// fall through to the next candidate / the untouched base activity.
+	CStudioHdr *pOwnerStudioHdr = NULL;
+	CBaseCombatCharacter *pOwner = GetOwner();
+	if ( pOwner != NULL )
+		pOwnerStudioHdr = pOwner->GetModelPtr();
+
 	for ( int i = 0; i < actCount; i++, pTable++ )
 	{
-		if ( baseAct == pTable->baseAct )
+		if ( baseAct != pTable->baseAct || pTable->weaponAct == ACT_INVALID )
+			continue;
+
+		if ( pOwnerStudioHdr != NULL && !pOwnerStudioHdr->HaveSequenceForActivity( pTable->weaponAct ) )
+			continue;
+
+		if (pRequired)
 		{
-			if (pRequired)
-			{
-				*pRequired = pTable->required;
-			}
-			return (Activity)pTable->weaponAct;
+			*pRequired = pTable->required;
 		}
+		return (Activity)pTable->weaponAct;
 	}
 	return baseAct;
 }
