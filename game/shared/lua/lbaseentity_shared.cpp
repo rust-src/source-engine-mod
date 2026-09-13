@@ -2658,6 +2658,9 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
     return 1;
 
   for ( datamap_t *pMap = pEntity->GetDataDescMap(); pMap != NULL; pMap = pMap->baseMap ) {
+    if ( pMap->dataDesc == NULL || pMap->dataNumFields <= 0 )
+      continue;
+
     for ( int i = 0; i < pMap->dataNumFields; ++i ) {
       const typedescription_t *pField = &pMap->dataDesc[ i ];
 
@@ -2665,19 +2668,24 @@ static int CBaseEntity_GetSaveTable (lua_State *L) {
         continue;
 
       // Most derived wins: only fill a key nothing closer already set.
-      lua_pushstring( L, pField->fieldName );
-      if ( lua_rawget( L, -2 ) != LUA_TNIL ) {
-        lua_pop( L, 2 );			// the key and its value; the table stays
-        continue;
-      }
-      lua_pop( L, 1 );				// the nil we just read; the key stays
+      // Stack discipline: lua_pushstring gives [t,key]; lua_rawget REPLACES the
+      // key with the value it read, so afterwards it is [t,val] and exactly ONE
+      // item may be popped.  Popping two drops the table itself, and the next
+      // lua_rawset(-3) then writes through a non-table index - that is what
+      // crashed the client as soon as a name repeated in the base chain.
+      lua_pushstring( L, pField->fieldName );				// [ t, key ]
+      bool bAlreadySet = ( lua_rawget( L, -2 ) != LUA_TNIL );	// [ t, val ]
+      lua_pop( L, 1 );											// [ t ]
 
-      if ( !HL2SB_PushDataDescField( L, pEntity, pField ) ) {
-        lua_pop( L, 1 );			// drop the key we are not filling
+      if ( bAlreadySet )
         continue;
-      }
 
-      lua_rawset( L, -3 );
+      if ( !HL2SB_PushDataDescField( L, pEntity, pField ) )
+        continue;												// [ t ] still
+
+      lua_pushstring( L, pField->fieldName );					// [ t, val, key ]
+      lua_insert( L, -2 );										// [ t, key, val ]
+      lua_rawset( L, -3 );										// [ t ]
     }
   }
 
