@@ -12,6 +12,7 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lfilesystem.h"
+#include "tier1/utlvector.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -519,9 +520,18 @@ static const luaL_Reg FileHandle_tmeta[] = {
 
 
 /*
-** Open filesystem library
+** The FileHandle_t metatable -- f:Read / f:Write / f:Close / f:Seek / ...
+**
+** Both libraries below hand out those handles, so each of them needs the
+** metatable to exist first.  It used to be created only by luaopen_filesystem,
+** which is fine in the game realms (both libraries are opened there) but not in
+** the main menu state, whose library list is hand-picked and opens `file` only
+** -- file.Open there would hand back a userdata with no methods.
+**
+** Calling it twice is harmless: luaL_newmetatable leaves an existing metatable
+** alone, and the fields below are re-set to the same values.
 */
-LUALIB_API int luaopen_filesystem (lua_State *L) {
+static void HL2SB_RegisterFileHandleMeta (lua_State *L) {
   luaL_newmetatable(L, "FileHandle_t");
   luaL_register(L, NULL, FileHandle_tmeta);
   lua_pushvalue(L, -1);  /* push metatable */
@@ -529,9 +539,28 @@ LUALIB_API int luaopen_filesystem (lua_State *L) {
   lua_pushstring(L, "filehandle");
   lua_setfield(L, -2, "__type");  /* metatable.__type = "filehandle" */
   lua_pop(L, 1);
+}
+
+/*
+** Open filesystem library
+*/
+LUALIB_API int luaopen_filesystem (lua_State *L) {
+  HL2SB_RegisterFileHandleMeta(L);
   lua_pushfilehandle(L, FILESYSTEM_INVALID_HANDLE);
   lua_setglobal(L, "FILESYSTEM_INVALID_HANDLE");
   luaL_register(L, LUA_FILESYSTEMLIBNAME, filesystemlib);
+
+  // HL2SB: filesystem.AddSearchPath's third argument.  These were never
+  // published, so every caller that passed PATH_ADD_TO_HEAD was handing the
+  // binding a nil global and silently getting the default (PATH_ADD_TO_TAIL) --
+  // the mount happened, just at the wrong priority.  lua/autorun/mount_games.lua
+  // is the caller that matters: an extra game mounted at the tail loses to the
+  // base content it is supposed to override.
+  LUA_SET_ENUM_LIB_BEGIN( L, "FILESYSTEM" );
+  lua_pushenum( L, PATH_ADD_TO_HEAD, "PATH_ADD_TO_HEAD" );
+  lua_pushenum( L, PATH_ADD_TO_TAIL, "PATH_ADD_TO_TAIL" );
+  LUA_SET_ENUM_LIB_END( L );
+
   return 1;
 }
 
@@ -550,8 +579,13 @@ LUALIB_API int luaopen_filesystem (lua_State *L) {
 //
 // Lives in lfilesystem.cpp on purpose: that file is already listed in BOTH
 // client_lua.vpc and server_lua.vpc, so neither .vpc needs touching and both
-// realms get it.  Paths are relative to the game ("MOD") directory, which is what
-// GMod's file.* use against garrysmod/.
+// realms get it.
+//
+// Names are relative to the game folder, the way GMod's file.* are relative to
+// garrysmod/.  The path argument of every binding below is a GMod path ID and is
+// translated by the resolvers in this block -- it used to be ignored outright
+// (everything was hardcoded to "MOD"), which is why file.Write never reached the
+// data/ folder GMod writes to and file.Open( .., "DATA" ) wrote to the mod root.
 //=============================================================================
 
 static IFileSystem *HL2SB_FileSystem( void )
@@ -559,37 +593,263 @@ static IFileSystem *HL2SB_FileSystem( void )
 	return g_pFullFileSystem ? g_pFullFileSystem : filesystem;
 }
 
+//=============================================================================
+// GMod path IDs -> this engine's search paths.
+//
+// Two of GMod's IDs name a SUBTREE of the game folder rather than a search
+// path -- "LUA" is garrysmod/lua and "DATA" is garrysmod/data -- so they become
+// a PREFIX on top of the mod tree here.  That also matches GMod's on-disk tree,
+// where data/ and lua/ sit inside the game folder and are therefore reachable
+// through "GAME" as "data/..." and "lua/...".
+//
+// Everything else is a path ID this engine already registered: gameinfo.txt
+// registers MOD, MOD_WRITE, GAME_WRITE, DEFAULT_WRITE_PATH, GAMEBIN, DOWNLOAD
+// and PLATFORM, and the engine adds BSP plus every mounted game name.
+//
+// https://wiki.facepunch.com/gmod/File_Search_Paths is the list being matched.
+//=============================================================================
+struct HL2SBGModPathID_t
+{
+	const char *pGModName;
+	const char *pPathID;	// this engine's ID
+	const char *pPrefix;	// folder GMod implies on top of it
+};
+
+static const HL2SBGModPathID_t s_GModPathIDs[] =
+{
+	{ "",			"GAME",	"" },
+	{ "GAME",		"GAME",	"" },
+	{ "ALL",		"GAME",	"" },
+	{ "NULL",		"GAME",	"" },
+	// GMod's MOD is "the garrysmod folder, addons excluded".  Addons are mounted
+	// into the mod tree here, so the mod search path is the closest equivalent.
+	{ "MOD",		"MOD",	"" },
+	{ "garrysmod",	"MOD",	"" },
+	{ "LUA",		"GAME",	"lua/" },
+	// GMod splits LUA per realm (lcl / lsv / LuaMenu).  This engine has one lua
+	// tree and both realms read all of it, so all four spellings are one path.
+	{ "lcl",		"GAME",	"lua/" },
+	{ "lsv",		"GAME",	"lua/" },
+	{ "LuaMenu",	"GAME",	"lua/" },
+	{ "DATA",		"MOD",	"data/" },
+	{ "WRITE",		"MOD",	"data/" },
+	// GMod's addon-only view.  .gma addons are mounted straight out of
+	// hl2sb/addons/, so that folder is the equivalent; WORKSHOP folds in here
+	// too because this engine has no separate workshop tree.
+	{ "THIRDPARTY",	"MOD",	"addons/" },
+	{ "WORKSHOP",	"MOD",	"addons/" },
+};
+
+static const HL2SBGModPathID_t *HL2SB_FindGModPathID( const char *pRequest )
+{
+	if ( !pRequest )
+		pRequest = "";
+
+	for ( int i = 0; i < ARRAYSIZE( s_GModPathIDs ); i++ )
+	{
+		if ( !V_stricmp( s_GModPathIDs[ i ].pGModName, pRequest ) )
+			return &s_GModPathIDs[ i ];
+	}
+
+	return NULL;
+}
+
+// True when the engine has a search path registered under this ID, so that IDs
+// this engine really has (a mounted game, "CONFIG", ...) keep working.
+//
+// GetSearchPath() writes the concatenated search paths into the buffer and
+// returns their length PLUS ONE, so an ID nobody registered answers 1 -- hence
+// ">1" rather than ">0" (basefilesystem.cpp).
+static bool HL2SB_PathIDExists( IFileSystem *pFS, const char *pPathID )
+{
+	char szScratch[ 8 ];
+	return pFS->GetSearchPath( pPathID, true, szScratch, sizeof( szScratch ) ) > 1;
+}
+
+// One GMod path ID -> the engine ID to hand to IFileSystem, plus the prefix the
+// caller has to put in front of its relative name.
+static const char *HL2SB_ResolveFilePathID( IFileSystem *pFS, const char *pRequest,
+											char *pPrefix, int nPrefixSize )
+{
+	pPrefix[ 0 ] = 0;
+
+	if ( !pRequest || !pRequest[ 0 ] )
+		return "GAME";
+
+	const HL2SBGModPathID_t *pEntry = HL2SB_FindGModPathID( pRequest );
+
+	if ( pEntry )
+	{
+		V_strncpy( pPrefix, pEntry->pPrefix, nPrefixSize );
+		return pEntry->pPathID;
+	}
+
+	if ( HL2SB_PathIDExists( pFS, pRequest ) )
+		return pRequest;
+
+	// Two kinds of caller land here: one naming a GMod path ID this engine has
+	// no equivalent for, and one using GMod's dynamic IDs (addons are addressed
+	// by title -- duplicator.lua:421 passes addon.title to file.Exists).  The
+	// binding used to ignore the argument entirely, so searching every path
+	// keeps those working instead of reporting a miss only this engine sees.
+	return NULL;
+}
+
+// GMod's extensions/file.lua spells "the game tree" as file.Read( name, true )
+// (lua/menu/mainmenu.lua:236 does exactly that), so booleans are part of the
+// path contract and not just a truthiness accident.
+static const char *HL2SB_GetPathArg( lua_State *L, int nArg, const char *pDefault );
+
+// The read-only bindings (Exists / IsDir / Size / Time, and Open for a read)
+// share this: an omitted path argument searches every search path.
+//
+// The wiki lists their path argument as required and every example passes one,
+// so omitting it is off-contract.  Being generous cannot break a GMod script,
+// being strict can -- and these bindings used to ignore the argument entirely.
+static const char *HL2SB_ResolveQueryPathID( lua_State *L, int nArg, IFileSystem *pFS,
+											 const char *pDefaultIfOmitted,
+											 char *pPrefix, int nPrefixSize )
+{
+	pPrefix[ 0 ] = 0;
+
+	if ( lua_isnoneornil( L, nArg ) )
+	{
+		if ( !pDefaultIfOmitted )
+			return NULL;
+
+		return HL2SB_ResolveFilePathID( pFS, pDefaultIfOmitted, pPrefix, nPrefixSize );
+	}
+
+	return HL2SB_ResolveFilePathID( pFS, HL2SB_GetPathArg( L, nArg, "GAME" ), pPrefix, nPrefixSize );
+}
+
+static const char *HL2SB_GetPathArg( lua_State *L, int nArg, const char *pDefault )
+{
+	if ( lua_isnoneornil( L, nArg ) )
+		return pDefault;
+	if ( lua_isboolean( L, nArg ) )
+		return lua_toboolean( L, nArg ) ? "GAME" : "DATA";
+	return lua_tostring( L, nArg );
+}
+
+// Prefix + relative name, into the caller's buffer.
+static void HL2SB_MakeFilePath( char *pOut, int nOutSize, const char *pPrefix,
+								const char *pPath, bool bLowerCase )
+{
+	V_strncpy( pOut, pPrefix ? pPrefix : "", nOutSize );
+
+	char szName[ MAX_PATH ];
+	V_strncpy( szName, pPath ? pPath : "", sizeof( szName ) );
+	if ( bLowerCase )
+		V_strlower( szName );
+
+	V_strncat( pOut, szName, nOutSize );
+}
+
+// GMod's write side forces data/-relative names to lowercase -- its file.Write
+// and file.Rename pages both document it.  Nothing else is case folded.
+static bool HL2SB_LowerForData( const char *pPrefix )
+{
+	return !V_strcmp( pPrefix, "data/" );
+}
+
+// Open() does not build the directory tree (basefilesystem.cpp:2686 is a FIXME
+// saying exactly that), so a write to data/settings/x.txt needs data/settings
+// first.  RenameFile builds the destination's tree for itself.
+static void HL2SB_MakeParentDirs( IFileSystem *pFS, const char *pPath, const char *pPathID )
+{
+	if ( !strchr( pPath, '/' ) && !strchr( pPath, '\\' ) )
+		return;
+
+	char szDir[ MAX_PATH ];
+	V_strncpy( szDir, pPath, sizeof( szDir ) );
+	V_StripFilename( szDir );
+
+	if ( szDir[ 0 ] )
+		pFS->CreateDirHierarchy( szDir, pPathID );
+}
+
+// Whole-file read into a malloc'd NUL-terminated buffer (caller frees).  NULL
+// when the file cannot be opened or read, which is what GMod reports as
+// FSASYNC_ERR_FILEOPEN.
+static char *HL2SB_ReadFileContents( IFileSystem *pFS, const char *pPath,
+									 const char *pPathID, int *pnLen )
+{
+	*pnLen = 0;
+
+	FileHandle_t fh = pFS->Open( pPath, "rb", pPathID );
+	if ( !fh )
+		return NULL;
+
+	int nSize = pFS->Size( fh );
+	if ( nSize < 0 )
+	{
+		pFS->Close( fh );
+		return NULL;
+	}
+
+	char *pBuf = (char *)malloc( nSize + 1 );
+	int nRead = ( nSize > 0 ) ? pFS->Read( pBuf, nSize, fh ) : 0;
+	pFS->Close( fh );
+
+	if ( nRead < 0 )
+	{
+		free( pBuf );
+		return NULL;
+	}
+
+	pBuf[ nRead ] = '\0';
+	*pnLen = nRead;
+	return pBuf;
+}
+
 // file.Read( path [, gamePath] ) -> string | nil
+//
+// DATA is the default GMod's extensions/file.lua uses, and its own
+// gamemodes/sandbox/gamemode/persistence.lua reads back what file.Write stored.
 static int file_Read (lua_State *L) {
   const char *pszPath = luaL_checkstring(L, 1);
   IFileSystem *pFS = HL2SB_FileSystem();
 
-  FileHandle_t fh = pFS->Open(pszPath, "rb", "MOD");
-  if (!fh) { lua_pushnil(L); return 1; }
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, HL2SB_GetPathArg( L, 2, "DATA" ),
+                                                   szPrefix, sizeof( szPrefix ) );
 
-  int nSize = pFS->Size(fh);
-  if (nSize < 0) { pFS->Close(fh); lua_pushnil(L); return 1; }
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, pszPath, false );
 
-  char *pBuf = (char *)malloc(nSize + 1);
-  int nRead = (nSize > 0) ? pFS->Read(pBuf, nSize, fh) : 0;
-  pFS->Close(fh);
+  int nLen = 0;
+  char *pBuf = HL2SB_ReadFileContents( pFS, szFull, pszPathID, &nLen );
+  if ( !pBuf ) { lua_pushnil(L); return 1; }
 
-  pBuf[nRead > 0 ? nRead : 0] = '\0';
-  lua_pushlstring(L, pBuf, (nRead > 0) ? nRead : 0);
+  lua_pushlstring(L, pBuf, nLen);
   free(pBuf);
   return 1;
 }
 
+// file.Write / file.Append: GMod writes into data/ (extensions/file.lua opens
+// "wb"/"ab" against "DATA") and lowercases the name.  The third argument is an
+// extension this binding has always accepted; GMod's own signature stops at two.
 static int file_WriteInternal (lua_State *L, const char *pszMode) {
   const char *pszPath = luaL_checkstring(L, 1);
   size_t nLen = 0;
   const char *pszData = luaL_checklstring(L, 2, &nLen);
 
-  FileHandle_t fh = HL2SB_FileSystem()->Open(pszPath, pszMode, "MOD");
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, HL2SB_GetPathArg( L, 3, "DATA" ),
+                                                   szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, pszPath, HL2SB_LowerForData( szPrefix ) );
+  HL2SB_MakeParentDirs( pFS, szFull, pszPathID );
+
+  FileHandle_t fh = pFS->Open(szFull, pszMode, pszPathID);
   if (!fh) { lua_pushboolean(L, false); return 1; }
 
-  int nWritten = (nLen > 0) ? HL2SB_FileSystem()->Write(pszData, (int)nLen, fh) : 0;
-  HL2SB_FileSystem()->Close(fh);
+  int nWritten = (nLen > 0) ? pFS->Write(pszData, (int)nLen, fh) : 0;
+  pFS->Close(fh);
 
   lua_pushboolean(L, (int)nLen == nWritten);
   return 1;
@@ -598,65 +858,486 @@ static int file_WriteInternal (lua_State *L, const char *pszMode) {
 static int file_Write  (lua_State *L) { return file_WriteInternal(L, "wb"); }
 static int file_Append (lua_State *L) { return file_WriteInternal(L, "ab"); }
 
+// file.Exists( name [, path] )
 static int file_Exists (lua_State *L) {
-  lua_pushboolean(L, HL2SB_FileSystem()->FileExists(luaL_checkstring(L, 1), "MOD"));
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveQueryPathID( L, 2, pFS, NULL, szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1), false );
+
+  lua_pushboolean(L, pFS->FileExists(szFull, pszPathID));
   return 1;
 }
 
+// file.Delete( name [, path] ) -> boolean
+//
+// GMod documents path as "DATA" here and reports whether the delete worked;
+// RemoveFile is void, so that answer is "it was there, and now it is gone".
 static int file_Delete (lua_State *L) {
-  HL2SB_FileSystem()->RemoveFile(luaL_checkstring(L, 1), "MOD");
-  return 0;
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, HL2SB_GetPathArg( L, 2, "DATA" ),
+                                                   szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1),
+                      HL2SB_LowerForData( szPrefix ) );
+
+  bool bExisted = pFS->FileExists( szFull, pszPathID ) || pFS->IsDirectory( szFull, pszPathID );
+  pFS->RemoveFile( szFull, pszPathID );
+
+  lua_pushboolean( L, bExisted && !pFS->FileExists( szFull, pszPathID ) );
+  return 1;
 }
 
 static int file_Time (lua_State *L) {
-  lua_pushnumber(L, (double)HL2SB_FileSystem()->GetFileTime(luaL_checkstring(L, 1), "MOD"));
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveQueryPathID( L, 2, pFS, NULL, szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1), false );
+
+  lua_pushnumber(L, (double)pFS->GetFileTime(szFull, pszPathID));
   return 1;
 }
 
 static int file_Size (lua_State *L) {
-  FileHandle_t fh = HL2SB_FileSystem()->Open(luaL_checkstring(L, 1), "rb", "MOD");
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveQueryPathID( L, 2, pFS, NULL, szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1), false );
+
+  FileHandle_t fh = pFS->Open(szFull, "rb", pszPathID);
   if (!fh) { lua_pushnumber(L, 0); return 1; }
-  lua_pushnumber(L, HL2SB_FileSystem()->Size(fh));
-  HL2SB_FileSystem()->Close(fh);
+  lua_pushnumber(L, pFS->Size(fh));
+  pFS->Close(fh);
   return 1;
 }
 
 static int file_IsDir (lua_State *L) {
-  lua_pushboolean(L, HL2SB_FileSystem()->IsDirectory(luaL_checkstring(L, 1), "MOD"));
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveQueryPathID( L, 2, pFS, NULL, szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1), false );
+
+  lua_pushboolean(L, pFS->IsDirectory(szFull, pszPathID));
   return 1;
 }
 
+// file.CreateDir( name ) -- relative to data/, and every '/' level is created
+// (the wiki shows file.CreateDir("a/b/c/d/e/f/g") doing exactly that).
 static int file_CreateDir (lua_State *L) {
-  HL2SB_FileSystem()->CreateDirHierarchy(luaL_checkstring(L, 1), "MOD");
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, HL2SB_GetPathArg( L, 2, "DATA" ),
+                                                   szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, luaL_checkstring(L, 1),
+                      HL2SB_LowerForData( szPrefix ) );
+
+  pFS->CreateDirHierarchy( szFull, pszPathID );
   return 0;
 }
 
-// file.Find( path ) -> files, dirs   (GMod returns two tables)
+// file.Rename( oldName, newName ) -> boolean
+//
+// The wiki: constrained to the data/ folder, both names forced to lowercase,
+// and no path argument.  RenameFile creates the destination's directories.
+static int file_Rename (lua_State *L) {
+  const char *pszOld = luaL_checkstring(L, 1);
+  const char *pszNew = luaL_checkstring(L, 2);
+
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, "DATA", szPrefix, sizeof( szPrefix ) );
+
+  char szOld[ MAX_PATH ];
+  char szNew[ MAX_PATH ];
+  HL2SB_MakeFilePath( szOld, sizeof( szOld ), szPrefix, pszOld, HL2SB_LowerForData( szPrefix ) );
+  HL2SB_MakeFilePath( szNew, sizeof( szNew ), szPrefix, pszNew, HL2SB_LowerForData( szPrefix ) );
+
+  lua_pushboolean( L, pFS->RenameFile( szOld, szNew, pszPathID ) );
+  return 1;
+}
+
+// file.AsyncRead( fileName, gamePath, callback [, sync] ) -> FSASYNC status
+//
+// GMod reports through the callback: callback( fileName, gamePath, status,
+// data ).  This engine's filesystem has no asynchronous path, and `sync` is
+// GMod's own way of asking for the synchronous one, so the read happens inline
+// and the callback is still called with GMod's arguments and status codes.
+static int file_AsyncRead (lua_State *L) {
+  const char *pszPath = luaL_checkstring(L, 1);
+  const char *pszPathArg = HL2SB_GetPathArg( L, 2, "DATA" );
+  luaL_checktype( L, 3, LUA_TFUNCTION );
+
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveFilePathID( pFS, pszPathArg, szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, pszPath, false );
+
+  int nLen = 0;
+  char *pBuf = HL2SB_ReadFileContents( pFS, szFull, pszPathID, &nLen );
+
+  int nStatus = pBuf ? FSASYNC_OK : FSASYNC_ERR_FILEOPEN;
+
+  // [func] [fileName] [gamePath] [status] [data]
+  lua_pushvalue( L, 3 );
+  lua_pushvalue( L, 1 );
+  lua_pushvalue( L, 2 );
+  lua_pushinteger( L, nStatus );
+  if ( pBuf )
+    lua_pushlstring( L, pBuf, nLen );
+  else
+    lua_pushnil( L );
+
+  free( pBuf );
+
+  lua_call( L, 4, 0 );
+
+  lua_pushinteger( L, nStatus );
+  return 1;
+}
+
+// GMod's file.Find( name, pathID, sorting ).
+//
+// The previous version took one argument, hardcoded pathID "MOD", always appended
+// "/*" and returned whatever order the OS handed back.  Every real caller here
+// passes a GLOB, so that build was broken on all of them:
+//
+//     file.Find( dir .. "/*", "LUA" )                    -> glob  "*.lua/*"
+//     file.Find( "settings/spawnlist/*.txt", "GAME" )    -> glob  "*.txt/*"
+//     file.Find( folder .. "/*.lua", "GAME" )            -> glob  "*.lua/*"
+//
+// (see backup_addons/Project HL2 MMod Weapon Replacements/lua/autorun/*.lua and
+//  experiment-source's gmod_compatibility/sh_init.lua) -- each found nothing.
+//
+// Sorting modes, from https://wiki.facepunch.com/gmod/file.Find.  Name ascending
+// is GMod's default.
+enum HL2SBFileSort_e
+{
+	SORT_NAME_ASC = 0,	SORT_NAME_DESC,
+	SORT_TIME_ASC,		SORT_TIME_DESC,
+	SORT_SIZE_ASC,		SORT_SIZE_DESC,
+	SORT_TYPE_ASC,		SORT_TYPE_DESC,		// TYPE_ASC groups files before dirs
+	SORT_EXT_ASC,		SORT_EXT_DESC
+};
+
+struct HL2SBFindItem_t
+{
+	char		name[ 260 ];
+	bool		bDir;
+	int			nSize;
+	time_t		tTime;
+};
+
+// Shared with the comparator: CUtlVector::Sort passes no context pointer.
+static HL2SBFileSort_e	s_eFindSort      = SORT_NAME_ASC;
+static const char	   *s_pFindPathID[ 2 ] = { "GAME", "MOD" };
+
+// Bare names come back from FindFirstEx, so the last dot is the extension dot.
+static const char *HL2SB_FindExt( const char *pName )
+{
+	const char *pDot = strrchr( pName, '.' );
+	return ( pDot && pDot[ 1 ] ) ? pDot : pName;
+}
+
+// Primary key per the requested mode, name as the tie-breaker throughout.
+static int __cdecl HL2SB_FindCmp( const HL2SBFindItem_t *pA, const HL2SBFindItem_t *pB )
+{
+	bool bDesc = ( s_eFindSort == SORT_TIME_DESC || s_eFindSort == SORT_SIZE_DESC ||
+				   s_eFindSort == SORT_TYPE_DESC || s_eFindSort == SORT_EXT_DESC );
+
+	int iCmp = 0;
+
+	switch ( s_eFindSort )
+	{
+	case SORT_TIME_ASC:
+	case SORT_TIME_DESC:
+		if ( pA->tTime != pB->tTime )
+			iCmp = ( pA->tTime < pB->tTime ) ? -1 : 1;
+		break;
+
+	case SORT_SIZE_ASC:
+	case SORT_SIZE_DESC:
+		if ( pA->nSize != pB->nSize )
+			iCmp = ( pA->nSize < pB->nSize ) ? -1 : 1;
+		break;
+
+	case SORT_TYPE_ASC:
+	case SORT_TYPE_DESC:
+		// TYPE_ASC groups files before dirs
+		if ( pA->bDir != pB->bDir )
+			iCmp = pA->bDir ? 1 : -1;
+		break;
+
+	case SORT_EXT_ASC:
+	case SORT_EXT_DESC:
+		iCmp = Q_stricmp( HL2SB_FindExt( pA->name ), HL2SB_FindExt( pB->name ) );
+		break;
+
+	default:
+		break;
+	}
+
+	if ( iCmp != 0 )
+		return bDesc ? -iCmp : iCmp;
+
+	iCmp = Q_stricmp( pA->name, pB->name );
+
+	return ( s_eFindSort == SORT_NAME_DESC ) ? -iCmp : iCmp;
+}
+
+// Maps a GMod path ID onto the engine search paths file.Find should walk.
+//
+// Returns how many IDs to search, and 0 for a path GMod would call invalid --
+// file.Find answers nil, nil for those (that is the documented contract, and it
+// is why this used to be wrong: an unregistered ID was handed to FindFirstEx,
+// which quietly found nothing and looked like an empty folder).
+//
+// Also writes the prefix GMod implies on top of the search paths: its "LUA" and
+// "DATA" are subtrees of the game folder, not search paths (see s_GModPathIDs).
+static int HL2SB_ResolveFindPathID( const char *pRequest, char *pPrefix, int nPrefixSize )
+{
+	pPrefix[ 0 ] = 0;
+
+	// An omitted path searches everything.  GMod's signature marks the argument
+	// required, so this is leniency rather than contract.
+	if ( !pRequest || !pRequest[ 0 ] )
+	{
+		s_pFindPathID[ 0 ] = "GAME";	s_pFindPathID[ 1 ] = "MOD";
+		return 2;
+	}
+
+	const HL2SBGModPathID_t *pEntry = HL2SB_FindGModPathID( pRequest );
+
+	if ( pEntry )
+	{
+		V_strncpy( pPrefix, pEntry->pPrefix, nPrefixSize );
+
+		// GAME and MOD are searched as a pair: gameinfo.txt mounts the mod tree
+		// as "game+mod" but garrysmod.vpk as "mod" only, so neither one alone is
+		// everything.
+		// MOD-first for the IDs whose writable side is the mod tree (DATA,
+		// THIRDPARTY); GAME-first otherwise, so the game's copy of a file wins
+		// over a mounted addon's -- the priority order gameinfo.txt sets up.
+		bool bModFirst = ( !V_stricmp( pEntry->pPathID, "MOD" ) );
+		s_pFindPathID[ 0 ] = bModFirst ? "MOD"  : "GAME";
+		s_pFindPathID[ 1 ] = bModFirst ? "GAME" : "MOD";
+		return 2;
+	}
+
+	// A path ID this engine registered under GMod's own name: a mounted game
+	// ("hl2", "cstrike"), PLATFORM, CONFIG, GAMEBIN, DOWNLOAD, or "BSP" (which
+	// basefilesystem.cpp routes to the current map's pack file).
+	if ( HL2SB_PathIDExists( HL2SB_FileSystem(), pRequest ) )
+	{
+		s_pFindPathID[ 0 ] = pRequest;
+		return 1;
+	}
+
+	return 0;
+}
+
+// Name + kind only, used to de-duplicate before the requested sort runs.
+static int __cdecl HL2SB_FindNameCmp( const HL2SBFindItem_t *pA, const HL2SBFindItem_t *pB )
+{
+	if ( pA->bDir != pB->bDir )
+		return pA->bDir ? 1 : -1;
+
+	return Q_stricmp( pA->name, pB->name );
+}
+
 static int file_Find (lua_State *L) {
-  char szPattern[512];
-  Q_snprintf(szPattern, sizeof(szPattern), "%s/*", luaL_checkstring(L, 1));
+	const char *pszRequest = luaL_checkstring( L, 1 );
 
-  FileFindHandle_t fh;
-  const char *pszFound = HL2SB_FileSystem()->FindFirstEx(szPattern, "MOD", &fh);
+	// GMod's first argument is either a bare folder or a folder plus a glob; a
+	// bare folder gets "*" appended as its pattern.  Split on the last slash.
+	char szIn[ MAX_PATH ];
+	V_strncpy( szIn, pszRequest, sizeof( szIn ) );
+	V_FixSlashes( szIn, '/' );
 
-  lua_newtable(L);                       // files
-  int iFiles = 0;
-  lua_newtable(L);                       // dirs
-  int iDirs = 0;
+	char szFolder[ MAX_PATH ];
+	char szGlob[ MAX_PATH ];
+	bool bHasGlob = ( strchr( szIn, '*' ) != NULL );
+	char *pLastSlash = strrchr( szIn, '/' );
 
-  while (pszFound) {
-    if (pszFound[0] != '.') {
-      if (HL2SB_FileSystem()->FindIsDirectory(fh)) {
-        lua_pushstring(L, pszFound); lua_rawseti(L, -2, ++iDirs);
-      } else {
-        lua_pushstring(L, pszFound); lua_rawseti(L, -3, ++iFiles);
-      }
-    }
-    pszFound = HL2SB_FileSystem()->FindNext(fh);
-  }
-  HL2SB_FileSystem()->FindClose(fh);
+	if ( !bHasGlob )
+	{
+		V_strncpy( szFolder, szIn, sizeof( szFolder ) );
+		V_strncat( szFolder, "/", sizeof( szFolder ) );
+		V_strncpy( szGlob, "*", sizeof( szGlob ) );
+	}
+	else if ( pLastSlash )
+	{
+		V_strncpy( szFolder, szIn, (int)( pLastSlash - szIn ) + 1 );	// keeps the slash
+		V_strncpy( szGlob, pLastSlash + 1, sizeof( szGlob ) );
+	}
+	else
+	{
+		szFolder[ 0 ] = 0;
+		V_strncpy( szGlob, szIn, sizeof( szGlob ) );
+	}
 
-  return 2;
+	// trim trailing slashes; the pattern below re-adds exactly one
+	int nFolder = V_strlen( szFolder );
+	while ( nFolder > 0 && szFolder[ nFolder - 1 ] == '/' )
+		szFolder[ --nFolder ] = 0;
+
+	char szPrefix[ 16 ];
+	int nPathIDs = HL2SB_ResolveFindPathID( lua_tostring( L, 2 ), szPrefix, sizeof( szPrefix ) );
+
+	char szPattern[ MAX_PATH ];
+	if ( nFolder > 0 )
+		Q_snprintf( szPattern, sizeof( szPattern ), "%s%s/%s", szPrefix, szFolder, szGlob );
+	else
+		Q_snprintf( szPattern, sizeof( szPattern ), "%s%s", szPrefix, szGlob );
+
+	// GMod: "A table of found files, or nil if the path is invalid."  The two
+	// nils are the point of the check -- GMod's own Lua everywhere guards with
+	// `if ( !files ) then return end`, and an empty table sails straight past
+	// that guard and dies on files[1].
+	if ( nPathIDs <= 0 )
+	{
+		lua_pushnil( L );
+		lua_pushnil( L );
+		return 2;
+	}
+
+	// "sorting" is optional; an unrecognised value falls back to GMod's default
+	// instead of erroring, because addons pass all kinds of things.
+	s_eFindSort = SORT_NAME_ASC;
+	const char *pszSort = lua_tostring( L, 3 );
+	if ( pszSort && pszSort[ 0 ] )
+	{
+		char szKey[ 32 ];
+		V_strncpy( szKey, pszSort, sizeof( szKey ) );
+		V_strlower( szKey );
+
+		bool bDesc = ( strstr( szKey, "desc" ) != NULL );
+
+		if ( strstr( szKey, "time" ) || strstr( szKey, "date" ) )
+			s_eFindSort = bDesc ? SORT_TIME_DESC : SORT_TIME_ASC;
+		else if ( strstr( szKey, "size" ) )
+			s_eFindSort = bDesc ? SORT_SIZE_DESC : SORT_SIZE_ASC;
+		else if ( strstr( szKey, "type" ) )
+			s_eFindSort = bDesc ? SORT_TYPE_DESC : SORT_TYPE_ASC;
+		else if ( strstr( szKey, "ext" ) )
+			s_eFindSort = bDesc ? SORT_EXT_DESC : SORT_EXT_ASC;
+		else if ( bDesc )
+			s_eFindSort = SORT_NAME_DESC;
+	}
+
+	IFileSystem *pFS = HL2SB_FileSystem();
+
+	// Rebuilt per hit as <folder>/<name> for the size and time sorts.
+	char szFolderFull[ MAX_PATH ];
+	if ( nFolder > 0 )
+		Q_snprintf( szFolderFull, sizeof( szFolderFull ), "%s%s/", szPrefix, szFolder );
+	else
+		V_strncpy( szFolderFull, szPrefix, sizeof( szFolderFull ) );
+
+	bool bNeedStats = ( s_eFindSort >= SORT_TIME_ASC );
+
+	CUtlVector< HL2SBFindItem_t > items;
+
+	for ( int iPathID = 0; iPathID < nPathIDs; iPathID++ )
+	{
+		FileFindHandle_t fh;
+		const char *pszFound = pFS->FindFirstEx( szPattern, s_pFindPathID[ iPathID ], &fh );
+
+		while ( pszFound )
+		{
+			// GMod reports neither "." / ".." nor dotfiles here
+			if ( pszFound[ 0 ] != '.' )
+			{
+				HL2SBFindItem_t it;
+				V_strncpy( it.name, pszFound, sizeof( it.name ) );
+				it.bDir  = pFS->FindIsDirectory( fh );
+				it.nSize = 0;
+				it.tTime = 0;
+
+				if ( bNeedStats )
+				{
+					char szFull[ MAX_PATH ];
+					Q_snprintf( szFull, sizeof( szFull ), "%s%s", szFolderFull, pszFound );
+					it.nSize = (int)pFS->Size( szFull, s_pFindPathID[ iPathID ] );
+					it.tTime = pFS->GetFileTime( szFull, s_pFindPathID[ iPathID ] );
+				}
+
+				items.AddToTail( it );
+			}
+
+			pszFound = pFS->FindNext( fh );
+		}
+
+		// FindFirstEx sets *pHandle = -1 when it finds nothing and FindClose
+		// rejects negative handles, so this is also the empty-result path.
+		pFS->FindClose( fh );
+	}
+
+	// De-duplicate BEFORE the requested sort.  The same relative name can come
+	// back from both GAME and MOD (the mod tree is mounted into both), and under
+	// dateasc/sizeasc the two copies are ordered by time/size rather than by
+	// name, so they are not neighbours and the second one used to be listed
+	// twice.  Sorting by name first makes them adjacent; every copy carries the
+	// same name, so which one survives is irrelevant to the result.
+	items.Sort( HL2SB_FindNameCmp );
+
+	int nKept = 0;
+	for ( int i = 0; i < items.Count(); i++ )
+	{
+		if ( nKept > 0 && items[ nKept - 1 ].bDir == items[ i ].bDir &&
+			 !V_stricmp( items[ nKept - 1 ].name, items[ i ].name ) )
+			continue;
+
+		items[ nKept++ ] = items[ i ];
+	}
+	items.RemoveMultiple( nKept, items.Count() - nKept );
+
+	items.Sort( HL2SB_FindCmp );
+
+	lua_newtable( L );					// files, returned first
+	int iFiles = 0;
+	for ( int i = 0; i < items.Count(); i++ )
+	{
+		if ( items[ i ].bDir )
+			continue;
+
+		lua_pushstring( L, items[ i ].name );
+		lua_rawseti( L, -2, ++iFiles );
+	}
+
+	lua_newtable( L );					// dirs, returned second
+	int iDirs = 0;
+	for ( int i = 0; i < items.Count(); i++ )
+	{
+		if ( !items[ i ].bDir )
+			continue;
+
+		lua_pushstring( L, items[ i ].name );
+		lua_rawseti( L, -2, ++iDirs );
+	}
+
+	return 2;
 }
 
 // file.Open( path [, mode] ) -> FileHandle
@@ -671,14 +1352,36 @@ static int file_Find (lua_State *L) {
 // lfilesystem.cpp already binds the FileHandle_t metatable (Close / Read / Write /
 // Size / Seek / EndOfFile / Flush / IsOk) plus lua_pushfilehandle, so the handle
 // GMod's file.lua expects is exactly the one this engine already has.  Opened
-// through the same `filesystem` pointer those methods use, so open and close
+// through the same filesystem pointer those methods use, so open and close
 // cannot end up on different interfaces.  GMod's mode strings ("r", "w", "a",
 // "rb", "wb", "ab", "r+", ...) are Source's own, so they pass straight through.
+//
+// The third argument is GMod's gamePath -- a path ID such as "DATA", not a
+// folder -- and it used to be dropped on the floor.
 static int file_Open (lua_State *L) {
   const char *pszPath = luaL_checkstring(L, 1);
   const char *pszMode = luaL_optstring(L, 2, "r");
 
-  FileHandle_t hFile = filesystem->Open(pszPath, pszMode, "MOD");
+  IFileSystem *pFS = HL2SB_FileSystem();
+
+  // The write side is GMod's data/ folder (extensions/file.lua opens "wb"/"ab"
+  // against "DATA") and picks up its lowercase naming rule.  The read side has
+  // no documented default, so an omitted path searches every search path --
+  // strictly more than the "MOD" this used to hardcode.
+  const bool bWriting = ( strchr( pszMode, 'w' ) != NULL || strchr( pszMode, 'a' ) != NULL );
+
+  char szPrefix[ 16 ];
+  const char *pszPathID = HL2SB_ResolveQueryPathID( L, 3, pFS, bWriting ? "DATA" : NULL,
+                                                   szPrefix, sizeof( szPrefix ) );
+
+  char szFull[ MAX_PATH ];
+  HL2SB_MakeFilePath( szFull, sizeof( szFull ), szPrefix, pszPath,
+                      bWriting && HL2SB_LowerForData( szPrefix ) );
+
+  if ( bWriting )
+    HL2SB_MakeParentDirs( pFS, szFull, pszPathID );
+
+  FileHandle_t hFile = pFS->Open(szFull, pszMode, pszPathID);
 
   // HL2SB: GMod's file.Open returns nil when the file cannot be opened, and
   // lua/includes/extensions/file.lua relies on that ("if ( !f ) then return nil
@@ -703,15 +1406,20 @@ static const luaL_Reg file_funcs[] = {
   {"Append",    file_Append},
   {"Exists",    file_Exists},
   {"Delete",    file_Delete},
+  {"Rename",    file_Rename},
   {"Time",      file_Time},
   {"Size",      file_Size},
   {"IsDir",     file_IsDir},
   {"CreateDir", file_CreateDir},
   {"Find",      file_Find},
+  {"AsyncRead", file_AsyncRead},
   {NULL, NULL}
 };
 
 LUALIB_API int luaopen_Files (lua_State *L) {
+  // Self-sufficient: the handle metatable normally arrives with
+  // luaopen_filesystem, but the main menu state opens this library on its own.
+  HL2SB_RegisterFileHandleMeta(L);
   luaL_register(L, LUA_FILESLIBNAME, file_funcs);
   return 1;
 }
