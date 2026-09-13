@@ -337,6 +337,20 @@ void luasrc_init_gameui (void) {
   luaopen_gpGlobals(LGameUI);
   luaopen_input(LGameUI);
 
+  // GMod's file library.  Without it the menu state's only file access is Lua's
+  // `io`, which cannot enumerate a folder -- and lua/gameui/contentsubgames.lua
+  // needs file.Find / file.Exists to list the Source games installed next to
+  // this one (path ID "BASE_PATH").  GMod opens file.* in its menu realm too;
+  // that is what its "LuaMenu" path ID is for.
+  luaopen_Files(LGameUI);
+
+  // ...and the GMod SPELLINGS for every library opened above.  luaopen_Files
+  // publishes "Files"; GMod scripts (and lua/gameui/*.lua) ask for `file`.  The
+  // game realms get this from luasrc_openlibs, which this state never calls --
+  // so before this, contentsubgames.lua's own `if ( not file ) then return end`
+  // guard fired and the Content dialog came up empty with nothing in the log.
+  luasrc_install_gmod_lib_aliases(LGameUI);
+
   // The scripted control factories, normally opened by lsrcinit for the in-game
   // state (see the .vpc entries for scripted_controls/*).
   luaopen_vgui_Panel(LGameUI);  luaopen_vgui_Frame(LGameUI);
