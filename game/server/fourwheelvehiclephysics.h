@@ -178,6 +178,17 @@ inline int CFourWheelVehiclePhysics::GetSpeed() const
 
 inline int CFourWheelVehiclePhysics::GetMaxSpeed() const
 {
+	// HL2SB: m_pVehicle only exists once Initialize() succeeded, and it stays
+	// NULL when the vehicle script is missing or fails to parse
+	// (fourwheelvehiclephysics.cpp:387-391).  The entity still thinks for the
+	// frame in which it is queued for removal, and CPropAirboat::UpdateGauge() /
+	// UpdateSound() reach this through GetPhysics().  That NULL dereference is
+	// the crash in dumps/crash_20260913_232522 (CPropAirboat::Think +
+	// UpdateGauge inlined, read at address 0).  Report "not moving" instead of
+	// taking the server down.
+	if ( !m_pVehicle )
+		return 0;
+
 	return INS2MPH(m_pVehicle->GetVehicleParams().engine.maxSpeed);
 }
 

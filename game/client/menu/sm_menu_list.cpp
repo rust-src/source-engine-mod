@@ -83,10 +83,16 @@ enum
 	SMFLAG_WEAPON	= 1 << 7,	// sm_menu_give may hand this one to the player
 };
 
+// Room for a verbatim spawn line.  The longest one this menu builds is a vehicle:
+//   ent_create prop_vehicle_prisoner_pod model models/vehicles/prisoner_pod.mdl
+//   vehiclescript scripts/vehicles/prisoner_pod.txt
+// which is 124 bytes, so 192 leaves headroom for a longer addon path.
+#define SMENU_FIXEDCMD_LEN	192
+
 struct SMenuEntry_t
 {
 	char			szClass[64];	// class name, or "props_x/model" for model entries
-	char			szFixedCmd[96];	// non-empty: the command to run verbatim
+	char			szFixedCmd[SMENU_FIXEDCMD_LEN];	// non-empty: run verbatim
 	char			szMaterial[128];// material to draw ("" = no icon, name only)
 	unsigned int	uFlags;
 };
@@ -245,16 +251,17 @@ static unsigned int SMenu_Classify( const char *pszClass, const char *pszCPP, bo
 // HL2SB: pick the thumbnail for one entry.
 //   1. the fork's own icon set  - materials/vgui/smenu/<class>.vmt
 //   2. GMod's spawnmenu thumbs   - materials/entities/<class>.png
-//   3. one generic icon per category, so that no entry is invisible
+//   3. one generic icon per category, and then - unconditionally, for every
+//      category - GMod's own guaranteed floor, icon16/plugin.png
 //
 // The two per-class tests are the only file system work here and they are
 // CACHED, because the list is refreshed on every open (an addon may register
 // content at any time) and re-probing ~700 class names would turn that into a
-// visible hitch.  The category fallbacks are fixed assets, probed once.
+// visible hitch.
 //-----------------------------------------------------------------------------
 struct SMenuIconProbe_t
 {
-	unsigned char nSmenuIcon;	// materials/vgui/smenu/<class>.vmt
+	unsigned char nSmenuIcon;	// materials/vgui/smenu/<class>.vmt + its texture
 	unsigned char nEntityThumb;	// materials/entities/<class>.png
 };
 
@@ -265,22 +272,42 @@ static bool SMenu_FileExists( const char *pszFile )
 	return filesystem->FileExists( pszFile );
 }
 
-static bool SMenu_GenericIconExists( const char *pszMaterial )
+//-----------------------------------------------------------------------------
+// HL2SB: can the engine really bind this material NAME?
+//
+// "the .vmt exists" is NOT the same question, and that gap is what drew the
+// purple/black cells:
+//   * 73 of the 208 materials/vgui/smenu/*.vmt have no texture behind them.
+//     Every one of those .vmt files uses "$basetexture vgui/smenu/<own name>"
+//     (checked all 208, zero exceptions), so the texture a .vmt needs is always
+//     the file sitting next to it.  Binding one of the broken ones draws the
+//     ERROR material...
+//   * ...and it also SHADOWED the perfectly good GMod thumbnail in
+//     materials/entities/<class>.png, because the .vmt probe used to win
+//     outright.  That is why so many NPC cells were broken even though the very
+//     same class had a working thumbnail on disk.
+//
+// A name is bindable when a file with that name and an extension this build can
+// load is on disk: the .vtf a sibling .vmt references, or a raw image
+// (materialsystem/hl2sb_pngtexture.cpp:45-48 - .png/.jpg/.jpeg/.tga, which is
+// also the only reason weapon_fists.png / weapon_default.png resolve at all).
+// Verified against the complete icon set: this rule agrees exactly with
+// resolving each .vmt's $basetexture - 135 usable, 73 broken.
+//-----------------------------------------------------------------------------
+static bool SMenu_MaterialExists( const char *pszMaterial )
 {
-	// only a handful of candidates, and they never appear at runtime
-	static CUtlDict< unsigned char, unsigned short > s_Cache;
-
-	unsigned short i = s_Cache.Find( pszMaterial );
-	if ( i != s_Cache.InvalidIndex() )
-		return s_Cache[i] != 0;
+	static const char *s_pExts[] = { ".vtf", ".png", ".jpg", ".jpeg", ".tga" };
 
 	char szPath[MAX_PATH];
-	Q_snprintf( szPath, sizeof( szPath ), "materials/%s.png", pszMaterial );
+	for ( int i = 0; i < ARRAYSIZE( s_pExts ); ++i )
+	{
+		Q_snprintf( szPath, sizeof( szPath ), "materials/%s%s", pszMaterial, s_pExts[i] );
 
-	const unsigned char nExists = SMenu_FileExists( szPath ) ? 1 : 0;
-	s_Cache.Insert( pszMaterial, nExists );
+		if ( SMenu_FileExists( szPath ) )
+			return true;
+	}
 
-	return nExists != 0;
+	return false;
 }
 
 static void SMenu_ResolveIcon( SMenuEntry_t &entry )
@@ -291,11 +318,17 @@ static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 	if ( i == g_SMenuIconProbes.InvalidIndex() )
 	{
 		char szPath[MAX_PATH];
+		char szMaterial[MAX_PATH];
 
 		SMenuIconProbe_t probe;
-		Q_snprintf( szPath, sizeof( szPath ), "materials/vgui/smenu/%s.vmt", entry.szClass );
-		probe.nSmenuIcon = SMenu_FileExists( szPath ) ? 1 : 0;
 
+		// 1. the fork's own icon set - but only when the texture it points at
+		//    is on disk too (see SMenu_MaterialExists).
+		Q_snprintf( szMaterial, sizeof( szMaterial ), "vgui/smenu/%s", entry.szClass );
+		probe.nSmenuIcon = SMenu_MaterialExists( szMaterial ) ? 1 : 0;
+
+		// 2. GMod's spawnmenu thumbnail - a raw .png, so the file IS the
+		//    material and the name has to keep its extension.
 		Q_snprintf( szPath, sizeof( szPath ), "materials/entities/%s.png", entry.szClass );
 		probe.nEntityThumb = SMenu_FileExists( szPath ) ? 1 : 0;
 
@@ -314,19 +347,271 @@ static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 		return;
 	}
 
-	const char *pszFallback = "vgui/smenu/weapon_default";
+	// 3. one generic icon per category, then - unconditionally, for EVERY
+	//    category - icon16/plugin.png.  That is exactly the floor GMod's own
+	//    spawnmenu uses (the log shows it loading: `image texture
+	//    "icon16/plugin.png" (16x16)`), so a cell can never be left holding a
+	//    material name that resolves to nothing.  Neither candidate is taken on
+	//    faith: SMenu_MaterialExists is the file system check.
+	const char *pszGeneric = "vgui/smenu/weapon_default";
 
 	if ( entry.uFlags & SMCAT_NPC )
-		pszFallback = "icon16/monkey";
+		pszGeneric = "icon16/monkey";
 	else if ( entry.uFlags & SMCAT_VEHICLE )
-		pszFallback = "icon16/car";
+		pszGeneric = "icon16/car";
 	else if ( entry.uFlags & SMCAT_PROP )
-		pszFallback = "icon16/box";
+		pszGeneric = "icon16/box";
 	else if ( entry.uFlags & ( SMCAT_LUAENT | SMFLAG_LUA ) )
-		pszFallback = "icon16/plugin";
+		pszGeneric = "icon16/plugin";	// addon/plugin content - GMod's icon
 
-	if ( SMenu_GenericIconExists( pszFallback ) )
-		Q_strncpy( entry.szMaterial, pszFallback, sizeof( entry.szMaterial ) );
+	if ( SMenu_MaterialExists( pszGeneric ) )
+	{
+		Q_strncpy( entry.szMaterial, pszGeneric, sizeof( entry.szMaterial ) );
+		return;
+	}
+
+	if ( SMenu_MaterialExists( "icon16/plugin" ) )
+		Q_strncpy( entry.szMaterial, "icon16/plugin", sizeof( entry.szMaterial ) );
+}
+
+//-----------------------------------------------------------------------------
+// HL2SB: VEHICLES - why this is not just `ent_create <class>`.
+//
+// A vehicle needs TWO keyvalues, `model` and `vehiclescript`, and neither can be
+// derived from the other nor from the class name.  Sending the bare class (what
+// this menu used to do) produces `Vehicle () unable to properly initialize due
+// to script error in ()!` and then the NULL-physics crash analysed in
+// dumps/crash_20260913_232522.  The reasons, all checked against the real
+// content and the engine source:
+//
+//   * scripts/vehicles/*.txt contain NO model reference.  Every file checked
+//     (`Select-String '"model"|\.mdl' D:\srceng\hl2\scripts\vehicles\*.txt`):
+//     zero hits.  So "the model comes from the script" is simply not true.
+//   * no CPropVehicle* class defaults its own model either: the model is only
+//     ever the entity's `model` keyvalue, and CBaseProp::Precache()
+//     (game/server/props.cpp:258-264) substitutes models/error.mdl when it is
+//     empty - which is why the broken spawns reported "prop_vehicle_apc has a
+//     health specified in model 'models/error.mdl'".
+//   * the model does not carry the script either: the string "vehiclescript"
+//     occurs nowhere in the hl2 content VPKs (0 hits outside map BSPs).
+//
+// So the pair has to come from real content.  Two sources, both probed at
+// menu-build time:
+//
+//   1. THE CONTENT PROBE - the general rule, no table, and the reason an addon
+//      vehicle needs no code change here:  the script is
+//      scripts/vehicles/<stem>.txt, or the single script in scripts/vehicles/
+//      whose basename EXTENDS the stem (prop_vehicle_jeep -> jeep_test.txt);
+//      the model is the first of models/<stem>.mdl, models/vehicles/<stem>.mdl,
+//      models/props_vehicles/<stem>.mdl, models/cranes/<stem>.mdl that exists.
+//      This alone resolves prop_vehicle_airboat and prop_vehicle_prisoner_pod.
+//   2. A THREE-ENTRY OVERRIDE for the classes whose model does not follow the
+//      stem.  Every value is copied from the engine or from real HL2 map entity
+//      data, never invented:
+//        prop_vehicle_jeep  -> models/buggy.mdl
+//            game/server/player.cpp:6088 (CreateJeep) uses exactly that pair, and
+//            7 of the maps under D:\srceng\hl2\maps place prop_vehicle_jeep with
+//            models/buggy.mdl.
+//        prop_vehicle_apc   -> models/combine_apc.mdl
+//            16 of those maps place prop_vehicle_apc with models/combine_apc.mdl
+//            (and scripts/vehicles/apc_npc.txt; the script probe picks apc.txt,
+//            which is the player-driven tuning of the same vehicle and parses
+//            fine).
+//        prop_vehicle_crane -> models/cranes/crane_docks.mdl
+//            the maps place prop_vehicle_crane with models/cranes/crane_docks.mdl
+//            + scripts/vehicles/crane.txt.
+//
+// A class is listed ONLY when both files are really on the mounted content.
+// That is what makes every base/abstract vehicle disappear instead of spawning
+// an uninitialised one that crashes the server: prop_vehicle itself,
+// prop_vehicle_driveable, prop_vehicle_choreo_generic, vehicle_viewcontroller,
+// prop_vehicle_cannon (no map uses a model for it) and prop_vehicle_jetski (its
+// Episode 2 model is not mounted, even though scripts/vehicles/jetski.txt is).
+//-----------------------------------------------------------------------------
+struct SMenuVehicleModel_t
+{
+	const char	*pszClass;
+	const char	*pszModel;
+};
+
+static const SMenuVehicleModel_t s_SMenuVehicleModels[] =
+{
+	{ "prop_vehicle_jeep",	"models/buggy.mdl" },
+	{ "prop_vehicle_apc",	"models/combine_apc.mdl" },
+	{ "prop_vehicle_crane",	"models/cranes/crane_docks.mdl" },
+};
+
+// models/<stem>.mdl plus the three subdirectories HL2 keeps vehicle models in
+static const char *s_pSMenuVehicleModelPaths[] =
+{
+	"models/%s.mdl",
+	"models/vehicles/%s.mdl",
+	"models/props_vehicles/%s.mdl",
+	"models/cranes/%s.mdl",
+};
+
+static bool SMenu_IsVehicleClass( const char *pszClass )
+{
+	return !Q_strnicmp( pszClass, "prop_vehicle_", 13 ) ||
+		   !Q_strnicmp( pszClass, "vehicle_", 8 );
+}
+
+// "prop_vehicle_jeep" -> "jeep";  "vehicle_viewcontroller" -> "viewcontroller";
+// "prop_vehicle" -> "" (abstract, there is nothing to probe for)
+static const char *SMenu_VehicleStem( const char *pszClass )
+{
+	if ( !Q_strnicmp( pszClass, "prop_vehicle_", 13 ) )
+		return pszClass + 13;
+
+	if ( !Q_strnicmp( pszClass, "vehicle_", 8 ) )
+		return pszClass + 8;
+
+	return NULL;
+}
+
+// Every script stem in scripts/vehicles/, read once.  Same caching contract as
+// the icon probes: the menu list is rebuilt on every open, and this is the only
+// directory scan in it.
+static CUtlVector< CUtlString > g_SMenuVehicleScriptStems;
+static bool g_bSMenuVehicleScriptsScanned = false;
+
+static void SMenu_ScanVehicleScripts( void )
+{
+	if ( g_bSMenuVehicleScriptsScanned )
+		return;
+
+	g_bSMenuVehicleScriptsScanned = true;
+
+	FileFindHandle_t hFind = FILESYSTEM_INVALID_FIND_HANDLE;
+	const char *pszFile = filesystem->FindFirstEx( "scripts/vehicles/*.txt", "GAME", &hFind );
+
+	for ( ; pszFile && pszFile[0]; pszFile = filesystem->FindNext( hFind ) )
+	{
+		if ( pszFile[0] == '.' )
+			continue;
+
+		char szStem[MAX_PATH];
+		Q_strncpy( szStem, pszFile, sizeof( szStem ) );
+
+		// strip any path the find may report, then the extension
+		char *pSlash = strrchr( szStem, '/' );
+		if ( pSlash )
+			Q_memmove( szStem, pSlash + 1, Q_strlen( pSlash + 1 ) + 1 );
+
+		pSlash = strrchr( szStem, '\\' );
+		if ( pSlash )
+			Q_memmove( szStem, pSlash + 1, Q_strlen( pSlash + 1 ) + 1 );
+
+		char *pExt = strrchr( szStem, '.' );
+		if ( pExt )
+			*pExt = 0;
+
+		if ( szStem[0] )
+			g_SMenuVehicleScriptStems.AddToTail( CUtlString( szStem ) );
+	}
+
+	if ( hFind != FILESYSTEM_INVALID_FIND_HANDLE )
+		filesystem->FindClose( hFind );
+}
+
+static bool SMenu_FindVehicleScript( const char *pszStem, char *pOut, int nOutLen )
+{
+	char szScript[MAX_PATH];
+
+	// the plain convention first: scripts/vehicles/<stem>.txt
+	Q_snprintf( szScript, sizeof( szScript ), "scripts/vehicles/%s.txt", pszStem );
+
+	if ( SMenu_FileExists( szScript ) )
+	{
+		Q_strncpy( pOut, szScript, nOutLen );
+		return true;
+	}
+
+	// Otherwise accept the script whose stem EXTENDS the class stem, but only
+	// when exactly ONE does - prop_vehicle_jeep -> scripts/vehicles/jeep_test.txt,
+	// the pair player.cpp:6091 and the real maps both use.  Two candidates is
+	// ambiguous, and guessing is exactly what this function exists to avoid.
+	SMenu_ScanVehicleScripts();
+
+	const int nStemLen = Q_strlen( pszStem );
+	const CUtlString *pMatch = NULL;
+	int nMatching = 0;
+
+	for ( int i = 0; i < g_SMenuVehicleScriptStems.Count(); ++i )
+	{
+		const char *pszCandidate = g_SMenuVehicleScriptStems[i].Get();
+
+		if ( Q_strnicmp( pszCandidate, pszStem, nStemLen ) != 0 )
+			continue;
+
+		if ( pszCandidate[nStemLen] == 0 )
+			continue;		// the exact name, already tried above
+
+		pMatch = &g_SMenuVehicleScriptStems[i];
+		nMatching++;
+	}
+
+	if ( nMatching != 1 )
+		return false;
+
+	Q_snprintf( pOut, nOutLen, "scripts/vehicles/%s.txt", pMatch->Get() );
+	return true;
+}
+
+static bool SMenu_FindVehicleModel( const char *pszClass, const char *pszStem, char *pOut, int nOutLen )
+{
+	for ( int i = 0; i < ARRAYSIZE( s_SMenuVehicleModels ); ++i )
+	{
+		if ( !Q_stricmp( s_SMenuVehicleModels[i].pszClass, pszClass ) )
+		{
+			Q_strncpy( pOut, s_SMenuVehicleModels[i].pszModel, nOutLen );
+			return true;
+		}
+	}
+
+	for ( int i = 0; i < ARRAYSIZE( s_pSMenuVehicleModelPaths ); ++i )
+	{
+		char szModel[MAX_PATH];
+		Q_snprintf( szModel, sizeof( szModel ), s_pSMenuVehicleModelPaths[i], pszStem );
+
+		if ( SMenu_FileExists( szModel ) )
+		{
+			Q_strncpy( pOut, szModel, nOutLen );
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Fills pOut with the complete spawn line for a vehicle class, or returns false
+// when this build cannot produce a real vehicle of that class - in which case
+// the class must not be listed at all.
+static bool SMenu_BuildVehicleCommand( const char *pszClass, char *pOut, int nOutLen )
+{
+	const char *pszStem = SMenu_VehicleStem( pszClass );
+
+	if ( !pszStem || !pszStem[0] )
+		return false;		// prop_vehicle / vehicle_ themselves: abstract
+
+	char szModel[MAX_PATH];
+	char szScript[MAX_PATH];
+
+	if ( !SMenu_FindVehicleModel( pszClass, pszStem, szModel, sizeof( szModel ) ) )
+		return false;
+
+	if ( !SMenu_FindVehicleScript( pszStem, szScript, sizeof( szScript ) ) )
+		return false;
+
+	// Belt and braces (both probes already asked): the entity needs BOTH files,
+	// or it spawns as models/error.mdl with a NULL physics controller and then
+	// dereferences it from Think().
+	if ( !SMenu_FileExists( szModel ) || !SMenu_FileExists( szScript ) )
+		return false;
+
+	Q_snprintf( pOut, nOutLen, "ent_create %s model %s vehiclescript %s",
+				pszClass, szModel, szScript );
+	return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -353,6 +638,20 @@ static void SMenu_AddClass( const char *pszClass, const char *pszCPP, bool bScri
 	if ( !bScripted && SMenu_IsHiddenClass( pszClass ) )
 		return;
 
+	// HL2SB: vehicles get their spawn line (model + vehiclescript) here, and a
+	// vehicle class this build cannot build properly is NOT listed at all - see
+	// the long note above s_SMenuVehicleModels.  Only stock HL2 classes are
+	// touched: a Lua SENT that happens to be called prop_vehicle_* is left
+	// exactly as it was, because Lua content is never filtered.
+	char szFixedCmd[SMENU_FIXEDCMD_LEN];
+	szFixedCmd[0] = 0;
+
+	if ( !bScripted && SMenu_IsVehicleClass( pszClass ) )
+	{
+		if ( !SMenu_BuildVehicleCommand( pszClass, szFixedCmd, sizeof( szFixedCmd ) ) )
+			return;
+	}
+
 	const unsigned int uFlags = SMenu_Classify( pszClass, pszCPP, bScripted );
 
 	const int iExisting = SMenu_FindEntry( pszClass );
@@ -366,6 +665,7 @@ static void SMenu_AddClass( const char *pszClass, const char *pszCPP, bool bScri
 	Q_memset( &entry, 0, sizeof( entry ) );
 	entry.uFlags = uFlags;
 	Q_strncpy( entry.szClass, pszClass, sizeof( entry.szClass ) );
+	Q_strncpy( entry.szFixedCmd, szFixedCmd, sizeof( entry.szFixedCmd ) );
 	SMenu_ResolveIcon( entry );
 
 	g_SMenuEntries.AddToTail( entry );
@@ -679,7 +979,7 @@ public:
 		if ( code != MOUSE_LEFT )
 			return;
 
-		char szCommand[160];
+		char szCommand[256];
 
 		if ( m_szFixedCmd[0] )
 		{
@@ -697,7 +997,7 @@ public:
 private:
 	vgui::Label	*m_pLabel;
 	char		m_szClass[64];
-	char		m_szFixedCmd[96];
+	char		m_szFixedCmd[SMENU_FIXEDCMD_LEN];
 	char		m_szMaterial[128];
 	int			m_nTexture;
 	bool		m_bBound;
@@ -1040,9 +1340,12 @@ private:
 				char szModel[MAX_PATH];
 				Q_snprintf( szModel, sizeof( szModel ), "%s/%s", szFolder, szBase );
 
-				char szIcon[MAX_PATH];
-				Q_snprintf( szIcon, sizeof( szIcon ), "materials/vgui/smenu/models/%s.vmt", szModel );
-				if ( !filesystem->FileExists( szIcon ) )
+				// HL2SB: same rule as the class pages - the .vmt alone is not
+				// enough, its texture has to be on disk too, or the cell draws
+				// the ERROR material (see SMenu_MaterialExists).
+				char szMaterial[MAX_PATH];
+				Q_snprintf( szMaterial, sizeof( szMaterial ), "vgui/smenu/models/%s", szModel );
+				if ( !SMenu_MaterialExists( szMaterial ) )
 					continue;
 
 				SMenuEntry_t entry;
