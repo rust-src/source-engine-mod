@@ -1368,7 +1368,31 @@ float CHL2MPScriptedWeapon::TranslateFOV( float flFOV )
 	lua_pushnumber( L, flFOV );
 	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
 
-	RETURN_LUA_NUMBER();
+	// HL2SB: deliberately NOT RETURN_LUA_NUMBER().  A weapon's answer has to be a
+	// USABLE field of view before it may replace the engine's, because the camera's
+	// SWEP:TranslateFOV returns self:GetZoom() - and that NetworkVar is 0 on the
+	// client until the server's value arrives (and stays 0 if the scripted-weapon
+	// DT var never syncs).  FOV 0 degenerates the projection matrix: the whole
+	// screen goes black with no error, no warning and no crash anywhere, which is
+	// exactly what equipping the camera used to do.  Same reason a missing/nil/
+	// non-number answer must never be treated as 0.
+	if ( lua_gettop( L ) > 0 )
+	{
+		if ( lua_isnumber( L, -1 ) )
+		{
+			const float flNewFOV = (float)lua_tonumber( L, -1 );
+			lua_pop( L, 1 );
+
+			if ( flNewFOV >= 1.0f && flNewFOV <= 179.0f )
+				return flNewFOV;
+		}
+		else
+		{
+			lua_pop( L, 1 );
+		}
+	}
+
+	return flFOV;
 #endif
 
 	return flFOV;
