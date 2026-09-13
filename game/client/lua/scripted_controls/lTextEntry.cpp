@@ -368,9 +368,10 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( TextEntry, PaintText, "class", "Paints the text with specified colors" )
 {
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
-    lua_Color &color1 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color1" );
-    lua_Color &color2 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 3, "color2" );
-    lua_Color &color3 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 4, "color3" );
+    // HL2SB: by value - see the note on the live bindings below.
+    lua_Color color1 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color1" );
+    lua_Color color2 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 3, "color2" );
+    lua_Color color3 = LUA_BINDING_ARGUMENT( luaL_checkcolor, 4, "color3" );
     textEntry->PaintText( color1, color2, color3 );
     return 0;
 }
@@ -380,7 +381,10 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( TextEntry, SetDisabledBgColor, "class", "Sets the background color when disabled" )
 {
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
-    lua_Color &color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
+    // HL2SB: luaL_checkcolor() returns lua_Color *by value* (the colour lives in
+    // the Lua table's fields, see public/lua/lColor.cpp), so gcc/clang reject
+    // binding it to a non-const lvalue reference.  MSVC allows it; be explicit.
+    lua_Color color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
     textEntry->SetDisabledBgColor( color );
     return 0;
 }
@@ -607,7 +611,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( TextEntry, SetSelectionTextColor, "class", "Sets the text color for selected text" )
 {
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
-    lua_Color &color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
+    lua_Color color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
     textEntry->SetSelectionTextColor( color );
     return 0;
 }
@@ -616,7 +620,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( TextEntry, SetSelectionBackgroundColor, "class", "Sets the background color for selected text" )
 {
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
-    lua_Color &color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
+    lua_Color color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
     textEntry->SetSelectionBgColor( color );
     return 0;
 }
@@ -625,7 +629,7 @@ LUA_BINDING_END()
 LUA_BINDING_BEGIN( TextEntry, SetSelectionUnfocusedBackgroundColor, "class", "Sets the background color for unfocused selected text" )
 {
     lua_TextEntry *textEntry = LUA_BINDING_ARGUMENT( luaL_checktextentry, 1, "textEntry" );
-    lua_Color &color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
+    lua_Color color = LUA_BINDING_ARGUMENT( luaL_checkcolor, 2, "color" );
     textEntry->SetSelectionUnfocusedBgColor( color );
     return 0;
 }
