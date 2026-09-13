@@ -162,6 +162,14 @@ extern ConVar mp_feetyawrate;
 extern ConVar mp_facefronttime;
 extern ConVar mp_ik;
 
+// HL2SB: dumps the state that decides how the player's legs animate - the main
+// sequence, its cycle and playback rate, and every movement pose parameter the
+// model has (index and current value).  Prints on both realms about twice a
+// second, because the server picks the sequence while the client renders it:
+//   classic HL2MP models  -> move_yaw      (8-way blend)
+//   GMod's anim models    -> move_x/move_y (9-way blend)
+static ConVar hl2sb_anim_debug( "hl2sb_anim_debug", "0", FCVAR_ARCHIVE, "Print the local player's animation state (sequence / cycle / rate / move_x / move_y) about twice a second." );
+
 CPlayerAnimState::CPlayerAnimState( CHL2MP_Player *outer )
 	: m_pOuter( outer )
 {
@@ -172,6 +180,7 @@ CPlayerAnimState::CPlayerAnimState( CHL2MP_Player *outer )
 	m_flLastYaw = 0.0f;
 	m_flLastTurnTime = 0.0f;
 	m_flTurnCorrectionTime = 0.0f;
+	m_flNextDebugPrint = 0.0f;
 };
 
 //-----------------------------------------------------------------------------
@@ -192,6 +201,50 @@ void CPlayerAnimState::Update()
 	GetOuter()->UpdateLookAt();
 #endif
 
+	if ( hl2sb_anim_debug.GetBool() )
+	{
+		DebugPrintAnimState();
+	}
+
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: hl2sb_anim_debug 1 - print what decides the player's legs.
+//-----------------------------------------------------------------------------
+void CPlayerAnimState::DebugPrintAnimState( void )
+{
+	float flNow = gpGlobals->curtime;
+	if ( flNow < m_flNextDebugPrint )
+		return;
+
+	m_flNextDebugPrint = flNow + 0.5f;
+
+	CHL2MP_Player *pOuter = GetOuter();
+	if ( pOuter == NULL || pOuter->GetModelPtr() == NULL )
+		return;
+
+	const int nSequence = pOuter->GetSequence();
+	Vector vecVelocity;
+	GetOuterAbsVelocity( vecVelocity );
+
+	const int iMoveYaw = pOuter->LookupPoseParameter( "move_yaw" );
+	const int iMoveX = pOuter->LookupPoseParameter( "move_x" );
+	const int iMoveY = pOuter->LookupPoseParameter( "move_y" );
+
+	Msg( "[animdbg/%s] %s seq=%d '%s' act='%s' cycle=%.3f rate=%.2f speed=%.1f"
+		 " | move_yaw idx=%d val=%+.2f | move_x idx=%d val=%+.2f | move_y idx=%d val=%+.2f\n",
+#if defined( CLIENT_DLL )
+		"cl",
+#else
+		"sv",
+#endif
+		STRING( pOuter->GetModelName() ),
+		nSequence, pOuter->GetSequenceName( nSequence ),
+		pOuter->GetSequenceActivityName( nSequence ),
+		pOuter->GetCycle(), pOuter->GetPlaybackRate(), vecVelocity.Length2D(),
+		iMoveYaw, iMoveYaw >= 0 ? pOuter->GetPoseParameter( iMoveYaw ) : 0.0f,
+		iMoveX, iMoveX >= 0 ? pOuter->GetPoseParameter( iMoveX ) : 0.0f,
+		iMoveY, iMoveY >= 0 ? pOuter->GetPoseParameter( iMoveY ) : 0.0f );
 }
 
 //-----------------------------------------------------------------------------
@@ -338,16 +391,21 @@ void CPlayerAnimState::ComputePoseParam_BodyYaw( void )
 		flYaw = flYaw - 360;
 	}
 	
+	// HL2SB: drive every movement parameter set this model actually has, rather
+	// than picking one.  A classic HL2MP model blends on move_yaw (8-way); GMod's
+	// anim models have no move_yaw at all and use move_x / move_y for the newer
+	// 9-way blend (the pair CMultiPlayerAnimState writes in
+	// ComputePoseParam_MoveYaw).  Both are written when both exist.
 	if ( iYaw >= 0 )
 	{
 		GetOuter()->SetPoseParameter( iYaw, flYaw );
 	}
-	else
+
+	if ( bUseMoveXY )
 	{
-		// 9-way blend (TF2 layout): the angle becomes a direction vector pushed
-		// out to the -1..1 box, then scaled by how fast we are actually moving,
-		// because the centre of that box is the "not moving" pose.  Mirrors
-		// CMultiPlayerAnimState::ComputePoseParam_MoveYaw( LEGANIM_9WAY ).
+		// The angle becomes a direction vector pushed out to the -1..1 box, then
+		// scaled by how fast we are actually moving, because the centre of that
+		// box is the "not moving" pose.  X is forward/back, Y is left/right.
 		Vector vecVelocity;
 		GetOuterAbsVelocity( vecVelocity );
 		float flSpeed = vecVelocity.Length2D();

@@ -68,6 +68,9 @@ private:
 
 	void				ComputePlaybackRate();
 
+	// HL2SB: hl2sb_anim_debug -> dump what decides the player's legs.
+	void				DebugPrintAnimState( void );
+
 	CHL2MP_Player		*m_pOuter;
 
 	float				m_flGaitYaw;
@@ -92,6 +95,8 @@ private:
 	QAngle				m_angRender;
 
 	float				m_flTurnCorrectionTime;
+
+	float				m_flNextDebugPrint;
 };
 
 #endif //HL2MP_PLAYER_SHARED_h
