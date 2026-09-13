@@ -71,6 +71,39 @@ static int gpGlobals_tickcount (lua_State *L) {
 }
 
 
+// HL2SB: GMod's SHARED-realm engine global FrameTime().
+//
+// GMod's FrameTime() returns "the CurTime-based time in seconds it took to
+// render the last frame" - which is literally gpGlobals->frametime.  The wiki's
+// own example proves it is tick based, not render based:  print(1/FrameTime())
+// yields 66.666668156783, i.e. the default tick rate, not the client's fps.
+// https://wiki.facepunch.com/gmod/Global.FrameTime
+//
+// It has to exist on the SERVER VM as well: sandbox's weapons/gmod_camera/
+// shared.lua calls it from SWEP:Tick (zoom/roll on mouse 2), and this fork
+// dispatches scripted-weapon Tick on both realms - GMod's shared code assumes
+// the shared global, so the server side filled ds_debug.log with
+//   lua/weapons/gmod_camera/shared.lua:121: attempt to call a nil value
+//   (global 'FrameTime')
+// once per tick while the camera was held.  The client had never noticed
+// because lua/includes/extensions/gmod_globals.lua:206 shims it there - and
+// that file's server branch returns at :194 before the shim, which is why only
+// the server VM errored.  gmod_globals uses `FrameTime = FrameTime or ...`, so
+// this engine version simply wins and the shim becomes the fallback.
+//
+// gpGlobals can legitimately be NULL when a Lua state is created before any
+// level is loaded (menu / lua_run on an empty host), hence the guard.
+static int luasrc_FrameTime (lua_State *L) {
+  lua_pushnumber(L, gpGlobals ? gpGlobals->frametime : 0.0);
+  return 1;
+}
+
+
+static const luaL_Reg gpGlobals_funcs[] = {
+  {"FrameTime", luasrc_FrameTime},
+  {NULL, NULL}
+};
+
 static const luaL_Reg gpGlobalslib[] = {
   {"absoluteframetime",   gpGlobals_absoluteframetime},
   {"curtime",  gpGlobals_curtime},
@@ -92,6 +125,10 @@ static const luaL_Reg gpGlobalslib[] = {
 */
 LUALIB_API int luaopen_gpGlobals (lua_State *L) {
   luaL_register(L, LUA_GLOBALSLIBNAME, gpGlobalslib);
+  // HL2SB: the GMod-style engine globals that belong to this state but are NOT
+  // members of the gpGlobals table (see luasrc_FrameTime above).  Same pattern
+  // luaopen_ConVar uses for GetConVar_Internal (public/lua/tier1/lconvar.cpp).
+  luaL_register(L, "_G", gpGlobals_funcs);
   return 1;
 }
 
