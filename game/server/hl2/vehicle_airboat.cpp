@@ -1083,6 +1083,19 @@ void CPropAirboat::Think(void)
 {
 	BaseClass::Think();
 
+	// HL2SB: nothing below is valid without a vehicle physics controller.  One
+	// only exists after CFourWheelVehiclePhysics::Initialize() succeeds, and
+	// that never happens when the entity was spawned without a usable
+	// `vehiclescript` - CPropVehicleDriveable::Spawn() bails out before creating
+	// it and queues the entity for removal (vehicle_base.cpp:451-457).  The
+	// entity keeps thinking until that removal lands, and the update code below
+	// then dereferences the NULL controller.  That is the listen-server crash in
+	// dumps/crash_20260913_232522: RIP CPropAirboat::Think+0x63A, faulting
+	// instruction inlined from UpdateGauge() -> GetMaxSpeed().  Bail out here so
+	// no accessor in this function can ever be reached without physics.
+	if ( !GetPhysics() || !GetPhysics()->GetVehicle() )
+		return;
+
 	// set handbrake after physics sim settles down
 //	if ( gpGlobals->curtime < m_flHandbrakeTime )
 //	{
