@@ -855,7 +855,10 @@ LUA_BINDING_BEGIN( Renders, DrawSprite, "library", "Draws a sprite", "client" )
     float height = LUA_BINDING_ARGUMENT( luaL_checknumber, 3, "height" );
     lua_Color color = LUA_BINDING_ARGUMENT_WITH_DEFAULT( luaL_optcolor, 4, lua_Color( 255, 255, 255, 255 ), "color" );
 
-    color32 rawColor = { color.r(), color.g(), color.b(), color.a() };
+    // HL2SB: the casts are required - clang and gcc both reject narrowing an int
+    // to color32's byte fields inside a braced initializer list
+    // ([-Wc++11-narrowing] on the Android builds).  MSVC accepts it silently.
+    color32 rawColor = { (byte)color.r(), (byte)color.g(), (byte)color.b(), (byte)color.a() };
     DrawSprite( position, width, height, rawColor );
 
     return 0;

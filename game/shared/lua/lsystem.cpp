@@ -114,6 +114,10 @@ LUA_BINDING_END( "integer", "The number of seconds since the application was sta
 
 LUA_BINDING_BEGIN( Systems, GetCountry, "library", "Get the country code of the user." )
 {
+#ifdef _WIN32
+    // GetLocaleInfo/LOCALE_* are Windows-only; on Linux/Android there is no
+    // equivalent in this tree, so the binding reports "unknown" like a failed
+    // lookup does on Windows.
     char country[10];
 
     if ( GetLocaleInfo( LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, country, sizeof( country ) ) )
@@ -121,6 +125,7 @@ LUA_BINDING_BEGIN( Systems, GetCountry, "library", "Get the country code of the 
         lua_pushstring( L, country );
         return 1;
     }
+#endif
 
     lua_pushnil( L );
     return 1;
