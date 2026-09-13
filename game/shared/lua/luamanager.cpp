@@ -426,6 +426,11 @@ static int HL2SB_LuaPanic( lua_State *pL )
 	//
 	// __ImageBase is provided by the linker in every DLL, so this needs no
 	// Windows headers (including <windows.h> here breaks the engine headers).
+	// HL2SB: both __ImageBase and RtlCaptureStackBackTrace are MSVC/Windows-only
+	// (gcc: "'__ImageBase' was not declared in this scope"), so the block is
+	// guarded; on Linux/Android the SIGSEGV/SIGABRT handler in
+	// hl2sb_crash_handler.cpp already writes the native stack to engine.log.
+#ifdef _WIN32
 	{
 		void *pStack[ 64 ];
 		unsigned short nFrames = RtlCaptureStackBackTrace( 1, 64, pStack, NULL );
@@ -446,6 +451,9 @@ static int HL2SB_LuaPanic( lua_State *pL )
 			fclose( fp );
 		}
 	}
+#else
+	Msg( "[HL2SB] native stack: see the [HL2SB] crash block in engine.log\n" );
+#endif
 
 	if ( FILE *fp = fopen( "hl2sb_lua_panic.log", "a" ) )
 	{
