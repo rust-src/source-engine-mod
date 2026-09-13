@@ -1255,6 +1255,29 @@ void CBaseEntity::VPhysicsSetObject( IPhysicsObject *pPhysics )
 	{
 		Warning( "Overwriting physics object for %s\n", GetClassname() );
 	}
+
+	// HL2SB: when a second physics object replaces the first, the first one used
+	// to be ABANDONED -- still registered with vphysics, still simulating, and
+	// still carrying this entity as its pGameData.  VPhysicsDestroyObject() only
+	// ever knows about m_pPhysicsObject, so the leaked object outlived the entity
+	// and went on handing a freed CBaseEntity* to the collision solver:
+	//
+	//   dumps/crash_20260913_234437_1_accessviolation.mdmp - EXECUTE violation at
+	//   a heap address; [RSP] = CCollisionEvent::FindOrAddPenetrateEvent+0x110
+	//   (physics.cpp:938, EHANDLE::operator= -> the *virtual* GetRefEHandle()).
+	//
+	// The log immediately before that crash says
+	//     "Overwriting physics object for sent_ball"
+	// and sent_ball.lua rebuilds its sphere twice (ENT:Initialize ->
+	// RebuildPhysics, then SetBallSize -> OnBallSizeChanged -> RebuildPhysics
+	// again), with a comment stating it EXPECTS the previous object to have been
+	// destroyed.  Destroy it here, the same way VPhysicsDestroyObject() does.
+	// Without this the entity's own removal leaves the stale object alive.
+	if ( m_pPhysicsObject && pPhysics && m_pPhysicsObject != pPhysics )
+	{
+		PhysDestroyObject( m_pPhysicsObject, this );
+	}
+
 	m_pPhysicsObject = pPhysics;
 	if ( pPhysics && !m_pPhysicsObject )
 	{

@@ -161,9 +161,10 @@ static ConCommand smenu_up_cmd( "-smenu", SMenuUp, "Close SMenu (release)" );
 // entirely by the two engine dictionaries at runtime.  It drops the classes a
 // spawn menu can do nothing useful with - internal effect entities, pure logic
 // controllers, brush entities that cannot be created by `ent_create`, invisible
-// map markers - and nothing else.  Lua-registered classes are NEVER filtered
-// (see SMenu_AddClass), so addon content survives even if its class name starts
-// with one of these prefixes (trigger_scripted is a SENT).
+// map markers - plus the classes a bare `ent_create` cannot give a model to
+// (see s_pNeedsAModel below), and nothing else.  Lua-registered classes are
+// NEVER filtered (see SMenu_AddClass), so addon content survives even if its
+// class name starts with one of these prefixes (trigger_scripted is a SENT).
 //-----------------------------------------------------------------------------
 static bool SMenu_IsHiddenClass( const char *pszClass )
 {
@@ -187,6 +188,62 @@ static bool SMenu_IsHiddenClass( const char *pszClass )
 	{
 		"_gamerules",	// spawning a second CGameRules object is never wanted
 	};
+
+	//-----------------------------------------------------------------------------
+	// HL2SB: classes that CANNOT be built by a bare `ent_create <class>` because
+	// their Spawn() needs a `model` keyvalue and the class itself supplies no
+	// default.  A bare spawn leaves the model empty, and the engine then either
+	// substitutes models/error.mdl or dies:
+	//
+	//   * CPhysicsProp / CDynamicProp / CPhysSphere / CBasePropDoor all derive
+	//     from CBaseProp, whose Precache() reacts to an empty model by
+	//     permanently setting models/error.mdl (game/server/props.cpp:258-264).
+	//     The result is a purple ERROR prop, never the thing the user clicked.
+	//   * CRagdollProp::Spawn() dereferences the studiohdr it got from that empty
+	//     model, which is NULL - a hard crash:
+	//       dumps/crash_20260914_000100_1_accessviolation.mdmp
+	//       CRagdollProp::Spawn+0xB6 [physics_prop_ragdoll.cpp:167], read at 0x0
+	//
+	// These bare entries have no value: model-carrying props ARE offered, with a
+	// model, on the existing "Props (models)" page (`prop_physics_create <model>`).
+	// Everything is verified against the classes that actually register in this
+	// build (server_base.vpc: props.cpp + physics_prop_ragdoll.cpp;
+	// server_hl2mp.vpc: hl2/prop_thumper.cpp + hl2/prop_combine_ball.cpp):
+	//
+	//   HIDDEN                                        reason
+	//   prop_physics / _override / _multiplayer /     CPhysicsProp     -> error.mdl
+	//     _respawnable, physics_prop
+	//   prop_dynamic / _override / _ornament,          CDynamicProp     -> error.mdl
+	//     dynamic_prop
+	//   prop_sphere                                    CPhysSphere      -> error.mdl
+	//   prop_door_rotating                             CBasePropDoor    -> error.mdl
+	//   prop_ragdoll / prop_ragdoll_attached /        CRagdollProp      -> CRASH
+	//     physics_prop_ragdoll
+	//
+	//   KEPT (they DO supply a model of their own, so a bare spawn works):
+	//   prop_thumper  - hl2/prop_thumper.cpp:91-99 defaults to
+	//                   models/props_combine/CombineThumper002.mdl
+	//   prop_combine_ball - prop_combine_ball.cpp:371 SetModel(PROP_COMBINE_BALL_MODEL)
+	//
+	// Lua-registered classes never reach this list (SMenu_AddClass only filters
+	// non-scripted classes), so an addon SENT called prop_physics_* survives.
+	//-----------------------------------------------------------------------------
+	static const char *s_pNeedsAModel[] =
+	{
+		"physics_prop",			// physics_prop, physics_prop_ragdoll
+		"prop_physics",			// prop_physics, _override, _multiplayer, _respawnable
+		"prop_dynamic",			// prop_dynamic, _override, _ornament
+		"dynamic_prop",			// legacy alias of prop_dynamic
+		"prop_sphere",			// CPhysSphere : CPhysicsProp
+		"prop_door_rotating",	// CPropDoorRotating : CBasePropDoor : CDynamicProp
+		"prop_ragdoll",			// CRagdollProp, CRagdollPropAttached
+	};
+
+	for ( int i = 0; i < ARRAYSIZE( s_pNeedsAModel ); ++i )
+	{
+		if ( !Q_strnicmp( pszClass, s_pNeedsAModel[i], Q_strlen( s_pNeedsAModel[i] ) ) )
+			return true;
+	}
 
 	for ( int i = 0; i < ARRAYSIZE( s_pExact ); ++i )
 	{
@@ -428,18 +485,54 @@ static void SMenu_ResolveIcon( SMenuEntry_t &entry )
 // prop_vehicle_cannon (no map uses a model for it) and prop_vehicle_jetski (its
 // Episode 2 model is not mounted, even though scripts/vehicles/jetski.txt is).
 //-----------------------------------------------------------------------------
-struct SMenuVehicleModel_t
+// A {class, model} pair: the model to name in the spawn command for a class.
+struct SMenuClassModel_t
 {
 	const char	*pszClass;
 	const char	*pszModel;
 };
 
-static const SMenuVehicleModel_t s_SMenuVehicleModels[] =
+static const SMenuClassModel_t s_SMenuVehicleModels[] =
 {
 	{ "prop_vehicle_jeep",	"models/buggy.mdl" },
 	{ "prop_vehicle_apc",	"models/combine_apc.mdl" },
 	{ "prop_vehicle_crane",	"models/cranes/crane_docks.mdl" },
 };
+
+//-----------------------------------------------------------------------------
+// HL2SB: classes SMenu KEEPS listed because their Spawn() does supply a default
+// model - but only INSIDE Spawn, after the engine has already precached an empty
+// model (CC_Ent_Create -> Precache, then DispatchSpawn -> Spawn -> Precache
+// again).  The user therefore saw
+//     Attempting to precache model, but model name is NULL
+// for an entry the menu offers.  Naming the model in the command fixes that and
+// changes nothing else: it is the very value the class would have chosen.
+//
+//   prop_thumper      -> models/props_combine/CombineThumper002.mdl
+//                        THUMPER_MODEL_NAME, hl2/prop_thumper.cpp:26, used at :94
+//   prop_combine_ball -> models/effects/combineball.mdl
+//                        PROP_COMBINE_BALL_MODEL, hl2/prop_combine_ball.cpp:33,
+//                        SetModel at :371
+//
+// Both models are present in the mounted content (checked in the HL2 VPK trees),
+// so giving them here cannot turn a working entry into a broken one.
+//-----------------------------------------------------------------------------
+static const SMenuClassModel_t s_SMenuSpawnModels[] =
+{
+	{ "prop_thumper",		"models/props_combine/CombineThumper002.mdl" },
+	{ "prop_combine_ball",	"models/effects/combineball.mdl" },
+};
+
+static const char *SMenu_FindSpawnModel( const char *pszClass )
+{
+	for ( int i = 0; i < ARRAYSIZE( s_SMenuSpawnModels ); ++i )
+	{
+		if ( !Q_stricmp( s_SMenuSpawnModels[i].pszClass, pszClass ) )
+			return s_SMenuSpawnModels[i].pszModel;
+	}
+
+	return NULL;
+}
 
 // models/<stem>.mdl plus the three subdirectories HL2 keeps vehicle models in
 static const char *s_pSMenuVehicleModelPaths[] =
@@ -650,6 +743,18 @@ static void SMenu_AddClass( const char *pszClass, const char *pszCPP, bool bScri
 	{
 		if ( !SMenu_BuildVehicleCommand( pszClass, szFixedCmd, sizeof( szFixedCmd ) ) )
 			return;
+	}
+
+	// HL2SB: a kept class that only picks its own default model inside Spawn()
+	// gets that model named in the command, so the engine precaches a real model
+	// instead of logging "model name is NULL" for an entry the menu offers
+	// (see s_SMenuSpawnModels).
+	if ( !bScripted && !szFixedCmd[0] )
+	{
+		const char *pszDefaultModel = SMenu_FindSpawnModel( pszClass );
+
+		if ( pszDefaultModel )
+			Q_snprintf( szFixedCmd, sizeof( szFixedCmd ), "ent_create %s model %s", pszClass, pszDefaultModel );
 	}
 
 	const unsigned int uFlags = SMenu_Classify( pszClass, pszCPP, bScripted );
