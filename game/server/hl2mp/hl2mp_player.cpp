@@ -858,16 +858,14 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 			{
 				if ( speed > 0 )
 				{
-					/*
-					if ( bRunning == false )
-					{
-						idealActivity = ACT_WALK;
-					}
-					else
-					*/
-					{
-						idealActivity = ACT_HL2MP_RUN;
-					}
+					// HL2SB: GMod splits ground movement into two cycles -- its
+					// gamemodes/base/gamemode/animations.lua CalcMainActivity uses
+					// ACT_MP_RUN above 150 units/s and ACT_MP_WALK below it -- and
+					// GMod's anim models carry ACT_HL2MP_WALK_<holdtype> for every
+					// hold type.  HL2MP used the run cycle for everything, so a
+					// GMod playermodel never showed a walking animation at all.
+					// 150 == the 22500 squared length GMod compares against.
+					idealActivity = ( speed > 150.0f ) ? ACT_HL2MP_RUN : ACT_HL2MP_WALK;
 				}
 				else
 				{
@@ -898,6 +896,15 @@ void CHL2MP_Player::SetAnimation( PLAYER_ANIM playerAnim )
 		SetActivity( idealActivity );
 
 		animDesired = SelectWeightedSequence( Weapon_TranslateActivity ( idealActivity ) );
+
+		if (animDesired == -1 && idealActivity == ACT_HL2MP_WALK )
+		{
+			// HL2SB: a classic HL2MP playermodel has no ACT_HL2MP_WALK* at all
+			// (male_anims.mdl only carries the per-weapon run cycles), so walking
+			// has to degrade to the run cycle rather than to sequence 0, which is
+			// a stretched reference pose.
+			animDesired = SelectWeightedSequence( Weapon_TranslateActivity( ACT_HL2MP_RUN ) );
+		}
 
 		if (animDesired == -1)
 		{

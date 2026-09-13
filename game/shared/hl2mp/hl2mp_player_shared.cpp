@@ -289,7 +289,22 @@ void CPlayerAnimState::EstimateYaw( void )
 void CPlayerAnimState::ComputePoseParam_BodyYaw( void )
 {
 	int iYaw = GetOuter()->LookupPoseParameter( "move_yaw" );
-	if ( iYaw < 0 )
+
+	// HL2SB: GMod's player anim models (models/m_anm.mdl / f_anm.mdl / z_anm.mdl,
+	// which GMod playermodels pull in with $includemodel) drop the classic
+	// "move_yaw" blend and use the newer 9-way blend driven by "move_x" /
+	// "move_y" instead - the same pair CMultiPlayerAnimState writes in its
+	// ComputePoseParam_MoveYaw().  This animstate only ever wrote move_yaw, so on
+	// a GMod playermodel NOTHING fed the movement blend: the walk / run /
+	// crouchwalk cycles sat frozen at the centre of the 9-way box, while idle and
+	// the attack gestures (not blends) still played.  Drive whichever parameter
+	// set the model actually has; a classic HL2MP model has move_yaw and keeps
+	// the old path untouched.
+	int iMoveX = GetOuter()->LookupPoseParameter( "move_x" );
+	int iMoveY = GetOuter()->LookupPoseParameter( "move_y" );
+	bool bUseMoveXY = ( iMoveX >= 0 && iMoveY >= 0 );
+
+	if ( iYaw < 0 && !bUseMoveXY )
 		return;
 
 	// view direction relative to movement
@@ -323,7 +338,46 @@ void CPlayerAnimState::ComputePoseParam_BodyYaw( void )
 		flYaw = flYaw - 360;
 	}
 	
-	GetOuter()->SetPoseParameter( iYaw, flYaw );
+	if ( iYaw >= 0 )
+	{
+		GetOuter()->SetPoseParameter( iYaw, flYaw );
+	}
+	else
+	{
+		// 9-way blend (TF2 layout): the angle becomes a direction vector pushed
+		// out to the -1..1 box, then scaled by how fast we are actually moving,
+		// because the centre of that box is the "not moving" pose.  Mirrors
+		// CMultiPlayerAnimState::ComputePoseParam_MoveYaw( LEGANIM_9WAY ).
+		Vector vecVelocity;
+		GetOuterAbsVelocity( vecVelocity );
+		float flSpeed = vecVelocity.Length2D();
+
+		float flMoveX = 0.0f;
+		float flMoveY = 0.0f;
+
+		if ( flSpeed > 0.5f )
+		{
+			flMoveX =  cos( DEG2RAD( flYaw ) );
+			flMoveY = -sin( DEG2RAD( flYaw ) );
+
+			float flInvScale = MAX( fabs( flMoveX ), fabs( flMoveY ) );
+			if ( flInvScale != 0.0f )
+			{
+				flMoveX /= flInvScale;
+				flMoveY /= flInvScale;
+			}
+
+			float flMaxSpeed = GetOuter()->GetSequenceGroundSpeed( GetOuter()->GetSequence() );
+			if ( flMaxSpeed > flSpeed )
+			{
+				flMoveX *= flSpeed / flMaxSpeed;
+				flMoveY *= flSpeed / flMaxSpeed;
+			}
+		}
+
+		GetOuter()->SetPoseParameter( iMoveX, flMoveX );
+		GetOuter()->SetPoseParameter( iMoveY, flMoveY );
+	}
 
 #ifndef CLIENT_DLL
 		//Adrian: Make the model's angle match the legs so the hitboxes match on both sides.
