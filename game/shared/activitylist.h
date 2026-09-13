@@ -97,11 +97,27 @@ extern int ActivityList_HighestIndex();
 // global `L` (luamanager.h) has to be that same state and stack.
 // Only activitylist.cpp ever expands this macro, and it includes luamanager.h
 // under LUA_SDK before the expansion site.
+// HL2SB: the table field is joined by a FLAT GLOBAL of the same name.  GMod
+// publishes every activity as a global (that is what its own
+// gamemodes/base/entities/weapons/weapon_base/sh_anim.lua reads: a bare
+// ACT_HL2MP_IDLE_PISTOL, not _E.ACTIVITY[...]), and the mod side used to make
+// up for it with a hard-coded 27-entry list in
+// lua/includes/extensions/gmod_globals.lua -- which cannot cover the ~200 GMod
+// activities declared at the end of ai_activity.h, and silently goes stale every
+// time the enum grows.  An existing global is left alone (same rule as
+// lua_pushenum in luamanager.h: never overwrite a name the scripts own).
 #define REGISTER_SHARED_ACTIVITY( _n )              \
     ActivityList_RegisterSharedActivity( #_n, _n ); \
     lua_pushstring( L, #_n );                       \
     lua_pushinteger( L, _n );                       \
-    lua_settable( L, -3 );
+    lua_settable( L, -3 );                          \
+    lua_getglobal( L, #_n );                        \
+    if ( lua_isnil( L, -1 ) )                       \
+    {                                               \
+        lua_pushinteger( L, _n );                   \
+        lua_setglobal( L, #_n );                    \
+    }                                               \
+    lua_pop( L, 1 );
 #endif
 #define REGISTER_PRIVATE_ACTIVITY( _n ) _n = ActivityList_RegisterPrivateActivity( #_n );
 

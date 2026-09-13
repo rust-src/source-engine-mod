@@ -93,6 +93,18 @@ private:
 #ifndef CLIENT_DLL
 acttable_t CWeaponToolGun::m_acttable[] = 
 {
+	// HL2SB: GMod's tool gun sets the "revolver" hold type
+	// (gamemodes/sandbox/entities/weapons/gmod_tool/shared.lua), so prefer the
+	// REVOLVER family and fall back to the pistol rows this weapon used to use
+	// (ActivityOverride() takes the first row the owner's model can satisfy).
+	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_REVOLVER,				false },
+	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_REVOLVER,					false },
+	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_REVOLVER,			false },
+	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_REVOLVER,			false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER,false },
+	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_REVOLVER,		false },
+	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_REVOLVER,				false },
+
 	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_PISTOL,					false },
 	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_PISTOL,					false },
 	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_PISTOL,			false },

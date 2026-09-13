@@ -60,6 +60,20 @@ PRECACHE_WEAPON_REGISTER( weapon_357 );
 #ifndef CLIENT_DLL
 acttable_t CWeapon357::m_acttable[] = 
 {
+	// HL2SB: GMod's .357 uses the "revolver" hold type, so try the REVOLVER
+	// family first and keep the HL2MP PISTOL rows right behind it as the
+	// fallback.  CBaseCombatWeapon::ActivityOverride() walks the rows in order
+	// and takes the first one the owner's model has a sequence for, so a model
+	// that only ships the classic HL2MP anims (no ACT_HL2MP_*_REVOLVER) still
+	// gets the pistol pose instead of a stretched sequence 0.
+	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_REVOLVER,				false },
+	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_REVOLVER,					false },
+	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_REVOLVER,			false },
+	{ ACT_HL2MP_WALK_CROUCH,			ACT_HL2MP_WALK_CROUCH_REVOLVER,			false },
+	{ ACT_HL2MP_GESTURE_RANGE_ATTACK,	ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER,false },
+	{ ACT_HL2MP_GESTURE_RELOAD,			ACT_HL2MP_GESTURE_RELOAD_REVOLVER,		false },
+	{ ACT_HL2MP_JUMP,					ACT_HL2MP_JUMP_REVOLVER,				false },
+
 	{ ACT_HL2MP_IDLE,					ACT_HL2MP_IDLE_PISTOL,					false },
 	{ ACT_HL2MP_RUN,					ACT_HL2MP_RUN_PISTOL,					false },
 	{ ACT_HL2MP_IDLE_CROUCH,			ACT_HL2MP_IDLE_CROUCH_PISTOL,			false },
