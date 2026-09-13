@@ -19,6 +19,7 @@
 
 #if defined( LUA_SDK )
 #include "luamanager.h"
+#include "weapon_hl2mpbase_scriptedweapon.h"	// HL2SB: SWEP:TranslateFOV / SWEP:CalcView dispatch
 #include "lgametrace.h"
 #include "lhl2mp_player_shared.h"
 #include "ltakedamageinfo.h"
@@ -790,6 +791,28 @@ void C_HL2MP_Player::CalcView( Vector &eyeOrigin, QAngle &eyeAngles, float &zNea
 	}
 
 	BaseClass::CalcView( eyeOrigin, eyeAngles, zNear, zFar, fov );
+
+	// HL2SB: GMod's weapon view hooks, for the LOCAL player's view only.
+	// SWEP:TranslateFOV is what turns the camera's Zoom networked var into an
+	// actual field of view, and SWEP:CalcView is where the camera applies its
+	// Roll.  Both are dispatched only for scripted (Lua SWEP) weapons, so stock
+	// weapons and other players' views keep the unmodified engine result; GMod
+	// applies TranslateFOV in this same view path (not in C_BasePlayer::GetFOV),
+	// which keeps c_effects.cpp / cs_hud_scope.cpp readers on the stock value.
+#if defined( LUA_SDK )
+	if ( this == C_BasePlayer::GetLocalPlayer() )
+	{
+		CBaseCombatWeapon *pWeapon = GetActiveWeapon();
+
+		if ( pWeapon && pWeapon->IsScripted() )
+		{
+			CHL2MPScriptedWeapon *pScripted = static_cast<CHL2MPScriptedWeapon *>( pWeapon );
+
+			fov = pScripted->TranslateFOV( fov );
+			pScripted->CalcView( this, eyeOrigin, eyeAngles, fov );
+		}
+	}
+#endif
 }
 
 IRagdoll* C_HL2MP_Player::GetRepresentativeRagdoll() const

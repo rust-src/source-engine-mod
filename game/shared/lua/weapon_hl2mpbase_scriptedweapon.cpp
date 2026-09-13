@@ -18,6 +18,9 @@
 #include "luamanager.h"
 #include "luasrclib.h"
 #include "lbasecombatweapon_shared.h"
+// HL2SB: SWEP:CalcView pushes/reads the Player, Vector and QAngle userdata.
+#include "lbaseplayer_shared.h"
+#include "mathlib/lvector.h"
 // HL2SB: lua_pushtrace(), for SWEP:DoImpactEffect( trace, damageType ).
 #include "lgametrace.h"
 
@@ -1348,6 +1351,62 @@ Activity CHL2MPScriptedWeapon::GetDrawActivity( void )
 #endif
 
 	return BaseClass::GetDrawActivity();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod's SWEP:TranslateFOV( current_fov ) -> number.  The camera weapon
+//          returns its networked Zoom here, which is what makes holding mouse 2
+//          actually change the field of view.
+//          A weapon that does not define the method, or returns nothing / a
+//          non-number, keeps the FOV the engine computed: the fallback can never
+//          be 0, which would black out the view.
+//-----------------------------------------------------------------------------
+float CHL2MPScriptedWeapon::TranslateFOV( float flFOV )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "TranslateFOV" );
+	lua_pushnumber( L, flFOV );
+	END_LUA_CALL_WEAPON_METHOD( 1, 1 );
+
+	RETURN_LUA_NUMBER();
+#endif
+
+	return flFOV;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: GMod's SWEP:CalcView( ply, pos, angles, fov ) -> pos, angles, fov.
+//          The camera weapon writes angles.Roll here.  Only Lua return values
+//          that are actually present AND of the expected type overwrite the
+//          view, so a weapon returning fewer values (or nil) cannot corrupt it.
+//-----------------------------------------------------------------------------
+void CHL2MPScriptedWeapon::CalcView( CBasePlayer *pPlayer, Vector &vecOrigin, QAngle &vecAngles, float &flFOV )
+{
+#if defined ( LUA_SDK )
+	BEGIN_LUA_CALL_WEAPON_METHOD( "CalcView" );
+	lua_pushplayer( L, pPlayer );
+	lua_pushvector( L, vecOrigin );
+	lua_pushangle( L, vecAngles );
+	lua_pushnumber( L, flFOV );
+	END_LUA_CALL_WEAPON_METHOD( 4, 3 );
+
+	int nRet = lua_gettop( L );
+	if ( nRet >= 3 )
+	{
+		if ( lua_isuserdata( L, -3 ) && luaL_checkudata( L, -3, "Vector" ) )
+			vecOrigin = luaL_checkvector( L, -3 );
+		if ( lua_isuserdata( L, -2 ) && luaL_checkudata( L, -2, "QAngle" ) )
+			vecAngles = luaL_checkangle( L, -2 );
+		if ( lua_isnumber( L, -1 ) )
+			flFOV = (float)lua_tonumber( L, -1 );
+
+		lua_pop( L, 3 );
+	}
+	else if ( nRet > 0 )
+	{
+		lua_pop( L, nRet );
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
