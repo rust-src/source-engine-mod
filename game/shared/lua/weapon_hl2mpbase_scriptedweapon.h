@@ -50,6 +50,14 @@ public:
 	virtual bool			SendWeaponAnim( int iActivity );
 
 	// Default calls through to m_hOwner, but plasma weapons can override and shoot projectiles here.
+	// HL2SB: GMod's client-side weapon view hooks (SWEP:TranslateFOV / SWEP:CalcView).
+	// Deliberately NON-virtual: waf does not track header changes (AGENTS.md 5.0), so
+	// adding virtuals here would shift vtable slots for every translation unit that
+	// includes this header but does not get rebuilt.  The call site reaches them
+	// through IsScripted() + static_cast instead.
+	float	TranslateFOV( float flFOV );
+	void	CalcView( CBasePlayer *pPlayer, Vector &vecOrigin, QAngle &vecAngles, float &flFOV );
+
 	virtual void	ItemPostFrame( void );
 	virtual void	ItemBusyFrame( void );
 	virtual void	FireBullets( const FireBulletsInfo_t &info );
