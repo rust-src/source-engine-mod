@@ -7470,8 +7470,20 @@ void CC_Ent_Create( const CCommand& args )
 	CBaseEntity *entity = dynamic_cast< CBaseEntity * >( CreateEntityByName(args[1]) );
 	if (entity)
 	{
-		entity->Precache();
-
+		// HL2SB: keyvalues FIRST, precache SECOND.
+		//
+		// This used to precache before the parameters were applied, i.e. while the
+		// entity still had no `model`.  CBaseProp::Precache() reacts to an empty
+		// model by permanently substituting models/error.mdl
+		// (game/server/props.cpp:258-264), and the real model was never precached
+		// -- which is where the log spam comes from:
+		//     "Attempting to precache model, but model name is NULL"
+		//     "prop_vehicle_airboat at (0.000, 0.000, 0.000) has no model name!"
+		//     "Late precache of models/..."
+		// and it also stopped classes that supply their OWN default model from
+		// ever getting the chance (CPropThumper, hl2/prop_thumper.cpp:91-99,
+		// defaults to models/props_combine/CombineThumper002.mdl).
+		//
 		// Pass in any additional parameters.
 		for ( int i = 2; i + 1 < args.ArgC(); i += 2 )
 		{
@@ -7479,6 +7491,8 @@ void CC_Ent_Create( const CCommand& args )
 			const char *pValue = args[i+1];
 			entity->KeyValue( pKeyName, pValue );
 		}
+
+		entity->Precache();
 
 		DispatchSpawn(entity);
 

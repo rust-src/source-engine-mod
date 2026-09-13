@@ -164,6 +164,25 @@ void CRagdollProp::Spawn( void )
 	SetModel( STRING( GetModelName() ) );
 
 	CStudioHdr *pStudioHdr = GetModelPtr( );
+
+	// HL2SB: a ragdoll with no model has no studiohdr, and the next line used to
+	// dereference it.  `ent_create prop_ragdoll` supplies no `model` keyvalue, so
+	// this crashed the listen server with a NULL read:
+	//   dumps/crash_20260914_000100_1_accessviolation.mdmp
+	//   C0000005, ExceptionInformation = [0x0, 0x0]  (read at address 0)
+	//   CRagdollProp::Spawn+0xB6  [physics_prop_ragdoll.cpp:167]
+	// A ragdoll is meaningless without a model, so refuse to spawn rather than
+	// run SetupBones/InitRagdoll over a NULL studiohdr.  Same rule as the
+	// vehicles: a dev-path spawn must be survivable.
+	if ( !pStudioHdr )
+	{
+		Warning( "[HL2SB] CRagdollProp::Spawn: %s has no model (ent_create passed no `model` keyvalue) - removing it\n", GetClassname() );
+		SetThink( NULL );
+		SetNextThink( TICK_NEVER_THINK );
+		UTIL_Remove( this );
+		return;
+	}
+
 	if ( pStudioHdr->flags() & STUDIOHDR_FLAGS_NO_FORCED_FADE )
 	{
 		DisableAutoFade();
@@ -1378,7 +1397,12 @@ CBaseEntity *CreateServerRagdoll( CBaseAnimating *pAnimating, int forceBone, con
 
 	if ( vel.LengthSqr() > 0 )
 	{
-		int numbones = pAnimating->GetModelPtr()->numbones();
+		// HL2SB: same NULL-studiohdr guard as CRagdollProp::Spawn -- this used to
+		// be an unguarded GetModelPtr()->numbones().  A NULL studiohdr just means
+		// there are no bones to shift, so skip the adjustment rather than bailing
+		// out of the whole ragdoll creation.
+		CStudioHdr *pStudioHdr = pAnimating->GetModelPtr();
+		int numbones = pStudioHdr ? pStudioHdr->numbones() : 0;
 		vel *= dt;
 		for ( int i = 0; i < numbones; i++ )
 		{
