@@ -298,6 +298,12 @@ static const luaL_Reg enginelib[] = {
   {"GetClientConVarValue", engine_GetClientConVarValue},
   {"GetEntityCount", engine_GetEntityCount},
   {"GetGameDir", engine_GetGameDir},
+  // HL2SB: GMod spells this engine.GetGameDirectory() in BOTH realms, and only the
+  // client library had that name.  Shared scripts die without it --
+  // lua/autorun/*.lua is loaded by the server realm too, and
+  // lua/autorun/mount_games.lua:10 calls it at file scope, which took that whole
+  // file (and therefore the gamecontent.txt mounts) down on the server.
+  {"GetGameDirectory", engine_GetGameDir},
   {"GetMapEntitiesString", engine_GetMapEntitiesString},
   {"GetMostRecentlyLoadedFileName", engine_GetMostRecentlyLoadedFileName},
   {"GetPlayerNetInfo", engine_GetPlayerNetInfo},
