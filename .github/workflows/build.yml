@@ -54,10 +54,10 @@ jobs:
           --build-games=hl2sb
 
       - name: Build
-        run: python3 ./waf build --target=client,server -j2
+        run:           python3 ./waf build --target=client,server,GameUI -j2
 
       - name: Install
-        run: python3 ./waf install --target=client,server -j2
+        run:           python3 ./waf install --target=client,server,GameUI -j2
 
       - name: Save build configuration
         run: cp build/config.log linux/info.txt
@@ -114,7 +114,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --target=client,server --strip
+          python3 ./waf install --target=client,server,GameUI --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -163,7 +163,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${{ github.workspace }}/android-ndk-r10e/"
           export PATH="${{ github.workspace }}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:$PATH"
-          python3 ./waf install --target=client,server --strip
+          python3 ./waf install --target=client,server,GameUI --strip
 
       - name: Upload Android build
         uses: actions/upload-artifact@v7
@@ -198,8 +198,8 @@ jobs:
 
       - name: Build and install
         run: >-
-          ./waf.bat build --target=client,server &&
-          ./waf.bat install --target=client,server
+          ./waf.bat build --target=client,server,GameUI &&
+          ./waf.bat install --target=client,server,GameUI
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -235,8 +235,8 @@ jobs:
       - name: Build and install
         shell: pwsh
         run: >-
-          ./waf.bat build --target=client,server &&
-          ./waf.bat install --target=client,server
+          ./waf.bat build --target=client,server,GameUI &&
+          ./waf.bat install --target=client,server,GameUI
 
       - name: Cleanup artifacts (remove .lib .pdb .obj .exp .ilk)
         run: |
@@ -279,8 +279,8 @@ jobs:
 
       - name: Build and install
         run: |
-          python3 ./waf build --target=client,server
-          python3 ./waf install --target=client,server
+          python3 ./waf build --target=client,server,GameUI
+          python3 ./waf install --target=client,server,GameUI
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
@@ -321,8 +321,8 @@ jobs:
 
       - name: Build and install
         run: |
-          python3 ./waf build --target=client,server
-          python3 ./waf install --target=client,server
+          python3 ./waf build --target=client,server,GameUI
+          python3 ./waf install --target=client,server,GameUI
 
       - name: Upload macOS build
         uses: actions/upload-artifact@v7
