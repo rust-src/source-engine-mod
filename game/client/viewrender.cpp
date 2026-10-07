@@ -1099,6 +1099,13 @@ void CViewRender::DrawViewModels( const CViewSetup &view, bool drawViewmodel )
 	viewModelSetup.fov = view.fovViewmodel;
 	viewModelSetup.m_flAspectRatio = engine->GetScreenAspectRatio();
 
+	// HL2SB: the GM:CalcViewModelView dispatch lives in CBaseViewModel::
+	// CalcViewModelView (baseviewmodel_shared.cpp) -- that is GMod's own call
+	// site (their C_BaseViewModel::CalcViewModelView, vtable +0x840, runs the
+	// weapon bob FIRST and then dispatches with pre-bob eye as args 3/4 and
+	// post-bob as args 5/6).  Dispatching here as well would run every SWEP's
+	// viewmodel pipeline twice per frame.
+
 	ITexture *pRTColor = NULL;
 	ITexture *pRTDepth = NULL;
 	if( view.m_eStereoEye != STEREO_EYE_MONO )

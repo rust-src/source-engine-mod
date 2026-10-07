@@ -1271,6 +1271,19 @@ void ClientModeShared::Layout()
 
 float ClientModeShared::GetViewModelFOV( void )
 {
+	// HL2SB (2026-10-07): GMod contract -- the equipped scripted weapon's
+	// SWEP.ViewModelFOV overrides the viewmodel_fov convar while it is held
+	// (the hl1sweps pack pins 90 for its GoldSrc-style viewmodel pipeline).
+	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
+	if ( pPlayer != NULL )
+	{
+		CBaseCombatWeapon *pWep = pPlayer->GetActiveWeapon();
+		if ( pWep != NULL && pWep->IsScripted() )
+		{
+			extern float HL2SB_ScriptedViewModelFOV( CBaseCombatWeapon *pWeapon, float flDefault );
+			return HL2SB_ScriptedViewModelFOV( pWep, v_viewmodel_fov.GetFloat() );
+		}
+	}
 	return v_viewmodel_fov.GetFloat();
 }
 
