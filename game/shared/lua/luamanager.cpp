@@ -1262,6 +1262,13 @@ void luasrc_shutdown (void) {
 
   g_bLuaInitialized = false;
 
+  // HL2SB (2026-10-08): GM:ShutDown() - GMod raises it when the Lua state is
+  // about to go away (map change, quit), before anything is torn down, so
+  // gamemode code can persist state.  Fired first here: every database the
+  // hooks touch is still live.
+  BEGIN_LUA_CALL_HOOK( "ShutDown" );
+  END_LUA_CALL_HOOK( 0, 0 );
+
   filesystem->RemoveSearchPath( contentSearchPath, "MOD" );
   filesystem->RemoveSearchPath( baseContentSearchPath, "MOD" );
 

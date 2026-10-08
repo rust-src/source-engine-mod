@@ -803,23 +803,55 @@ void ClientModeShared::AdjustEngineViewport( int& x, int& y, int& width, int& he
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: 
+// Purpose:
 //-----------------------------------------------------------------------------
 void ClientModeShared::PreRender( CViewSetup *pSetup )
 {
+	// HL2SB: GM:PreRender is deliberately NOT dispatched yet - its GMod
+	// contract (return true cancels the whole frame render) needs a check in
+	// the frame owner, not in this void method.  Deferred to the render-cancel
+	// round.
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: 
+// Purpose:
 //-----------------------------------------------------------------------------
 void ClientModeShared::PostRender()
 {
+#if defined( LUA_SDK )
+	// HL2SB (2026-10-08): GM:PostRender() - GMod raises it once the frame has
+	// rendered (their PreRender/PostRender pair brackets the frame; the cancel
+	// half is the one still unwired here).
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			BEGIN_LUA_CALL_HOOK( "PostRender" );
+			END_LUA_CALL_HOOK( 0, 0 );
+		}
+	}
+#endif
+
 	// Let the particle manager simulate things that haven't been simulated.
 	ParticleMgr()->PostRender();
 }
 
 void ClientModeShared::PostRenderVGui()
 {
+#if defined( LUA_SDK )
+	// HL2SB (2026-10-08): GM:PostRenderVGUI() - fired after the VGUI paint
+	// pass, still inside the 2D context (the main view calls this from its
+	// Push2DView block).  GMod fires it unconditionally each frame; the guard
+	// keeps menu-realm noise out, same as every other 2D pump here.
+	{
+		extern bool g_bRenderingReflection;
+		if ( L != NULL && !g_bRenderingReflection && engine->IsInGame() )
+		{
+			BEGIN_LUA_CALL_HOOK( "PostRenderVGUI" );
+			END_LUA_CALL_HOOK( 0, 0 );
+		}
+	}
+#endif
 }
 
 //-----------------------------------------------------------------------------
